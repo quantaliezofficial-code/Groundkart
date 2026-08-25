@@ -1,0 +1,8 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /owner
+Disallow: /api/
+
+Sitemap: https://groundbooking.com/sitemap.xml
