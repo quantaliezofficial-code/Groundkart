@@ -25,7 +25,7 @@ async def test_engine():
 
 
 @pytest_asyncio.fixture
-async def test_session_factory(test_engine):
+async def test_session_factory(test_engine, clean_tables):
     return async_sessionmaker(test_engine, expire_on_commit=False)
 
 
@@ -45,7 +45,8 @@ async def clean_tables(test_engine):
                 text(
                     "TRUNCATE venue_images, venue_amenities, amenities, audit_logs, "
                     "owner_verifications, refresh_tokens, login_rate_limits, payments, "
-                    "payouts, bookings, inventory_units, venues, users CASCADE"
+                    "payouts, bookings, booking_events, notifications, reviews, "
+                    "inventory_units, venues, users, idempotency_keys CASCADE"
                 )
             )
 

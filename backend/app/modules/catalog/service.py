@@ -151,13 +151,8 @@ async def get_venue(
     if venue is None:
         raise HTTPException(status_code=404, detail="Venue not found")
 
-    if venue.status != "active":
-        is_owner = viewer is not None and viewer.id == venue.owner_id
-        is_admin = viewer is not None and viewer.role == "admin"
-        if not (is_owner or is_admin):
-            # 404, not 403 — a non-owner shouldn't learn that an unapproved
-            # listing with this id exists at all.
-            raise HTTPException(status_code=404, detail="Venue not found")
+    from app.modules.auth.policies import authorize_venue_view
+    authorize_venue_view(viewer, venue)
 
     return venue
 
@@ -260,7 +255,7 @@ async def list_venues_for_admin(
 async def update_venue(
     session: AsyncSession,
     venue_id: uuid.UUID,
-    owner_id: uuid.UUID,
+    viewer: CurrentUser,
     changes: dict,
 ) -> Venue:
     async with session.begin():
@@ -273,8 +268,9 @@ async def update_venue(
         venue = result.scalar_one_or_none()
         if venue is None:
             raise HTTPException(status_code=404, detail="Venue not found")
-        if venue.owner_id != owner_id:
-            raise HTTPException(status_code=403, detail="Not your venue")
+
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
 
         content_changed = False
         # Accumulate a before/after diff for each changed content field so
@@ -316,7 +312,7 @@ async def update_venue(
 async def upload_venue_image(
     session: AsyncSession,
     venue_id: uuid.UUID,
-    owner_id: uuid.UUID,
+    viewer: CurrentUser,
     content: bytes,
     content_type: str,
     storage: FileStorage,
@@ -327,8 +323,9 @@ async def upload_venue_image(
         venue = result.scalar_one_or_none()
         if venue is None:
             raise HTTPException(status_code=404, detail="Venue not found")
-        if venue.owner_id != owner_id:
-            raise HTTPException(status_code=403, detail="Not your venue")
+            
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
 
         try:
             url = await storage.save(content, content_type, key_prefix=f"venues/{venue_id}")
@@ -355,7 +352,7 @@ async def upload_venue_image(
 async def add_inventory_units(
     session: AsyncSession,
     venue_id: uuid.UUID,
-    owner_id: uuid.UUID,
+    viewer: CurrentUser,
     units: list[dict],
 ) -> list[InventoryUnit]:
     async with session.begin():
@@ -363,8 +360,9 @@ async def add_inventory_units(
         venue = result.scalar_one_or_none()
         if venue is None:
             raise HTTPException(status_code=404, detail="Venue not found")
-        if venue.owner_id != owner_id:
-            raise HTTPException(status_code=403, detail="Not your venue")
+            
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
 
         created = []
         for unit_data in units:

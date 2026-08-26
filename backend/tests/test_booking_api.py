@@ -8,7 +8,7 @@ test_concurrency.py's job).
 import httpx
 import pytest
 
-from app.db import get_db
+from app.db import get_db, get_idem_db
 from app.main import app
 
 
@@ -19,6 +19,7 @@ async def client(test_session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_idem_db] = _override_get_db
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

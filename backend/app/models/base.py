@@ -85,3 +85,8 @@ PayoutStatus = PGEnum(
     "pending", "paid",
     name="payout_status", create_type=False,
 )
+
+IdempotencyStatus = PGEnum(
+    "in_progress", "completed", "error",
+    name="idempotency_status", create_type=False,
+)

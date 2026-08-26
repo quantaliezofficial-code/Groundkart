@@ -64,18 +64,19 @@ async def count_unread_notifications(session: AsyncSession, user_id: uuid.UUID) 
     return result.scalar_one()
 
 
-async def mark_notification_read(session: AsyncSession, user_id: uuid.UUID, notification_id: uuid.UUID) -> Notification:
-    """A user can only ever mark their OWN notification read — the 404 (not
-    403) on a mismatched user_id is deliberate, same reasoning as booking
-    lookups elsewhere in this codebase: don't confirm to the caller that a
-    notification with this id exists at all if it isn't theirs."""
+async def mark_notification_read(session: AsyncSession, viewer: CurrentUser, notification_id: uuid.UUID) -> Notification:
+    """A user can only ever mark their OWN notification read."""
     async with session.begin():
         result = await session.execute(
-            select(Notification).where(Notification.id == notification_id, Notification.user_id == user_id)
+            select(Notification).where(Notification.id == notification_id)
         )
         notification = result.scalar_one_or_none()
         if notification is None:
             raise HTTPException(status_code=404, detail="Notification not found")
+            
+        from app.modules.auth.policies import authorize_notification_access
+        authorize_notification_access(viewer, notification)
+        
         if notification.read_at is None:
             notification.read_at = datetime.now(timezone.utc)
     return notification
@@ -91,15 +92,21 @@ async def mark_all_notifications_read(session: AsyncSession, user_id: uuid.UUID)
     return result.rowcount
 
 
-async def delete_notification(session: AsyncSession, user_id: uuid.UUID, notification_id: uuid.UUID) -> bool:
+async def delete_notification(session: AsyncSession, viewer: CurrentUser, notification_id: uuid.UUID) -> bool:
     from sqlalchemy import delete
     async with session.begin():
         result = await session.execute(
-            delete(Notification).where(Notification.id == notification_id, Notification.user_id == user_id)
+            select(Notification).where(Notification.id == notification_id)
         )
-        if result.rowcount == 0:
+        notification = result.scalar_one_or_none()
+        if notification is None:
             raise HTTPException(status_code=404, detail="Notification not found")
-    return True
+            
+        from app.modules.auth.policies import authorize_notification_access
+        authorize_notification_access(viewer, notification)
+        
+        await session.execute(delete(Notification).where(Notification.id == notification_id))
+        return True
 
 
 async def delete_all_notifications(session: AsyncSession, user_id: uuid.UUID) -> int:

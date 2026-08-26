@@ -54,12 +54,6 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.config import settings
 from app.models.core import AuditLog, Booking, InventoryUnit, Payment, Venue
-
-GRACE_PERIOD_DURATION = timedelta(hours=2)
-# Decision Point C-5 — see module docstring and app/config.py. No longer a
-# hardcoded 10 minutes.
-HOLD_DURATION = timedelta(minutes=settings.booking_hold_duration_minutes)
-
 # Decision Point B-3 (flag this for explicit sign-off — see
 # PHASE_B_SUMMARY.md): inventory_units.date/start_time are
 # DATE/TIME WITHOUT TIME ZONE columns (06_Backend_Schema.md §3) — naive
@@ -118,8 +112,10 @@ async def create_booking(
             status_code=422,
             detail="A logged-in booking cannot also include guest_name/guest_email",
         )
-
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
+        hold_duration = timedelta(minutes=config.booking_hold_duration_minutes)
         result = await session.execute(
             select(InventoryUnit)
             .options(joinedload(InventoryUnit.venue))
@@ -132,7 +128,7 @@ async def create_booking(
             raise HTTPException(status_code=409, detail="This slot is no longer available")
 
         unit.status = "held"
-        unit.hold_expires_at = datetime.now(timezone.utc) + HOLD_DURATION
+        unit.hold_expires_at = datetime.now(timezone.utc) + hold_duration
 
         raw_manage_token: str | None = None
         manage_token_hash: str | None = None
@@ -169,7 +165,7 @@ async def create_booking(
     return booking, raw_manage_token  # transaction committed — lock released
 
 
-def compute_grace_period_ends_at(confirmed_at: datetime, unit: InventoryUnit) -> datetime:
+def compute_grace_period_ends_at(confirmed_at: datetime, unit: InventoryUnit, grace_period_hours: int) -> datetime:
     """Decision Point B-1 (flag this for explicit sign-off — see
     PHASE_B_SUMMARY.md): 06_Backend_Schema.md §9 defines
     grace_period_ends_at = min(confirmed_at + 2h, slot start time). That's
@@ -182,19 +178,17 @@ def compute_grace_period_ends_at(confirmed_at: datetime, unit: InventoryUnit) ->
     outlive the moment the customer is already on-site for an hourly
     booking. A half_day/full_day booking is typically made days or weeks
     before the event, so that risk doesn't apply — the grace period is a
-    flat 2 hours with no cap. If the intent was actually different (e.g. a
+    flat duration with no cap. If the intent was actually different (e.g. a
     cap at the start of the booked *date*, regardless of unit_type),
     that's a one-line change here, but it should be a deliberate choice,
-    not a SQL NULL silently producing an unbounded grace window — which is
-    what a literal `LEAST(confirmed_at + interval '2 hours', slot_start)`
-    would do in Postgres if slot_start is NULL (LEAST/MIN with a NULL
-    argument returns NULL, not the other value).
+    not a SQL NULL silently producing an unbounded grace window.
     """
+    flat_duration = timedelta(hours=grace_period_hours)
     if unit.start_time is not None:
         slot_start_naive = datetime.combine(unit.date, unit.start_time)
         slot_start = slot_start_naive.replace(tzinfo=VENUE_LOCAL_TZ)
-        return min(confirmed_at + GRACE_PERIOD_DURATION, slot_start)
-    return confirmed_at + GRACE_PERIOD_DURATION
+        return min(confirmed_at + flat_duration, slot_start)
+    return confirmed_at + flat_duration
 
 
 def _event_start_ist(unit: InventoryUnit) -> datetime:
@@ -214,7 +208,7 @@ def _event_start_ist(unit: InventoryUnit) -> datetime:
     return naive.replace(tzinfo=VENUE_LOCAL_TZ)
 
 
-def compute_refund_fraction(now: datetime, unit: InventoryUnit) -> tuple[Decimal, str]:
+def compute_refund_fraction(now: datetime, unit: InventoryUnit, config) -> tuple[Decimal, str]:
     """Decision Point C-7 (flag for explicit sign-off — see the phase
     summary doc for this slice): every doc references "the standard
     distance-from-event refund tiers" as though defined elsewhere, but none
@@ -238,15 +232,15 @@ def compute_refund_fraction(now: datetime, unit: InventoryUnit) -> tuple[Decimal
     event_start = _event_start_ist(unit)
     hours_until_event = (event_start - now).total_seconds() / 3600
 
-    if hours_until_event >= settings.cancellation_full_refund_hours:
+    if hours_until_event >= config.cancellation_full_refund_hours:
         return Decimal("1.00"), "full_refund"
-    if hours_until_event >= settings.cancellation_partial_refund_hours:
-        fraction = Decimal(settings.cancellation_partial_refund_percent) / Decimal(100)
+    if hours_until_event >= config.cancellation_partial_refund_hours:
+        fraction = Decimal(config.cancellation_partial_refund_percent) / Decimal(100)
         return fraction, "partial_refund"
     return Decimal("0.00"), "no_refund"
 
 
-def _apply_payment_confirmation(booking: Booking) -> Booking:
+def _apply_payment_confirmation(booking: Booking, config) -> Booking:
     """Shared by confirm_booking_from_webhook (Razorpay path, currently
     dormant — see module docstring) and confirm_booking_by_admin (the
     offline path actually in use today). Both need identical
@@ -263,7 +257,9 @@ def _apply_payment_confirmation(booking: Booking) -> Booking:
     now = datetime.now(timezone.utc)
     booking.status = "confirmed"
     booking.confirmed_at = now
-    booking.grace_period_ends_at = compute_grace_period_ends_at(now, booking.inventory_unit)
+    booking.grace_period_ends_at = compute_grace_period_ends_at(
+        now, booking.inventory_unit, config.booking_grace_period_hours
+    )
     booking.inventory_unit.status = "booked"
     # Found while adding BookingDetail.hold_expires_at for the Admin
     # dashboard: every OTHER terminal transition in this module
@@ -284,6 +280,8 @@ async def confirm_booking_from_webhook(session: AsyncSession, booking_id: uuid.U
     in the webhook route handler, never here, so this function could never
     be reached by an unverified caller if it were wired up."""
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
             .options(joinedload(Booking.inventory_unit))
@@ -299,7 +297,7 @@ async def confirm_booking_from_webhook(session: AsyncSession, booking_id: uuid.U
         if booking.status == "confirmed":
             return booking
 
-        _apply_payment_confirmation(booking)
+        _apply_payment_confirmation(booking, config)
 
     return booking
 
@@ -330,6 +328,8 @@ async def confirm_booking_by_admin(
     'pending_payment' before proceeding rejects that outright.
     """
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
             .options(joinedload(Booking.inventory_unit))
@@ -365,7 +365,7 @@ async def confirm_booking_by_admin(
         )
         session.add(payment)
 
-        _apply_payment_confirmation(booking)
+        _apply_payment_confirmation(booking, config)
 
         session.add(
             AuditLog(
@@ -562,7 +562,7 @@ async def flag_booking(
 
 
 def _apply_customer_cancellation(
-    booking: Booking, reason: str | None, now: datetime
+    booking: Booking, reason: str | None, now: datetime, config
 ) -> tuple[Booking, Decimal, str]:
     """Shared by cancel_booking_as_customer and cancel_booking_by_manage_token
     — same shape as _apply_payment_confirmation being shared by the admin
@@ -596,7 +596,7 @@ def _apply_customer_cancellation(
     and a policy that resolves to zero is still a policy that was applied,
     not a different terminal state.
     """
-    fraction, tier = compute_refund_fraction(now, booking.inventory_unit)
+    fraction, tier = compute_refund_fraction(now, booking.inventory_unit, config)
 
     booking.status = "cancelled"
     booking.cancellation_reason = reason
@@ -651,6 +651,8 @@ async def cancel_booking_as_customer(
     has a refund to compute, even if that refund is ₹0).
     """
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
             .options(joinedload(Booking.inventory_unit), selectinload(Booking.payments))
@@ -671,7 +673,7 @@ async def cancel_booking_as_customer(
             )
 
         now = datetime.now(timezone.utc)
-        return _apply_customer_cancellation(booking, reason, now)
+        return _apply_customer_cancellation(booking, reason, now, config)
 
 
 async def cancel_booking_by_manage_token(
@@ -685,6 +687,9 @@ async def cancel_booking_by_manage_token(
     Point B-2) — possessing the correct raw token is sufficient, no other
     identity check needed or possible for a guest.
     """
+    from app.modules.core.config_service import get_system_config
+    config = await get_system_config(session)
+
     token_hash = hash_manage_token(raw_token)
     async with session.begin():
         result = await session.execute(
@@ -703,7 +708,7 @@ async def cancel_booking_by_manage_token(
             )
 
         now = datetime.now(timezone.utc)
-        return _apply_customer_cancellation(booking, reason, now)
+        return _apply_customer_cancellation(booking, reason, now, config)
 
 
 async def get_booking_for_viewer(

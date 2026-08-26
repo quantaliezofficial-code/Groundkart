@@ -38,6 +38,7 @@ from app.models.base import (
     UserRole,
     VenueCategory,
     VenueStatus,
+    IdempotencyStatus,
 )
 
 
@@ -274,6 +275,9 @@ class Booking(Base):
     venue: Mapped["Venue"] = relationship()
     inventory_unit: Mapped["InventoryUnit"] = relationship(back_populates="bookings")
     payments: Mapped[list["Payment"]] = relationship(back_populates="booking")
+    events: Mapped[list["BookingEvent"]] = relationship(
+        back_populates="booking", cascade="all, delete-orphan", order_by="BookingEvent.created_at"
+    )
 
     # A real gap found while starting frontend integration (Phase D):
     # BookingDetail had no way to show *when* a booking is actually for —
@@ -308,6 +312,28 @@ class Booking(Base):
         booking is confirmed/cancelled (inventory_unit.hold_expires_at is
         cleared at that point, same lifecycle as everywhere else it's set)."""
         return self.inventory_unit.hold_expires_at
+
+
+class BookingEvent(Base):
+    """Event history for the booking lifecycle (what happened to this booking?)."""
+
+    __tablename__ = "booking_events"
+    __table_args__ = (
+        Index("idx_booking_events_booking_id_created_at", "booking_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"))
+    event_type: Mapped[str]
+    actor_type: Mapped[str | None]
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    extra_data: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    booking: Mapped["Booking"] = relationship(back_populates="events")
+    actor: Mapped["User | None"] = relationship()
 
 
 class Payment(Base):
@@ -652,3 +678,53 @@ class Review(Base):
 
     venue: Mapped["Venue"] = relationship(back_populates="reviews")
     user: Mapped["User"] = relationship(back_populates="reviews")
+
+
+class IdempotencyKey(Base):
+    """Stores information for ensuring operations are idempotent."""
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint("key", "actor_id", "operation", name="uq_idemp_key_actor_op"),
+        Index("idx_idempotency_keys_expires_at", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    key: Mapped[str]
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    operation: Mapped[str]
+    request_hash: Mapped[str | None]
+    status: Mapped[str] = mapped_column(IdempotencyStatus, default="in_progress")
+    response_code: Mapped[int | None]
+    response_body: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    expires_at: Mapped[datetime]
+
+
+class SystemConfiguration(Base):
+    """
+    Singleton typed settings table for core business values previously hardcoded.
+    Preserves exact production behavior with seed values.
+    """
+    __tablename__ = "system_configuration"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="chk_singleton_config"),
+        CheckConstraint("booking_hold_duration_minutes > 0", name="chk_hold_duration_positive"),
+        CheckConstraint("booking_grace_period_hours >= 0", name="chk_grace_period_nonneg"),
+        CheckConstraint("cancellation_full_refund_hours >= cancellation_partial_refund_hours", name="chk_refund_hours_order"),
+        CheckConstraint("cancellation_partial_refund_percent BETWEEN 0 AND 100", name="chk_refund_percent_range"),
+        CheckConstraint("platform_commission_percent BETWEEN 0 AND 100", name="chk_commission_percent_range"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_hold_duration_minutes: Mapped[int] = mapped_column(default=1440)
+    booking_grace_period_hours: Mapped[int] = mapped_column(default=2)
+    cancellation_full_refund_hours: Mapped[int] = mapped_column(default=48)
+    cancellation_partial_refund_hours: Mapped[int] = mapped_column(default=24)
+    cancellation_partial_refund_percent: Mapped[int] = mapped_column(default=50)
+    platform_commission_percent: Mapped[int] = mapped_column(default=10)
+
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))

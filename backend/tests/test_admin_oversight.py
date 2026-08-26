@@ -15,7 +15,7 @@ import httpx
 import pytest
 from sqlalchemy import select, update
 
-from app.db import get_db
+from app.db import get_db, get_idem_db
 from app.main import app
 from app.models.core import (
     InventoryUnit,
@@ -36,6 +36,7 @@ async def client(test_session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_idem_db] = _override_get_db
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -278,6 +279,11 @@ async def test_overview_active_venues_count(client, test_session_factory, seeded
 
 async def test_suspend_active_venue_succeeds(client, test_session_factory, seeded_admin):
     owner_id, venue_id = await _seeded_owner_and_venue(test_session_factory, venue_status="active")
+    
+    async with test_session_factory() as session:
+        result = await session.execute(select(User).where(User.id == seeded_admin))
+        print("ADMIN IN DB BEFORE POST:", result.scalar_one_or_none() is not None)
+
     resp = await client.post(
         f"/api/v1/admin/venues/{venue_id}/suspend",
         json={"reason": "Repeated no-shows reported by customers"},

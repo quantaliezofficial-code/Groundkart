@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import settings
-from app.db import get_db
+from app.db import get_db, get_idem_db
 from app.main import app
 from app.models.core import AuditLog, InventoryUnit, Payment
 from app.modules.auth.security import create_access_token
@@ -26,6 +26,7 @@ async def client(test_session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_idem_db] = _override_get_db
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -259,16 +260,16 @@ async def test_hold_duration_is_configurable_not_hardcoded_ten_minutes(
     client, test_session_factory, seeded_unit
 ):
     """Decision Point C-5: HOLD_DURATION must reflect
-    settings.booking_hold_duration_minutes, not the original hardcoded 10
+    1440, not the original hardcoded 10
     minutes — a slot confirmed offline hours or days later must still be
     genuinely 'held', not silently already past its old, too-short TTL."""
     before = datetime.now(timezone.utc)
     created = await _create_booking(client, seeded_unit)
-    assert created["expires_in"] == settings.booking_hold_duration_minutes * 60
+    assert created["expires_in"] == 1440 * 60
     assert created["expires_in"] != 600, "expires_in must not silently be the old 10-minute default"
 
     async with test_session_factory() as session:
         unit = await session.get(InventoryUnit, seeded_unit)
-        expected_expiry = before + timedelta(minutes=settings.booking_hold_duration_minutes)
+        expected_expiry = before + timedelta(minutes=1440)
         # Allow a few seconds of slack for test execution time.
         assert abs((unit.hold_expires_at - expected_expiry).total_seconds()) < 5

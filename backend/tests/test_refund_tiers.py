@@ -16,7 +16,12 @@ from decimal import Decimal
 
 import pytest
 
-from app.config import settings
+class FakeConfig:
+    cancellation_full_refund_hours = 48
+    cancellation_partial_refund_hours = 24
+    cancellation_partial_refund_percent = 50
+config = FakeConfig()
+
 from app.models.core import InventoryUnit
 from app.modules.booking.service import compute_refund_fraction
 
@@ -35,7 +40,7 @@ def _full_day_unit(d: date) -> InventoryUnit:
 
 def test_far_future_booking_gets_full_refund():
     unit = _hourly_unit(date(2027, 9, 15), time(10, 0))  # 45 days out
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("1.00")
     assert tier == "full_refund"
 
@@ -43,7 +48,7 @@ def test_far_future_booking_gets_full_refund():
 def test_exactly_at_48_hour_boundary_gets_full_refund():
     # event_start = NOW + exactly 48h -> 2027-08-03 17:30 IST
     unit = _hourly_unit(date(2027, 8, 3), time(17, 30))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("1.00")
     assert tier == "full_refund"
 
@@ -51,7 +56,7 @@ def test_exactly_at_48_hour_boundary_gets_full_refund():
 def test_just_under_48_hours_gets_partial_refund():
     # event_start = NOW + 47h59m -> 2027-08-03 17:29 IST
     unit = _hourly_unit(date(2027, 8, 3), time(17, 29))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.50")
     assert tier == "partial_refund"
 
@@ -59,7 +64,7 @@ def test_just_under_48_hours_gets_partial_refund():
 def test_exactly_at_24_hour_boundary_gets_partial_refund():
     # event_start = NOW + exactly 24h -> 2027-08-02 17:30 IST
     unit = _hourly_unit(date(2027, 8, 2), time(17, 30))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.50")
     assert tier == "partial_refund"
 
@@ -67,7 +72,7 @@ def test_exactly_at_24_hour_boundary_gets_partial_refund():
 def test_just_under_24_hours_gets_no_refund():
     # event_start = NOW + 23h59m -> 2027-08-02 17:29 IST
     unit = _hourly_unit(date(2027, 8, 2), time(17, 29))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.00")
     assert tier == "no_refund"
 
@@ -80,7 +85,7 @@ def test_event_already_passed_clamps_to_no_refund():
     error out or extrapolate a nonsensical negative percentage."""
     # event_start = NOW - 5h -> 2027-08-01 12:30 IST (already past)
     unit = _hourly_unit(date(2027, 8, 1), time(12, 30))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.00")
     assert tier == "no_refund"
 
@@ -91,7 +96,7 @@ def test_full_day_unit_far_enough_out_gets_full_refund():
     moment that doesn't exist for a half_day/full_day unit."""
     # midnight IST 2027-08-04 == 2027-08-03 18:30 UTC -> 54.5h from NOW
     unit = _full_day_unit(date(2027, 8, 4))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("1.00")
     assert tier == "full_refund"
 
@@ -99,7 +104,7 @@ def test_full_day_unit_far_enough_out_gets_full_refund():
 def test_full_day_unit_in_partial_window():
     # midnight IST 2027-08-03 == 2027-08-02 18:30 UTC -> 30.5h from NOW
     unit = _full_day_unit(date(2027, 8, 3))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.50")
     assert tier == "partial_refund"
 
@@ -107,7 +112,7 @@ def test_full_day_unit_in_partial_window():
 def test_full_day_unit_too_close_gets_no_refund():
     # midnight IST 2027-08-02 == 2027-08-01 18:30 UTC -> 6.5h from NOW
     unit = _full_day_unit(date(2027, 8, 2))
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert fraction == Decimal("0.00")
     assert tier == "no_refund"
 
@@ -127,32 +132,32 @@ def test_ist_conversion_actually_applied_not_utc_naive():
     """
     now = datetime(2027, 8, 1, 20, 0, 0, tzinfo=timezone.utc)
     unit = _hourly_unit(date(2027, 8, 4), time(0, 30))
-    fraction, tier = compute_refund_fraction(now, unit)
+    fraction, tier = compute_refund_fraction(now, unit, config)
     assert tier == "partial_refund"
     assert fraction == Decimal("0.50")
 
 
-def test_thresholds_are_read_from_settings_not_hardcoded(monkeypatch):
+def test_thresholds_are_read_from_settings_not_hardcoded():
     """Decision Point C-7 is explicitly a placeholder pending real sign-off
     (same treatment as C-5's booking_hold_duration_minutes) — confirming
     the numbers actually come from settings, live, not a baked-in literal,
     so correcting them later is a .env change, not a code change."""
     unit = _hourly_unit(date(2027, 8, 3), time(17, 29))  # 47h59m out
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert tier == "partial_refund"  # under the default 48h cutoff
 
     # Lowering the full-refund cutoff below 47h59m should flip this same
     # case to full_refund (raising it would only ever narrow, not widen,
     # who qualifies for full refund — the opposite direction).
-    monkeypatch.setattr(settings, "cancellation_full_refund_hours", 40)
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    config.cancellation_full_refund_hours = 40
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert tier == "full_refund"  # same clock time, now under the lowered cutoff
     assert fraction == Decimal("1.00")
 
 
 def test_partial_refund_percent_is_configurable(monkeypatch):
     unit = _hourly_unit(date(2027, 8, 2), time(17, 30))  # exactly 24h out
-    monkeypatch.setattr(settings, "cancellation_partial_refund_percent", 30)
-    fraction, tier = compute_refund_fraction(NOW, unit)
+    config.cancellation_partial_refund_percent = 30
+    fraction, tier = compute_refund_fraction(NOW, unit, config)
     assert tier == "partial_refund"
     assert fraction == Decimal("0.30")

@@ -32,7 +32,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
-from app.db import get_db
+from app.db import get_db, get_idem_db
 from app.main import app
 from app.models.core import Booking, InventoryUnit, Payment
 from app.modules.auth.security import create_access_token
@@ -46,6 +46,7 @@ async def client(test_session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_idem_db] = _override_get_db
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -296,8 +297,10 @@ async def test_owner_flagged_booking_cannot_then_be_cancelled_by_customer(
     owner_id, _, unit_id = seeded_owner_with_unit
     booking_id = await _confirmed_account_booking(test_session_factory, unit_id, seeded_customer)
 
+    from app.modules.auth.dependencies import CurrentUser
     async with test_session_factory() as session:
-        await flag_booking(session, booking_id, owner_id, reason="Double-booked by mistake")
+        viewer = CurrentUser(id=owner_id, role="owner")
+        await flag_booking(session, booking_id, viewer, reason="Double-booked by mistake")
 
     token = create_access_token(seeded_customer, "customer")
     resp = await client.post(

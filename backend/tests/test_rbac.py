@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.db import get_db
+from app.db import get_db, get_idem_db
 from app.main import app
 from app.modules.auth.security import create_access_token
 from app.modules.booking.service import confirm_booking_from_webhook, create_booking
@@ -21,6 +21,7 @@ async def client(test_session_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_idem_db] = _override_get_db
 
     import httpx
 

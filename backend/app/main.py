@@ -273,10 +273,13 @@ async def create_booking_route(
         )
     except HTTPException:
         raise
+    from app.modules.core.config_service import get_system_config
+    config = await get_system_config(db)
+
     return BookingCreateResponse(
         booking_id=booking.id,
         amount=booking.amount,
-        expires_in=settings.booking_hold_duration_minutes * 60,
+        expires_in=config.booking_hold_duration_minutes * 60,
         manage_token=raw_token,
     )
 

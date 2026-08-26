@@ -14,44 +14,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-only-not-for-production-CHANGE-ME"
     environment: str = "dev"
 
-    # Decision Point C-5 (flag for real sign-off — see PHASE_C6_SUMMARY.md):
-    # 06_Backend_Schema.md/02_TRD.md both specify a 10-minute hold, sized
-    # for "customer pays via hosted gateway checkout in the next few
-    # minutes." With payment confirmed offline by an admin instead (the
-    # client's actual current process), the real gap between a slot being
-    # requested and payment being confirmed depends on a human deal, not a
-    # checkout timer — 10 minutes is now much too short; a slot would
-    # release itself back to available while a legitimate deal is still
-    # being worked out. 1440 (24h) is a placeholder default, not a
-    # confirmed business number — deliberately an env var, not a hardcoded
-    # constant, so it's a config change, not a redeploy, once the client
-    # confirms the real figure.
-    booking_hold_duration_minutes: int = 1440
 
-    # Decision Point C-7 (flag for real sign-off - see the phase summary
-    # doc for this slice): no doc anywhere specifies the actual
-    # distance-from-event refund tiers, only one hedged "e.g." example in
-    # 03_Implementation_Plan.md ("free cancellation > 48h before, partial
-    # refund inside that window") - no percentage for "partial," no second
-    # cutoff for a no-refund tier, though 05_App_Flow.md's state diagram
-    # implies one exists (full / partial / none). The three values below
-    # are a defensible, industry-common placeholder shape, NOT a confirmed
-    # business number - same treatment as booking_hold_duration_minutes
-    # above: env-configurable so correcting them is a .env change, not a
-    # redeploy. See compute_refund_fraction() in
-    # app/modules/booking/service.py for how they're applied.
-    cancellation_full_refund_hours: int = 48
-    cancellation_partial_refund_hours: int = 24
-    cancellation_partial_refund_percent: int = 50
-
-    # Decision Point C-10 (flag for real sign-off — see the phase summary
-    # doc for this slice): no doc anywhere states a commission percentage —
-    # 01_PRD.md/03_Implementation_Plan.md both name "gross, commission,
-    # net" as the shape of the payout ledger without ever giving the rate
-    # itself. 10% is a common, defensible marketplace-commission
-    # placeholder, not a confirmed business number — same env-configurable
-    # treatment as the other numeric placeholders above.
-    platform_commission_percent: int = 10
 
     # A real, necessary prerequisite found while starting frontend
     # integration (Phase D): no CORS configuration existed anywhere, which

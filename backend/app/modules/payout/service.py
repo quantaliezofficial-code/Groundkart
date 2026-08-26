@@ -34,13 +34,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
 from app.models.core import AuditLog, Booking, InventoryUnit, Payment, Payout, Venue
 from app.modules.booking.service import VENUE_LOCAL_TZ
 from app.modules.notifications.service import notify
 
 
-def compute_payout_split(gross_amount: Decimal) -> tuple[Decimal, Decimal]:
+def compute_payout_split(gross_amount: Decimal, config) -> tuple[Decimal, Decimal]:
     """Decision Point C-10 (flag for explicit sign-off — see the phase
     summary doc for this slice): 01_PRD.md/03_Implementation_Plan.md both
     name "gross, commission, net" as the shape of the payout ledger
@@ -54,7 +53,7 @@ def compute_payout_split(gross_amount: Decimal) -> tuple[Decimal, Decimal]:
     commission + net always reconstitutes gross exactly — the property
     that actually matters for a financial ledger, not just "close enough."
     """
-    rate = Decimal(settings.platform_commission_percent) / Decimal(100)
+    rate = Decimal(config.platform_commission_percent) / Decimal(100)
     commission = (gross_amount * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     net = gross_amount - commission
     return commission, net
@@ -121,6 +120,8 @@ async def run_payout(
         )
 
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
         result = await session.execute(
             select(Payment)
             .join(Booking, Payment.booking_id == Booking.id)
@@ -147,7 +148,7 @@ async def run_payout(
             retained = payment.amount - (payment.refund_amount or Decimal("0.00"))
             gross_amount += retained
 
-        commission_amount, net_amount = compute_payout_split(gross_amount)
+        commission_amount, net_amount = compute_payout_split(gross_amount, config)
 
         payout = Payout(
             owner_id=owner_id,

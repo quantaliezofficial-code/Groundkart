@@ -11,7 +11,7 @@ this actually runs.
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.modules.booking.service import GRACE_PERIOD_DURATION, compute_grace_period_ends_at
+from app.modules.booking.service import compute_grace_period_ends_at
 from app.models.core import InventoryUnit
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -27,9 +27,9 @@ def test_far_future_hourly_slot_gets_flat_two_hour_grace_period():
     confirmed_at = datetime(2027, 7, 1, 10, 0, tzinfo=timezone.utc)
     unit = _unit(time(20, 0), time(21, 0), on=date(2027, 8, 15))
 
-    result = compute_grace_period_ends_at(confirmed_at, unit)
+    result = compute_grace_period_ends_at(confirmed_at, unit, 2)
 
-    assert result == confirmed_at + GRACE_PERIOD_DURATION
+    assert result == confirmed_at + timedelta(hours=2)
 
 
 def test_near_hourly_slot_caps_grace_period_at_slot_start():
@@ -42,22 +42,22 @@ def test_near_hourly_slot_caps_grace_period_at_slot_start():
     confirmed_at = slot_start_ist.astimezone(timezone.utc) - timedelta(minutes=30)
     unit = _unit(time(19, 30), time(20, 30), on=slot_date)
 
-    result = compute_grace_period_ends_at(confirmed_at, unit)
+    result = compute_grace_period_ends_at(confirmed_at, unit, 2)
 
     assert result == slot_start_ist.astimezone(timezone.utc)
-    assert result < confirmed_at + GRACE_PERIOD_DURATION
+    assert result < confirmed_at + timedelta(hours=2)
 
 
 def test_slot_starting_in_exactly_two_hours_is_the_boundary():
     """Right at the boundary, min(a, a) == a either way — the cap and the
     flat duration coincide, so this shouldn't error or pick unpredictably."""
     slot_start_ist = datetime(2027, 8, 15, 20, 0, tzinfo=IST)
-    confirmed_at = slot_start_ist.astimezone(timezone.utc) - GRACE_PERIOD_DURATION
+    confirmed_at = slot_start_ist.astimezone(timezone.utc) - timedelta(hours=2)
     unit = _unit(time(20, 0), time(21, 0), on=date(2027, 8, 15))
 
-    result = compute_grace_period_ends_at(confirmed_at, unit)
+    result = compute_grace_period_ends_at(confirmed_at, unit, 2)
 
-    assert result == confirmed_at + GRACE_PERIOD_DURATION == slot_start_ist.astimezone(timezone.utc)
+    assert result == confirmed_at + timedelta(hours=2) == slot_start_ist.astimezone(timezone.utc)
 
 
 def test_half_day_unit_with_no_start_time_gets_flat_grace_period_no_null_bug():
@@ -68,10 +68,10 @@ def test_half_day_unit_with_no_start_time_gets_flat_grace_period_no_null_bug():
     confirmed_at = datetime(2027, 7, 1, 10, 0, tzinfo=timezone.utc)
     unit = _unit(None, None, on=date(2027, 9, 1))
 
-    result = compute_grace_period_ends_at(confirmed_at, unit)
+    result = compute_grace_period_ends_at(confirmed_at, unit, 2)
 
     assert result is not None
-    assert result == confirmed_at + GRACE_PERIOD_DURATION
+    assert result == confirmed_at + timedelta(hours=2)
 
 
 def test_result_is_always_timezone_aware():
@@ -83,8 +83,8 @@ def test_result_is_always_timezone_aware():
     property one layer up, in the Python function itself."""
     confirmed_at = datetime(2027, 7, 1, 10, 0, tzinfo=timezone.utc)
 
-    hourly_result = compute_grace_period_ends_at(confirmed_at, _unit(time(11, 0), time(12, 0)))
-    fullday_result = compute_grace_period_ends_at(confirmed_at, _unit(None, None))
+    hourly_result = compute_grace_period_ends_at(confirmed_at, _unit(time(11, 0), time(12, 0), 2))
+    fullday_result = compute_grace_period_ends_at(confirmed_at, _unit(None, None), 2)
 
     assert hourly_result.tzinfo is not None
     assert fullday_result.tzinfo is not None
