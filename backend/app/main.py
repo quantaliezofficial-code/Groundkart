@@ -6,7 +6,7 @@ from datetime import date as date_
 from datetime import datetime, time, timezone
 from decimal import Decimal
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, func, select
@@ -72,6 +72,8 @@ from app.schemas.catalog import (
     VenueRejectRequest,
     VenueResponse,
     VenueUpdateRequest,
+    BlockCreateRequest,
+    BlockResponse,
 )
 from app.schemas.notifications import NotificationResponse, UnreadCountResponse
 from app.schemas.owner_verification import OwnerVerificationResponse, RejectVerificationRequest
@@ -118,15 +120,30 @@ async def _hold_sweep_loop() -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _outbox_sweep_loop() -> None:
+    interval_seconds = 5  # polling interval
+    while True:
+        try:
+            async with SessionLocal() as session:
+                from app.modules.core.outbox_worker import process_outbox_events
+                await process_outbox_events(session)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("outbox sweep pass failed — will retry next interval")
+        await asyncio.sleep(interval_seconds)
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     sweep_task = asyncio.create_task(_hold_sweep_loop())
+    outbox_task = asyncio.create_task(_outbox_sweep_loop())
     try:
         yield
     finally:
         sweep_task.cancel()
+        outbox_task.cancel()
         try:
-            await sweep_task
+            await asyncio.gather(sweep_task, outbox_task, return_exceptions=True)
         except asyncio.CancelledError:
             pass
 
@@ -249,39 +266,55 @@ async def logout_route(
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth")
 
 
+from app.modules.core.idempotency import idempotency
+from app.db import get_idem_db
+
 @app.post("/api/v1/bookings", response_model=BookingCreateResponse, status_code=201)
 async def create_booking_route(
+    request: Request,
     body: BookingCreateRequest,
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession = Depends(get_idem_db),
     current_user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> BookingCreateResponse:
-    """07_design.md §3.3/§5.1. A valid Authorization header makes this an
+    """07_design.md A 3.3/A 5.1. A valid Authorization header makes this an
     account booking — customer_id comes from the verified token, never
     from the request body (so a customer can't pass someone else's
     customer_id). No header, or an invalid/expired one, falls through to
     guest checkout — booking-as-guest must never require login per
-    01_PRD.md §5, so an invalid token degrades to anonymous rather than
+    01_PRD.md A 5, so an invalid token degrades to anonymous rather than
     401ing a route that's supposed to be open to guests."""
-    try:
-        booking, raw_token = await booking_service.create_booking(
-            session=db,
-            inventory_unit_id=body.inventory_unit_id,
-            customer_id=current_user.id if current_user else None,
-            guest_name=body.guest_name,
-            guest_email=body.guest_email,
-            guest_phone=body.guest_phone,
-        )
-    except HTTPException:
-        raise
-    from app.modules.core.config_service import get_system_config
-    config = await get_system_config(db)
+    idem_key = request.headers.get("Idempotency-Key")
+    async with idempotency(idem_db, idem_key, current_user.id if current_user else None, "create_booking", body) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            return BookingCreateResponse(**idem.response_body)
 
-    return BookingCreateResponse(
-        booking_id=booking.id,
-        amount=booking.amount,
-        expires_in=config.booking_hold_duration_minutes * 60,
-        manage_token=raw_token,
-    )
+        try:
+            booking, raw_token = await booking_service.create_booking(
+                session=db,
+                inventory_unit_id=body.inventory_unit_id,
+                customer_id=current_user.id if current_user else None,
+                guest_name=body.guest_name,
+                guest_email=body.guest_email,
+                guest_phone=body.guest_phone,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(db)
+
+        resp = BookingCreateResponse(
+            booking_id=booking.id,
+            amount=booking.amount,
+            expires_in=config.booking_hold_duration_minutes * 60,
+            manage_token=raw_token,
+        )
+        await idem.complete(resp, 201)
+        return resp
 
 
 @app.get("/api/v1/bookings/manage/{token}", response_model=BookingDetail)
@@ -523,7 +556,7 @@ async def mark_notification_read_route(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> NotificationResponse:
-    notification = await notifications_service.mark_notification_read(db, current_user.id, notification_id)
+    notification = await notifications_service.mark_notification_read(db, current_user, notification_id)
     return NotificationResponse.model_validate(notification)
 
 
@@ -541,7 +574,7 @@ async def delete_notification_route(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    await notifications_service.delete_notification(db, current_user.id, notification_id)
+    await notifications_service.delete_notification(db, current_user, notification_id)
     return Response(status_code=204)
 
 
@@ -771,7 +804,7 @@ async def update_venue_route(
     venue = await catalog_service.update_venue(
         session=db,
         venue_id=venue_id,
-        owner_id=current_user.id,
+        viewer=current_user,
         changes=body.model_dump(exclude_unset=True),
     )
     # Re-fetch with images/amenities loaded — update_venue's own query
@@ -793,7 +826,7 @@ async def upload_venue_image_route(
     await catalog_service.upload_venue_image(
         session=db,
         venue_id=venue_id,
-        owner_id=current_user.id,
+        viewer=current_user,
         content=content,
         content_type=image.content_type,
         storage=storage,
@@ -817,7 +850,7 @@ async def add_inventory_units_route(
     units = await catalog_service.add_inventory_units(
         session=db,
         venue_id=venue_id,
-        owner_id=current_user.id,
+        viewer=current_user,
         units=[u.model_dump() for u in body.units],
     )
     return [InventoryUnitResponse.model_validate(u) for u in units]
@@ -840,6 +873,44 @@ async def list_inventory_units_route(
         db, venue_id, current_user, date_from=date_from, date_to=date_to,
     )
     return [InventoryUnitResponse.model_validate(u) for u in units]
+
+@app.post("/api/v1/venues/{venue_id}/blocks", response_model=BlockResponse, status_code=201)
+async def create_venue_block(
+    venue_id: uuid.UUID,
+    payload: BlockCreateRequest,
+    viewer: CurrentUser = Depends(require_role("owner", "admin")),
+    db: AsyncSession = Depends(get_db)
+):
+    block = await catalog_service.create_block(
+        session=db,
+        venue_id=venue_id,
+        viewer=viewer,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        reason=payload.reason,
+        inventory_unit_id=payload.inventory_unit_id,
+    )
+    return BlockResponse.model_validate(block)
+
+@app.get("/api/v1/venues/{venue_id}/blocks", response_model=list[BlockResponse])
+async def list_venue_blocks(
+    venue_id: uuid.UUID,
+    viewer: CurrentUser = Depends(require_role("owner", "admin")),
+    db: AsyncSession = Depends(get_db)
+):
+    blocks = await catalog_service.list_blocks(db, venue_id, viewer)
+    return [BlockResponse.model_validate(b) for b in blocks]
+
+@app.patch("/api/v1/venues/{venue_id}/blocks/{block_id}", response_model=BlockResponse)
+async def update_venue_block(
+    venue_id: uuid.UUID,
+    block_id: uuid.UUID,
+    status: str = Body(..., embed=True),
+    viewer: CurrentUser = Depends(require_role("owner", "admin")),
+    db: AsyncSession = Depends(get_db)
+):
+    block = await catalog_service.update_block(db, venue_id, block_id, viewer, status)
+    return BlockResponse.model_validate(block)
 
 
 @app.post("/api/v1/admin/venues/{venue_id}/approve", response_model=VenueResponse)

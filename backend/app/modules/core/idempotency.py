@@ -85,7 +85,9 @@ class IdempotencyManager:
             return
             
         if isinstance(response_body, BaseModel):
-            body_dict = response_body.model_dump(mode="json")
+            body_dict = json.loads(response_body.model_dump_json())
+        elif hasattr(response_body, "model_dump_json"):
+            body_dict = json.loads(response_body.model_dump_json())
         else:
             body_dict = response_body
             

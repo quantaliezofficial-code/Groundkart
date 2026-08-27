@@ -125,7 +125,7 @@ async def test_cancellation_events(db_session, seeded_owner_with_unit, seeded_cu
     await cancel_booking_as_customer(
         session=db_session,
         booking_id=booking_id,
-        viewer=CurrentUser(id=customer_id, role="customer"),
+        customer_id=customer_id,
         reason="Test cancel"
     )
     

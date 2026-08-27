@@ -90,3 +90,13 @@ IdempotencyStatus = PGEnum(
     "in_progress", "completed", "error",
     name="idempotency_status", create_type=False,
 )
+
+BlockStatus = PGEnum(
+    "active", "inactive",
+    name="block_status", create_type=False,
+)
+
+OutboxEventStatus = PGEnum(
+    "pending", "processed", "failed",
+    name="outbox_event_status", create_type=False,
+)

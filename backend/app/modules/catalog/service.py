@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import date as date_, time
+from datetime import date as date_, time, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -420,6 +420,10 @@ async def list_inventory_units_for_venue(
     unavailable is a display concern, not a reason to hide it from the
     response entirely.
     """
+    from zoneinfo import ZoneInfo
+    VENUE_LOCAL_TZ = ZoneInfo("Asia/Kolkata")
+    from app.models.core import Block
+    
     await get_venue(session, venue_id, viewer)  # raises 404 under the same rule if not visible
 
     query = select(InventoryUnit).where(InventoryUnit.venue_id == venue_id)
@@ -430,7 +434,36 @@ async def list_inventory_units_for_venue(
     query = query.order_by(InventoryUnit.date, InventoryUnit.start_time)
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    units = list(result.scalars().all())
+
+    if not units:
+        return units
+
+    # Fetch active blocks
+    blocks_result = await session.execute(
+        select(Block).where(Block.venue_id == venue_id, Block.status == "active")
+    )
+    blocks = list(blocks_result.scalars().all())
+
+    if not blocks:
+        return units
+
+    for unit in units:
+        if unit.status == "available":
+            unit_start_naive = datetime.combine(unit.date, unit.start_time) if unit.start_time else datetime.combine(unit.date, time.min)
+            unit_end_naive = datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date, time.max)
+            unit_start = unit_start_naive.replace(tzinfo=VENUE_LOCAL_TZ)
+            unit_end = unit_end_naive.replace(tzinfo=VENUE_LOCAL_TZ)
+            
+            for block in blocks:
+                if block.inventory_unit_id and block.inventory_unit_id != unit.id:
+                    continue
+                # strict overlap: max(start) < min(end)
+                if max(unit_start, block.start_time) < min(unit_end, block.end_time):
+                    unit.status = "blocked"
+                    break
+
+    return units
 
 
 async def _load_pending_for_review(session: AsyncSession, venue_id: uuid.UUID) -> Venue:
@@ -496,3 +529,124 @@ async def reject_venue(
             )
         )
     return venue
+
+async def create_block(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    start_time: datetime,
+    end_time: datetime,
+    reason: str,
+    inventory_unit_id: uuid.UUID | None = None,
+):
+    from app.models.core import Block, Booking, InventoryUnit
+    from zoneinfo import ZoneInfo
+    VENUE_LOCAL_TZ = ZoneInfo("Asia/Kolkata")
+    
+    if start_time >= end_time:
+        raise HTTPException(status_code=422, detail="start_time must be before end_time")
+        
+    async with session.begin():
+        # Manual inline get_venue to avoid autobegin conflict
+        result = await session.execute(select(Venue).where(Venue.id == venue_id, Venue.deleted_at.is_(None)))
+        venue = result.scalar_one_or_none()
+        if venue is None:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        query = select(Booking).join(InventoryUnit).where(
+            Booking.venue_id == venue_id,
+            Booking.status.in_(["confirmed", "pending_payment"]),
+        )
+        if inventory_unit_id:
+            query = query.where(Booking.inventory_unit_id == inventory_unit_id)
+            
+        result = await session.execute(query.options(selectinload(Booking.inventory_unit)))
+        bookings = result.scalars().all()
+        
+        for b in bookings:
+            unit = b.inventory_unit
+            unit_start_naive = datetime.combine(unit.date, unit.start_time) if unit.start_time else datetime.combine(unit.date, time.min)
+            unit_end_naive = datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date, time.max)
+            unit_start = unit_start_naive.replace(tzinfo=VENUE_LOCAL_TZ)
+            unit_end = unit_end_naive.replace(tzinfo=VENUE_LOCAL_TZ)
+            
+            if max(unit_start, start_time) < min(unit_end, end_time):
+                raise HTTPException(status_code=409, detail="Cannot create block: overlaps with an existing booking")
+
+        block = Block(
+            venue_id=venue_id,
+            inventory_unit_id=inventory_unit_id,
+            start_time=start_time,
+            end_time=end_time,
+            reason=reason,
+            status="active",
+            created_by=viewer.id,
+        )
+        session.add(block)
+        
+        session.add(
+            AuditLog(
+                actor_id=viewer.id,
+                action="venue.blocked",
+                entity_type="venue",
+                entity_id=venue_id,
+                extra_data={"start_time": start_time.isoformat(), "end_time": end_time.isoformat(), "reason": reason}
+            )
+        )
+        await session.flush()
+        
+    return block
+
+async def list_blocks(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+):
+    from app.models.core import Block
+    await get_venue(session, venue_id, viewer)
+    
+    result = await session.execute(
+        select(Block).where(Block.venue_id == venue_id).order_by(Block.start_time)
+    )
+    return list(result.scalars().all())
+
+async def update_block(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    block_id: uuid.UUID,
+    viewer: CurrentUser,
+    status: str,
+):
+    from app.models.core import Block
+    
+    async with session.begin():
+        result = await session.execute(select(Venue).where(Venue.id == venue_id, Venue.deleted_at.is_(None)))
+        venue = result.scalar_one_or_none()
+        if venue is None:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        result = await session.execute(
+            select(Block).where(Block.id == block_id, Block.venue_id == venue_id).with_for_update()
+        )
+        block = result.scalar_one_or_none()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+            
+        if block.status != status:
+            block.status = status
+            session.add(
+                AuditLog(
+                    actor_id=viewer.id,
+                    action="block.status_changed",
+                    entity_type="block",
+                    entity_id=block.id,
+                    extra_data={"status": status}
+                )
+            )
+        await session.flush()
+        
+    return block

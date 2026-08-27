@@ -6,6 +6,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # Always the test database — never the dev one. Set before importing
 # anything that reads app.config.settings at import time.
@@ -19,7 +20,7 @@ TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
 @pytest_asyncio.fixture
 async def test_engine():
-    engine = create_async_engine(TEST_DATABASE_URL)
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     yield engine
     await engine.dispose()
 
@@ -43,10 +44,10 @@ async def clean_tables(test_engine):
         async with test_engine.begin() as conn:
             await conn.execute(
                 text(
-                    "TRUNCATE venue_images, venue_amenities, amenities, audit_logs, "
+                    "TRUNCATE blocks, venue_images, venue_amenities, amenities, audit_logs, "
                     "owner_verifications, refresh_tokens, login_rate_limits, payments, "
                     "payouts, bookings, booking_events, notifications, reviews, "
-                    "inventory_units, venues, users, idempotency_keys CASCADE"
+                    "inventory_units, venues, users, idempotency_keys, outbox_events CASCADE"
                 )
             )
 

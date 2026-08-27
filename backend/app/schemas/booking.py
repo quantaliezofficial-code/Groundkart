@@ -80,6 +80,9 @@ class BookingDetail(BaseModel):
     slot_end_time: time | None
     status: str
     amount: Decimal
+    base_amount: Decimal | None = None
+    currency: str = "INR"
+    pricing_snapshot: dict | None = None
     confirmed_at: datetime | None
     grace_period_ends_at: datetime | None
     cancellation_reason: str | None

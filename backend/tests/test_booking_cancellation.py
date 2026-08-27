@@ -300,7 +300,7 @@ async def test_owner_flagged_booking_cannot_then_be_cancelled_by_customer(
     from app.modules.auth.dependencies import CurrentUser
     async with test_session_factory() as session:
         viewer = CurrentUser(id=owner_id, role="owner")
-        await flag_booking(session, booking_id, viewer, reason="Double-booked by mistake")
+        await flag_booking(session, booking_id, owner_id, reason="Double-booked by mistake")
 
     token = create_access_token(seeded_customer, "customer")
     resp = await client.post(

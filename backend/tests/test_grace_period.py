@@ -83,7 +83,7 @@ def test_result_is_always_timezone_aware():
     property one layer up, in the Python function itself."""
     confirmed_at = datetime(2027, 7, 1, 10, 0, tzinfo=timezone.utc)
 
-    hourly_result = compute_grace_period_ends_at(confirmed_at, _unit(time(11, 0), time(12, 0), 2))
+    hourly_result = compute_grace_period_ends_at(confirmed_at, _unit(time(11, 0), time(12, 0)), 2)
     fullday_result = compute_grace_period_ends_at(confirmed_at, _unit(None, None), 2)
 
     assert hourly_result.tzinfo is not None

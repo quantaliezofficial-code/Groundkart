@@ -54,6 +54,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.config import settings
 from app.models.core import AuditLog, Booking, InventoryUnit, Payment, Venue
+from app.modules.core.outbox import create_outbox_event
 # Decision Point B-3 (flag this for explicit sign-off — see
 # PHASE_B_SUMMARY.md): inventory_units.date/start_time are
 # DATE/TIME WITHOUT TIME ZONE columns (06_Backend_Schema.md §3) — naive
@@ -136,6 +137,9 @@ async def create_booking(
             raw_manage_token = secrets.token_urlsafe(32)
             manage_token_hash = hash_manage_token(raw_manage_token)
 
+        from app.modules.booking.pricing_service import calculate_booking_price
+        price_snapshot = calculate_booking_price(unit)
+
         booking = Booking(
             customer_id=customer_id,
             guest_name=guest_name,
@@ -147,9 +151,13 @@ async def create_booking(
             venue_category=unit.venue.category,
             inventory_unit_id=unit.id,
             status="pending_payment",
-            amount=unit.price,
+            amount=price_snapshot.final_amount,
+            base_amount=price_snapshot.base_amount,
+            currency=price_snapshot.currency,
+            pricing_snapshot=price_snapshot.to_dict(),
         )
         session.add(booking)
+        await session.flush()
         
         # Notify owner
         from app.modules.notifications.service import notify
@@ -161,6 +169,18 @@ async def create_booking(
             entity_id=booking.id,
         )
         session.add(notification)
+        
+        await create_outbox_event(
+            session,
+            event_type="booking_created",
+            aggregate_type="booking",
+            aggregate_id=booking.id,
+            payload={
+                "venue_id": str(unit.venue_id),
+                "customer_id": str(customer_id) if customer_id else None,
+                "amount": str(price_snapshot.final_amount)
+            }
+        )
 
     return booking, raw_manage_token  # transaction committed — lock released
 
@@ -375,6 +395,17 @@ async def confirm_booking_by_admin(
                 entity_id=booking.id,
                 extra_data={"amount": str(amount), "method": method, "reference": reference},
             )
+        )
+
+        await create_outbox_event(
+            session,
+            event_type="booking_payment_confirmed",
+            aggregate_type="booking",
+            aggregate_id=booking.id,
+            payload={
+                "amount": str(amount),
+                "method": method
+            }
         )
 
     return booking
@@ -687,11 +718,10 @@ async def cancel_booking_by_manage_token(
     Point B-2) — possessing the correct raw token is sufficient, no other
     identity check needed or possible for a guest.
     """
-    from app.modules.core.config_service import get_system_config
-    config = await get_system_config(session)
-
     token_hash = hash_manage_token(raw_token)
     async with session.begin():
+        from app.modules.core.config_service import get_system_config
+        config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
             .options(joinedload(Booking.inventory_unit), selectinload(Booking.payments))

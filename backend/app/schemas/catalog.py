@@ -149,3 +149,23 @@ class ReviewResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+class BlockCreateRequest(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    reason: str = Field(min_length=1, max_length=1000)
+    inventory_unit_id: uuid.UUID | None = None
+
+class BlockResponse(BaseModel):
+    id: uuid.UUID
+    venue_id: uuid.UUID
+    inventory_unit_id: uuid.UUID | None
+    start_time: datetime
+    end_time: datetime
+    reason: str
+    status: str
+    created_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

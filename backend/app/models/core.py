@@ -39,6 +39,8 @@ from app.models.base import (
     VenueCategory,
     VenueStatus,
     IdempotencyStatus,
+    BlockStatus,
+    OutboxEventStatus,
 )
 
 
@@ -256,6 +258,9 @@ class Booking(Base):
 
     status: Mapped[str] = mapped_column(BookingStatus, default="pending_payment")
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    base_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(default="INR", server_default="INR")
+    pricing_snapshot: Mapped[dict | None] = mapped_column(JSONB)
 
     # Decision #1 (instant confirm + owner grace window, resolved
     # 2026-06-24): set together when payment succeeds. See
@@ -728,3 +733,59 @@ class SystemConfiguration(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+
+class Block(Base):
+    """Temporary or maintenance blocking windows for a venue or specific inventory unit."""
+    __tablename__ = "blocks"
+    __table_args__ = (
+        CheckConstraint("start_time < end_time", name="chk_block_time_range"),
+        Index(
+            "idx_blocks_venue_active",
+            "venue_id",
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
+    inventory_unit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("inventory_units.id", ondelete="CASCADE"))
+    start_time: Mapped[datetime]
+    end_time: Mapped[datetime]
+    reason: Mapped[str]
+    status: Mapped[str] = mapped_column(BlockStatus, default="active")
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship()
+    inventory_unit: Mapped["InventoryUnit | None"] = relationship()
+    creator: Mapped["User"] = relationship()
+
+class OutboxEvent(Base):
+    """Transactional outbox pattern for reliable side-effects"""
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        Index(
+            "idx_outbox_events_pending",
+            "status",
+            "next_attempt_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    event_type: Mapped[str]
+    aggregate_type: Mapped[str]
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    payload: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(OutboxEventStatus, default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    processed_at: Mapped[datetime | None]
+    error_details: Mapped[str | None]
