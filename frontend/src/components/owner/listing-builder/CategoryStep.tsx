@@ -26,7 +26,7 @@ export default function CategoryStep({ data, update }: Props) {
   });
 
   const filteredVenueTypes = venueTypes.filter((vt: any) => vt.category_id === data.category_id);
-  const filteredUseCases = useCases.filter((uc: any) => uc.category_id === data.category_id);
+  const filteredUseCases = useCases;
 
   // When category changes, reset venue type and use cases
   const handleCategorySelect = (categoryId: string) => {

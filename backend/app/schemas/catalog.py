@@ -53,7 +53,6 @@ class VenueTypeResponse(BaseModel):
 
 class UseCaseResponse(BaseModel):
     id: uuid.UUID
-    category_id: uuid.UUID
     name: str
     model_config = {"from_attributes": True}
 
