@@ -39,31 +39,22 @@ class VenueUpdateRequest(BaseModel):
 
 
 
+
 class CategoryResponse(BaseModel):
     id: uuid.UUID
     name: str
-    slug: str
-    description: str | None
-    is_active: bool
-    sort_order: int
     model_config = {"from_attributes": True}
 
 class VenueTypeResponse(BaseModel):
     id: uuid.UUID
     category_id: uuid.UUID
     name: str
-    slug: str
-    description: str | None
-    is_active: bool
     model_config = {"from_attributes": True}
 
 class UseCaseResponse(BaseModel):
     id: uuid.UUID
     category_id: uuid.UUID
     name: str
-    slug: str
-    description: str | None
-    is_active: bool
     model_config = {"from_attributes": True}
 
 class VenueMediaResponse(BaseModel):
