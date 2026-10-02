@@ -35,7 +35,7 @@ export default function ReviewPay({
   const [copied, setCopied] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
 
-  const estimatedPrice = venue.pricePerHour;
+  const estimatedPrice = venue.basePrice;
   const canSubmit = Boolean(selectedSlotId) && (currentUser || (guestName.trim() && guestEmail.trim()));
 
   const lineRef = useRef<HTMLDivElement>(null);
@@ -54,7 +54,7 @@ export default function ReviewPay({
     if (result) {
       const tl = gsap.timeline();
       if (successCircleRef.current) {
-        tl.from(successCircleRef.current, { scale: 0, ease: 'elastic.out(1, 0.5)', duration: 0.8 }, 0);
+        tl.from(successCircleRef.current, { scale: 0.95, opacity: 0, ease: 'elastic.out(1, 0.5)', duration: 0.8 }, 0);
       }
       if (checkIconRef.current) {
         tl.fromTo(checkIconRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.3);
@@ -92,7 +92,7 @@ export default function ReviewPay({
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="max-w-md mx-auto bg-chalk border border-ink/5 rounded-2xl p-8 text-center shadow-2xl my-12 transition-all"
+        className="max-w-md mx-auto bg-chalk border border-ink/5 rounded-2xl p-8 text-center shadow-2xl my-12 transition ease-out"
       >
         <div ref={successCircleRef} className="w-20 h-20 rounded-full bg-pitch text-chalk flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch/20">
           <Check ref={checkIconRef} size={40} className="stroke-[3]" />
@@ -145,7 +145,7 @@ export default function ReviewPay({
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
-                className="shrink-0 flex items-center justify-center gap-1.5 rounded-lg bg-pitch text-chalk px-3 py-2 text-xs font-semibold hover:bg-[#15462E] transition-colors"
+                className="shrink-0 flex items-center justify-center gap-1.5 rounded-lg bg-pitch text-chalk px-3 py-2 text-xs font-semibold hover:bg-[#15462E] transition-colors ease-out"
               >
                 <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
               </button>
@@ -156,7 +156,7 @@ export default function ReviewPay({
         <div ref={(el) => { if(el) successCardsRef.current[3] = el; }}>
           <button
             onClick={onNavigateHome}
-            className="w-full bg-transparent hover:bg-mist text-pitch border border-pitch/20 font-sans text-sm font-semibold py-3.5 rounded-xl transition-all cursor-pointer"
+            className="w-full bg-transparent hover:bg-mist text-pitch border border-pitch/20 font-sans text-sm font-semibold py-3.5 rounded-xl transition cursor-pointer ease-out"
           >
             Back to Home
           </button>
@@ -249,7 +249,7 @@ export default function ReviewPay({
                       required
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
-                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition-all"
+                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition ease-out"
                       placeholder="Full name"
                     />
                   </motion.div>
@@ -269,7 +269,7 @@ export default function ReviewPay({
                       required
                       value={guestEmail}
                       onChange={(e) => setGuestEmail(e.target.value)}
-                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition-all"
+                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition ease-out"
                       placeholder="Email address"
                     />
                   </motion.div>
@@ -288,7 +288,7 @@ export default function ReviewPay({
                       type="tel"
                       value={guestPhone}
                       onChange={(e) => setGuestPhone(e.target.value)}
-                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition-all"
+                      className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition ease-out"
                       placeholder="Phone number (optional)"
                     />
                   </motion.div>
@@ -325,7 +325,7 @@ export default function ReviewPay({
             <div className="border border-ink/10 rounded-xl overflow-hidden">
               <button 
                 onClick={() => setShowPolicy(!showPolicy)}
-                className="w-full flex items-center justify-between p-4 bg-mist hover:bg-ink/5 transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between p-4 bg-mist hover:bg-ink/5 transition-colors cursor-pointer ease-out"
               >
                 <span className="font-sans text-sm font-bold text-ink">Cancellation Policy</span>
                 {showPolicy ? <ChevronUp size={18} className="text-ink" /> : <ChevronDown size={18} className="text-ink" />}
@@ -418,7 +418,7 @@ export default function ReviewPay({
                 whileTap={!isProcessing && canSubmit ? { scale: 0.97 } : {}}
                 onClick={handleConfirm}
                 disabled={isProcessing || !canSubmit}
-                className="w-full bg-gradient-to-r from-pitch to-[#15462E] hover:shadow-lg hover:shadow-pitch/20 text-chalk font-sans text-sm font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full bg-gradient-to-r from-pitch to-[#15462E] hover:shadow-lg hover:shadow-pitch/20 text-chalk font-sans text-sm font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ease-out"
               >
                 {isProcessing ? (
                   <span>Requesting…</span>

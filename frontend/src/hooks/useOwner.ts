@@ -81,7 +81,7 @@ export function useUploadVenueImage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ venueId, file, isCover }: { venueId: string; file: File; isCover: boolean }) =>
-      ownerApi.uploadVenueImage(venueId, file, isCover),
+      ownerApi.uploadVenueMedia(venueId, file, isCover),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['owner-venues'] }),
   });
 }
@@ -97,14 +97,7 @@ export function useAddInventoryUnits() {
   });
 }
 
-export function useFlagBooking() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
-      ownerApi.flagBooking(bookingId, reason),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['owner-bookings'] }),
-  });
-}
+
 
 export function useSubmitVerification() {
   const queryClient = useQueryClient();

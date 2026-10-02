@@ -56,3 +56,10 @@ export function useCreateReview() {
     },
   });
 }
+
+export function useHomepage() {
+  return useQuery({
+    queryKey: ["homepage"],
+    queryFn: () => venuesApi.getHomepage(),
+  });
+}

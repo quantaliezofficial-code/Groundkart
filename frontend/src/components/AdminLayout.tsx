@@ -1,28 +1,10 @@
-import {
-  Activity,
-  AlertCircle,
-  Ban,
-  CalendarClock,
-  CheckCircle2,
-  FileText,
-  Globe,
-  Layers,
-  LayoutDashboard,
-  Loader2,
-  Mail,
-  MessageSquare,
-  Minus,
-  Plus as PlusIcon,
-  PlayCircle,
-  RefreshCw,
-  Search,
-  Server,
-  ShieldCheck,
-  Users as UsersIcon,
-  Wallet,
-  Wifi,
-  XCircle,
-} from 'lucide-react';
+import { useAdminNotifications, useAdminSendNotification } from '../hooks/useNotifications';
+import GroundSelect from './ui/GroundSelect';
+import { Activity, AlertCircle, Ban, CalendarClock, CheckCircle2, FileText, Globe, Layers, LayoutDashboard, Loader2, Mail, MessageSquare, Minus, PlusasPlusIcon, PlayCircle, RefreshCw, Search, Server, ShieldCheck, UsersasUsersIcon, Wallet, Wifi, XCircle, ArrowRight, Star, Bell, Clock } from 'lucide-react';
+import { DashboardShell, MetricCard, StatusBadge as DashboardStatusBadge, EmptyState } from './dashboard';
+import { Home } from 'lucide-react';
+import HomepageTab from './dashboard/HomepageTab';
+import { AdminVenueDrawer } from './dashboard/AdminVenueDrawer';
 import { useEffect, useMemo, useState } from 'react';
 import {
   useAdminBookings,
@@ -70,7 +52,7 @@ import type {
 } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'Overview' | 'Analytics' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews';
+type Tab = 'Overview' | 'Analytics' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews' | 'Support' | 'Notifications' | 'Homepage';
 
 function money(value: string | number): string {
   const n = typeof value === 'string' ? Number(value) : value;
@@ -112,8 +94,8 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-export default function AdminLayout() {
-  const { user } = useAuth();
+export default function AdminLayout({ onReturnToSite }: { onReturnToSite?: () => void }) {
+  const { user, logout } = useAuth();
 
   if (!user) {
     return (
@@ -133,10 +115,11 @@ export default function AdminLayout() {
     );
   }
 
-  return <AdminDashboard />;
+  return <AdminDashboard onReturnToSite={onReturnToSite} />;
 }
 
-function AdminDashboard() {
+function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem('initialAdminTab') as Tab;
     if (saved) {
@@ -170,41 +153,57 @@ function AdminDashboard() {
   });
   const pendingCount = pendingVenues.length + pendingVerifications.length;
 
-  const tabs: { id: Tab; label: string; icon: any; badge?: number }[] = [
-    { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'Analytics', label: 'Analytics', icon: Activity },
-    { id: 'ApprovalQueue', label: 'Approval Queue', icon: ShieldCheck, badge: pendingCount || undefined },
-    { id: 'Venues', label: 'Venues', icon: Layers },
-    { id: 'Users', label: 'Users', icon: UsersIcon },
-    { id: 'Bookings', label: 'Bookings', icon: CalendarClock },
-    { id: 'Payouts', label: 'Payouts', icon: Wallet },
-    { id: 'Reviews', label: 'Reviews', icon: MessageSquare },
+  const navItems = [
+    { id: 'Overview', label: 'Overview', icon: LayoutDashboard, onClick: () => setActiveTab('Overview') },
+    { id: 'Analytics', label: 'Analytics', icon: Activity, onClick: () => setActiveTab('Analytics') },
+    { id: 'ApprovalQueue', label: 'Approval Queue', icon: ShieldCheck, badge: pendingCount || undefined, onClick: () => setActiveTab('ApprovalQueue') },
+    { id: 'Venues', label: 'Venues', icon: Layers, onClick: () => setActiveTab('Venues') },
+    { id: 'Users', label: 'Users', icon: UsersIcon, onClick: () => setActiveTab('Users') },
+    { id: 'Bookings', label: 'Bookings', icon: CalendarClock, onClick: () => setActiveTab('Bookings') },
+    { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => setActiveTab('Payouts') },
+    { id: 'Reviews', label: 'Reviews', icon: MessageSquare, onClick: () => setActiveTab('Reviews') },
+    { id: 'Support', label: 'Support Tickets', icon: AlertCircle, onClick: () => setActiveTab('Support') },
+    { id: 'Notifications', label: 'Notification Center', icon: Bell, onClick: () => setActiveTab('Notifications') },
+    { id: 'Homepage', label: 'Homepage Curation', icon: Globe, onClick: () => setActiveTab('Homepage') },
   ];
 
+  const titles: Record<Tab, { title: string; desc: string }> = {
+    Overview: { title: 'Admin Dashboard', desc: 'Operations overview and platform health' },
+    Analytics: { title: 'Analytics', desc: 'Platform growth and revenue' },
+    ApprovalQueue: { title: 'Approval Queue', desc: 'Pending verifications and venue reviews' },
+    Venues: { title: 'Venues', desc: 'Manage marketplace venues' },
+    Users: { title: 'Users', desc: 'Manage customers and owners' },
+    Bookings: { title: 'Bookings', desc: 'Monitor and confirm bookings' },
+    Payouts: { title: 'Payouts', desc: 'Manage owner payouts' },
+    Reviews: { title: 'Reviews', desc: 'Monitor platform reviews' },
+    Support: { title: 'Support Tickets', desc: 'Customer and owner support' },
+    Homepage: { title: 'Homepage Curation', desc: 'Manage the public homepage layout and featured venues' },
+    Notifications: { title: 'Notifications', desc: 'Manage notifications' },
+  };
+
+  const currentInfo = titles[activeTab];
+
   return (
-    <div className="space-y-6">
-      <h1 className="font-display text-4xl font-bold tracking-tight text-pitch sm:text-5xl">Admin Dashboard</h1>
-
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 rounded-full px-4 py-2 font-sans text-sm transition ${
-              activeTab === tab.id
-                ? 'bg-primary-container text-on-primary-container'
-                : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-            }`}
-          >
-            <tab.icon size={15} />
-            {tab.label}
-            {tab.badge ? <span className="rounded-full bg-clay px-1.5 py-0.5 font-sans text-xs text-chalk">{tab.badge}</span> : null}
-          </button>
-        ))}
-      </div>
-
+    <DashboardShell
+      title={currentInfo.title}
+      description={currentInfo.desc}
+      navItems={navItems}
+      activeNavId={activeTab}
+      userName={user?.name}
+      userRole={user?.role}
+        onLogout={logout}
+        onReturnToSite={onReturnToSite}
+    >
       {activeTab === 'Overview' && (
-        <OverviewTab overview={overview} overviewLoading={overviewLoading} auditLog={auditLog} auditLoading={auditLoading} />
+        <OverviewTab 
+          overview={overview} 
+          overviewLoading={overviewLoading} 
+          auditLog={auditLog} 
+          auditLoading={auditLoading} 
+          pendingVenuesCount={pendingVenues.length}
+          pendingVerificationsCount={pendingVerifications.length}
+          onNavigate={(tab) => setActiveTab(tab)}
+        />
       )}
       {activeTab === 'Analytics' && (
         <AnalyticsTab overview={overview} auditLog={auditLog} />
@@ -221,10 +220,11 @@ function AdminDashboard() {
       {activeTab === 'Bookings' && <BookingsTab />}
       {activeTab === 'Payouts' && <PayoutsTab />}
       {activeTab === 'Reviews' && <ReviewsTab />}
-    </div>
+      {activeTab === 'Support' && <SupportTab />}
+      {activeTab === 'Notifications' && <AdminNotifications />}
+    </DashboardShell>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Overview — GET /api/v1/admin/overview + GET /api/v1/admin/audit-log.
 // The mock version of this tab also had "Total Users"/"Dispute Rate" cards
@@ -240,16 +240,22 @@ function OverviewTab({
   overviewLoading,
   auditLog,
   auditLoading,
+  pendingVenuesCount,
+  pendingVerificationsCount,
+  onNavigate,
 }: {
   overview: ApiPlatformOverview | undefined;
   overviewLoading: boolean;
   auditLog: ApiAuditLogEntry[];
   auditLoading: boolean;
+  pendingVenuesCount: number;
+  pendingVerificationsCount: number;
+  onNavigate: (tab: Tab) => void;
 }) {
   if (overviewLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
           <div key={i} className="shimmer h-24 rounded-2xl" />
         ))}
       </div>
@@ -260,60 +266,135 @@ function OverviewTab({
     return <p className="font-sans text-on-surface-variant">Couldn't load the platform overview.</p>;
   }
 
-  const cards = [
-    { label: 'GMV', value: money(overview.gmv) },
-    { label: 'Commission collected', value: money(overview.total_commission_collected) },
-    { label: 'Active venues', value: overview.active_venues.toLocaleString('en-IN') },
-    { label: 'Total bookings', value: overview.total_bookings.toLocaleString('en-IN') },
-    { label: 'Pending venue approvals', value: overview.pending_venue_approvals.toLocaleString('en-IN') },
-    { label: 'Pending owner verifications', value: overview.pending_owner_verifications.toLocaleString('en-IN') },
-  ];
-
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-2xl bg-surface-container p-5">
-            <p className="font-sans text-xs uppercase tracking-wide text-on-surface-variant">{c.label}</p>
-            <p className="mt-1 font-display text-2xl text-ink">{c.value}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <MetricCard label="GMV (This Month)" value={money(overview.gmv)} />
+        <MetricCard label="Commission Collected" value={money(overview.total_commission_collected)} />
+        <MetricCard label="Active Venues" value={overview.active_venues.toLocaleString('en-IN')} />
+        <MetricCard label="Total Bookings" value={overview.total_bookings.toLocaleString('en-IN')} />
       </div>
 
-      <div>
-        <p className="mb-2 font-sans text-xs uppercase tracking-wide text-on-surface-variant">Bookings by status</p>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(overview.bookings_by_status).map(([status, count]) => (
-            <span key={status} className="rounded-full bg-surface-container px-3 py-1 font-sans text-sm text-ink">
-              {status.replace('_', ' ')}: {count}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-2 font-sans text-xs uppercase tracking-wide text-on-surface-variant">Recent audit log</p>
-        {auditLoading ? (
-          <div className="shimmer h-48 rounded-2xl" />
-        ) : auditLog.length === 0 ? (
-          <p className="font-sans text-sm text-on-surface-variant">No audit log entries yet.</p>
-        ) : (
-          <div className="divide-y divide-ink/10 rounded-2xl bg-surface-container">
-            {auditLog.map((entry) => (
-              <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <div>
-                  <p className="font-sans text-sm text-ink">{entry.action}</p>
-                  <p className="font-sans text-xs text-on-surface-variant">
-                    {entry.entity_type}
-                    {entry.entity_id ? ` · ${entry.entity_id.slice(0, 8)}` : ''}
-                    {entry.actor_id ? ` · by ${entry.actor_id.slice(0, 8)}` : ' · system'}
-                  </p>
+      <div className="grid gap-6 md:grid-cols-[1fr_350px]">
+        {/* Main Content Area */}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 bg-mist/50">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Requires your attention</h3>
+            </div>
+            <div className="divide-y divide-surface-container">
+              {pendingVenuesCount > 0 && (
+                <div className="flex items-center justify-between p-5 hover:bg-surface-container/30 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-marigold/10 text-marigold">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <p className="font-sans text-sm font-medium text-ink">Pending Venue Approvals</p>
+                      <p className="font-sans text-xs text-on-surface-variant">{pendingVenuesCount} venue(s) waiting for review</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => onNavigate('ApprovalQueue')}
+                    className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs font-medium text-ink hover:bg-surface-container-high transition-colors"
+                  >
+                    Review
+                  </button>
                 </div>
-                <span className="font-sans text-xs text-on-surface-variant">{dateTimeStr(entry.created_at)}</span>
-              </div>
-            ))}
+              )}
+              {pendingVerificationsCount > 0 && (
+                <div className="flex items-center justify-between p-5 hover:bg-surface-container/30 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-info/10 text-info">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <p className="font-sans text-sm font-medium text-ink">Pending Owner Verifications</p>
+                      <p className="font-sans text-xs text-on-surface-variant">{pendingVerificationsCount} owner(s) waiting for verification</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => onNavigate('ApprovalQueue')}
+                    className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs font-medium text-ink hover:bg-surface-container-high transition-colors"
+                  >
+                    Review
+                  </button>
+                </div>
+              )}
+              {pendingVenuesCount === 0 && pendingVerificationsCount === 0 && (
+                <div className="p-8 text-center">
+                  <p className="font-sans text-sm text-on-surface-variant">You're all caught up!</p>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 bg-mist/50">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Recent Activity</h3>
+            </div>
+            {auditLoading ? (
+              <div className="shimmer h-48 w-full" />
+            ) : auditLog.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="font-sans text-sm text-on-surface-variant">No audit log entries yet.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-surface-container">
+                {auditLog.slice(0, 10).map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-4 p-4 hover:bg-surface-container/30 transition-colors">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
+                      <Activity size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-sans text-sm font-medium text-ink truncate">{entry.action}</p>
+                      <p className="font-sans text-xs text-on-surface-variant truncate mt-0.5">
+                        {entry.entity_type} {entry.entity_id ? `· ${entry.entity_id.slice(0, 8)}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-sans text-xs text-on-surface-variant">{dateTimeStr(entry.created_at)}</span>
+                      <p className="font-sans text-[10px] text-on-surface-variant/70 mt-1 capitalize">{entry.actor_id ? `by ${entry.actor_id.slice(0, 8)}` : 'System'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar Actions Area */}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+            <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Quick Actions</h3>
+            <div className="grid gap-3">
+              <button onClick={() => onNavigate('Venues')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container/10 text-primary-container">
+                  <Layers size={16} />
+                </div>
+                <span className="font-sans text-sm font-medium text-ink">Manage Venues</span>
+              </button>
+              <button onClick={() => onNavigate('Users')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
+                  <UsersIcon size={16} />
+                </div>
+                <span className="font-sans text-sm font-medium text-ink">Manage Users</span>
+              </button>
+              <button onClick={() => onNavigate('Bookings')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-marigold/10 text-marigold">
+                  <CalendarClock size={16} />
+                </div>
+                <span className="font-sans text-sm font-medium text-ink">View Bookings</span>
+              </button>
+              <button onClick={() => onNavigate('Payouts')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-clay/10 text-clay">
+                  <Wallet size={16} />
+                </div>
+                <span className="font-sans text-sm font-medium text-ink">Review Payouts</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -412,7 +493,7 @@ function ApprovalQueueTab({
               onClick={() => setSelectedKey(key)}
               className={`w-full rounded-xl px-4 py-3 text-left transition ${
                 isSelected ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-ink hover:bg-surface-container-high'
-              }`}
+              } ease-out`}
             >
               <p className="font-sans text-sm font-medium">{title}</p>
               <p className="font-sans text-xs opacity-80">{subtitle}</p>
@@ -551,6 +632,7 @@ function LoadMoreButton({ onClick, isLoading, hasMore }: { onClick: () => void; 
 function VenuesTab() {
   const [statusFilter, setStatusFilter] = useState<'all' | ApiAdminVenueView['status']>('all');
   const [query, setQuery] = useState('');
+  const [drawerVenue, setDrawerVenue] = useState<any>(null);
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminVenuesPaginated(
     statusFilter === 'all' ? {} : { status: statusFilter }
@@ -615,17 +697,18 @@ function VenuesTab() {
           placeholder="Search by venue or owner name..."
           className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
         />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink"
-        >
-          <option value="all">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="pending_review">Pending review</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
+        <GroundSelect
+            value={statusFilter}
+            onValueChange={() => {}}
+            options={[
+              { value: "all", label: "All statuses" },
+              { value: "draft", label: "Draft" },
+              { value: "pending_review", label: "Pending review" },
+              { value: "active", label: "Active" },
+              { value: "suspended", label: "Suspended" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
       </div>
 
       {actionError && <ErrorBanner message={actionError} />}
@@ -686,6 +769,8 @@ function VenuesTab() {
         </div>
       )}
 
+
+      {drawerVenue && <AdminVenueDrawer venue={drawerVenue} onClose={() => setDrawerVenue(null)} />}
       <LoadMoreButton onClick={() => fetchNextPage()} isLoading={isFetchingNextPage} hasMore={Boolean(hasNextPage)} />
     </div>
   );
@@ -749,16 +834,17 @@ function UsersTab() {
           placeholder="Search by name or email..."
           className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
         />
-        <select
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink"
-        >
-          <option value="all">All roles</option>
-          <option value="customer">Customer</option>
-          <option value="owner">Owner</option>
-          <option value="admin">Admin</option>
-        </select>
+        <GroundSelect
+            value={roleFilter}
+            onValueChange={() => {}}
+            options={[
+              { value: "all", label: "All roles" },
+              { value: "customer", label: "Customer" },
+              { value: "owner", label: "Owner" },
+              { value: "admin", label: "Admin" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
       </div>
 
       {actionError && <ErrorBanner message={actionError} />}
@@ -946,17 +1032,12 @@ function BookingRow({ booking }: { booking: ApiAdminBookingView }) {
               placeholder="Amount received"
               className="rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
             />
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as typeof method)}
-              className="rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink"
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
+            <GroundSelect
+            value={method}
+            onValueChange={() => {}}
+            options={PAYMENT_METHODS.map((m) => ({ value: m, label: `${m.replace('_', ' ')}` }))}
+            triggerClassName="w-full sm:w-[200px]"
+          />
           </div>
           <input
             value={reference}
@@ -1071,19 +1152,20 @@ function BookingsTab() {
       <BookingLookup />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink"
-        >
-          <option value="pending_payment">Pending payment</option>
-          <option value="all">All statuses</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="expired">Expired</option>
-          <option value="refunded">Refunded</option>
-        </select>
+        <GroundSelect
+            value={statusFilter}
+            onValueChange={() => {}}
+            options={[
+              { value: "pending_payment", label: "Pending payment" },
+              { value: "all", label: "All statuses" },
+              { value: "confirmed", label: "Confirmed" },
+              { value: "completed", label: "Completed" },
+              { value: "cancelled", label: "Cancelled" },
+              { value: "expired", label: "Expired" },
+              { value: "refunded", label: "Refunded" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
 
         <button
           onClick={handleSweepNow}
@@ -1175,15 +1257,16 @@ function PayoutsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink"
-        >
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="paid">Paid</option>
-        </select>
+        <GroundSelect
+            value={statusFilter}
+            onValueChange={() => {}}
+            options={[
+              { value: "all", label: "All statuses" },
+              { value: "pending", label: "Pending" },
+              { value: "paid", label: "Paid" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
         <button
           onClick={() => setShowRunForm((v) => !v)}
           className="flex items-center gap-2 rounded-full bg-primary-container px-4 py-2 font-sans text-sm text-on-primary-container"
@@ -1196,18 +1279,12 @@ function PayoutsTab() {
 
       {showRunForm && (
         <div className="space-y-2 rounded-2xl bg-surface-container-high p-4">
-          <select
+          <GroundSelect
             value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)}
-            className="w-full rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink focus:outline-none"
-          >
-            <option value="">Select an owner…</option>
-            {owners.map((owner) => (
-              <option key={owner.id} value={owner.id}>
-                {owner.name} ({owner.email})
-              </option>
-            ))}
-          </select>
+            onValueChange={() => {}}
+            options={[{ value: "", label: "Select an owner…" }, ...owners.map((owner) => ({ value: owner.id, label: `${owner.name} (${owner.email})` }))]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
           <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
@@ -1244,7 +1321,7 @@ function PayoutsTab() {
                   {payout.owner_name} ({payout.owner_email})
                 </p>
                 <p className="flex flex-wrap items-center gap-2 font-sans text-sm text-ink">
-                  {payout.period_start} → {payout.period_end} · Net {money(payout.net_amount)} <StatusBadge status={payout.status} />
+                  {payout.period_start} <ArrowRight size={12} className="inline mx-1 text-on-surface-variant"/> {payout.period_end} · Net {money(payout.net_amount)} <StatusBadge status={payout.status} />
                 </p>
                 <p className="font-sans text-xs text-on-surface-variant">
                   Gross {money(payout.gross_amount)} · Commission {money(payout.commission_amount)}
@@ -1298,7 +1375,7 @@ function AnalyticsTab({
         <button
           onClick={handleCheckNow}
           disabled={isFetching}
-          className="flex items-center gap-2 rounded-full bg-surface-container-high px-4 py-2 font-sans text-sm text-ink hover:bg-surface-container-highest transition disabled:opacity-50"
+          className="flex items-center gap-2 rounded-full bg-surface-container-high px-4 py-2 font-sans text-sm text-ink hover:bg-surface-container-highest transition disabled:opacity-50 ease-out"
         >
           <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
           Check Now
@@ -1306,7 +1383,7 @@ function AnalyticsTab({
       </div>
       
       {/* Bento Grid Container */}
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-4 md:grid-rows-3 auto-rows-[minmax(180px,auto)] transition-all duration-300 ${isFetching ? 'opacity-50 animate-pulse pointer-events-none' : ''}`}>
+      <div className={`grid grid-cols-1 gap-4 md:grid-cols-4 md:grid-rows-3 auto-rows-[minmax(180px,auto)] transition duration-200 ${isFetching ? 'opacity-50 animate-pulse pointer-events-none' : ''} ease-out`}>
         
         {/* Component 1: System Status (Spans 2 cols, 1 row) */}
         <div className="md:col-span-2 rounded-3xl bg-surface-container p-6 border border-ink/5 flex flex-col justify-between relative overflow-hidden">
@@ -1372,7 +1449,7 @@ function AnalyticsTab({
           </div>
           <div className="flex-1 overflow-y-auto space-y-3 pr-2">
             {auditLog.slice(0, 7).map((log, i) => (
-              <div key={log.id} className="flex items-start justify-between p-3 rounded-2xl bg-surface-container/50 hover:bg-surface-container transition-colors">
+              <div key={log.id} className="flex items-start justify-between p-3 rounded-2xl bg-surface-container/50 hover:bg-surface-container transition-colors ease-out">
                 <div className="flex gap-3 items-center">
                   <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-xs uppercase">
                     {log.actor_id ? log.actor_id.substring(0, 2) : 'SY'}
@@ -1475,11 +1552,11 @@ function ReviewsTab() {
                 setVenueFilter(localVenueId.trim() || undefined);
               }
             }}
-            className="flex-grow sm:w-64 rounded-xl border border-ink/10 bg-surface-container px-3 py-2 font-sans text-sm text-ink outline-none transition focus:border-pitch focus:ring-1 focus:ring-pitch"
+            className="flex-grow sm:w-64 rounded-xl border border-ink/10 bg-surface-container px-3 py-2 font-sans text-sm text-ink outline-none transition focus:border-pitch focus:ring-1 focus:ring-pitch ease-out"
           />
           <button
             onClick={() => setVenueFilter(localVenueId.trim() || undefined)}
-            className="rounded-xl bg-pitch px-4 py-2 font-sans text-sm font-bold text-chalk transition hover:bg-pitch/90"
+            className="rounded-xl bg-pitch px-4 py-2 font-sans text-sm font-bold text-chalk transition hover:bg-pitch/90 ease-out"
           >
             Filter
           </button>
@@ -1501,11 +1578,15 @@ function ReviewsTab() {
             </thead>
             <tbody className="divide-y divide-ink/5">
               {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-on-surface-variant">
-                    <Loader2 size={24} className="mx-auto animate-spin" />
-                  </td>
-                </tr>
+                <>
+                  {[1, 2, 3].map(skeleton => (
+                    <tr key={skeleton} className="animate-pulse">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="h-10 bg-mist rounded-xl w-full" />
+                      </td>
+                    </tr>
+                  ))}
+                </>
               ) : data?.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-on-surface-variant">
@@ -1514,7 +1595,7 @@ function ReviewsTab() {
                 </tr>
               ) : (
                 data?.map((review) => (
-                  <tr key={review.id} className="transition-colors hover:bg-surface-container">
+                  <tr key={review.id} className="transition-colors hover:bg-surface-container ease-out">
                     <td className="px-6 py-4">
                       <p className="max-w-xs truncate font-medium text-ink" title={review.content}>
                         {review.content}
@@ -1522,7 +1603,7 @@ function ReviewsTab() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1 rounded-full bg-marigold/10 px-2 py-1 text-xs font-bold text-marigold-dark text-amber-600">
-                        ★ {review.rating}
+                        <Star size={14} className="inline fill-marigold text-marigold mr-1" /> {review.rating}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-on-surface-variant">
@@ -1546,7 +1627,7 @@ function ReviewsTab() {
                           }
                         }}
                         disabled={deleteReview.isPending}
-                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-clay hover:bg-clay/10 transition-colors disabled:opacity-50 cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-clay hover:bg-clay/10 transition-colors disabled:opacity-50 cursor-pointer ease-out"
                       >
                         <XCircle size={14} />
                         Delete
@@ -1564,7 +1645,7 @@ function ReviewsTab() {
         <button
           onClick={() => setPage(p => Math.max(1, p - 1))}
           disabled={page === 1 || isLoading}
-          className="rounded-xl border border-ink/10 px-4 py-2 font-sans text-sm font-semibold transition hover:bg-surface-container disabled:opacity-50 cursor-pointer"
+          className="rounded-xl border border-ink/10 px-4 py-2 font-sans text-sm font-semibold transition hover:bg-surface-container disabled:opacity-50 cursor-pointer ease-out"
         >
           Previous
         </button>
@@ -1572,11 +1653,413 @@ function ReviewsTab() {
         <button
           onClick={() => setPage(p => p + 1)}
           disabled={!hasMore || isLoading}
-          className="rounded-xl border border-ink/10 px-4 py-2 font-sans text-sm font-semibold transition hover:bg-surface-container disabled:opacity-50 cursor-pointer"
+          className="rounded-xl border border-ink/10 px-4 py-2 font-sans text-sm font-semibold transition hover:bg-surface-container disabled:opacity-50 cursor-pointer ease-out"
         >
           Next
         </button>
       </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Support Tickets — Added for Admin Support Management
+// ---------------------------------------------------------------------------
+import { useAdminTickets, useAdminUpdateTicket, useTicketDetail, useAddComment } from '../hooks/useSupport';
+import type { ApiSupportTicket, ApiTicketEvent } from '../lib/api/types';
+
+function SupportTab() {
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'in_review' | 'waiting_customer' | 'resolved' | 'closed'>('all');
+  const { data: tickets, isLoading } = useAdminTickets(statusFilter === 'all' ? {} : { status: statusFilter });
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+
+  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
+
+  return (
+    <div className="grid gap-6 md:grid-cols-[1fr_400px]">
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <GroundSelect
+            value={statusFilter}
+            onValueChange={() => {}}
+            options={[
+              { value: "all", label: "All statuses" },
+              { value: "open", label: "Open" },
+              { value: "in_review", label: "In Review" },
+              { value: "waiting_customer", label: "Waiting for Customer" },
+              { value: "resolved", label: "Resolved" },
+              { value: "closed", label: "Closed" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
+        </div>
+
+        {(!tickets || tickets.length === 0) ? (
+          <p className="font-sans text-sm text-on-surface-variant">No support tickets found.</p>
+        ) : (
+          <div className="grid gap-3">
+            {tickets.map((ticket: ApiSupportTicket) => (
+              <button
+                key={ticket.id}
+                onClick={() => setSelectedTicketId(ticket.id)}
+                className={`flex flex-col gap-2 rounded-2xl p-4 text-left transition ${
+                  selectedTicketId === ticket.id
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'bg-surface-container hover:bg-surface-container-high text-ink'
+                }`}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <span className="font-sans text-sm font-medium">{ticket.subject}</span>
+                  <StatusBadge status={ticket.status} />
+                </div>
+                <div className="flex gap-3 font-sans text-xs opacity-80">
+                  <span className="uppercase">{ticket.priority} priority</span>
+                  <span>·</span>
+                  <span>{dateTimeStr(ticket.created_at)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selectedTicketId ? (
+        <AdminTicketDetail ticketId={selectedTicketId} />
+      ) : (
+        <div className="rounded-2xl bg-surface-container p-10 text-center flex flex-col items-center justify-center">
+          <MessageSquare size={32} className="text-on-surface-variant opacity-50 mb-3" />
+          <p className="font-sans text-sm text-on-surface-variant">Select a ticket to view details</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminTicketDetail({ ticketId }: { ticketId: string }) {
+  const { data: ticket, isLoading } = useTicketDetail(ticketId);
+  const updateTicket = useAdminUpdateTicket();
+  const addComment = useAddComment(ticketId);
+  
+  const [commentText, setCommentText] = useState('');
+  const [isInternal, setIsInternal] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  if (isLoading || !ticket) return <div className="shimmer h-96 rounded-2xl" />;
+
+  const handleUpdateStatus = async (newStatus: string) => {
+    setActionError(null);
+    try {
+      await updateTicket.mutateAsync({ ticketId, body: { status: newStatus as any } });
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
+  };
+
+  const handleUpdatePriority = async (newPriority: string) => {
+    setActionError(null);
+    try {
+      await updateTicket.mutateAsync({ ticketId, body: { priority: newPriority as any } });
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!commentText.trim()) return;
+    setActionError(null);
+    try {
+      await addComment.mutateAsync({ comment: commentText, internal: isInternal });
+      setCommentText('');
+      setIsInternal(false);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
+  };
+
+  return (
+    <div className="flex h-[600px] flex-col rounded-2xl bg-surface-container">
+      <div className="border-b border-ink/10 p-4">
+        <h3 className="font-sans text-lg font-medium text-ink">{ticket.subject}</h3>
+        <p className="mt-1 font-sans text-xs text-on-surface-variant">
+          Ticket #{ticket.id.slice(0, 8)} · Created {dateTimeStr(ticket.created_at)}
+        </p>
+        
+        {actionError && <div className="mt-2"><ErrorBanner message={actionError} /></div>}
+
+        <div className="mt-4 flex gap-3">
+          <GroundSelect
+            value={ticket.status}
+            onValueChange={() => {}}
+            options={[
+              { value: "open", label: "Open" },
+              { value: "in_review", label: "In Review" },
+              { value: "waiting_customer", label: "Waiting for Customer" },
+              { value: "resolved", label: "Resolved" },
+              { value: "closed", label: "Closed" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
+
+          <GroundSelect
+            value={ticket.priority}
+            onValueChange={() => {}}
+            options={[
+              { value: "low", label: "Low Priority" },
+              { value: "medium", label: "Medium Priority" },
+              { value: "high", label: "High Priority" },
+              { value: "urgent", label: "Urgent" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {ticket.events?.map((event: ApiTicketEvent) => {
+          if (event.event_type !== 'comment' && event.event_type !== 'created') return null;
+          
+          return (
+            <div key={event.id} className={`rounded-xl p-3 ${event.internal ? 'bg-marigold/20' : 'bg-surface'}`}>
+              <div className="mb-1 flex justify-between font-sans text-xs">
+                <span className="font-medium text-ink">
+                  {event.actor_id === ticket.creator_id ? 'Customer' : 'Admin'}
+                  {event.internal && ' (Internal Note)'}
+                </span>
+                <span className="text-on-surface-variant">{dateTimeStr(event.created_at)}</span>
+              </div>
+              <p className="font-sans text-sm text-ink whitespace-pre-wrap">{event.comment}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-ink/10 p-4 bg-surface-container-low rounded-b-2xl">
+        <textarea
+          value={commentText}
+          onChange={(e) => setCommentText(e.target.value)}
+          placeholder="Type a reply..."
+          className="w-full resize-none rounded-xl bg-surface p-3 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
+          rows={3}
+        />
+        <div className="mt-3 flex items-center justify-between">
+          <label className="flex items-center gap-2 font-sans text-sm text-on-surface-variant cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isInternal} 
+              onChange={(e) => setIsInternal(e.target.checked)}
+              className="rounded text-pitch focus:ring-pitch"
+            />
+            Internal Note
+          </label>
+          <button
+            onClick={handleSendReply}
+            disabled={addComment.isPending || !commentText.trim()}
+            className="rounded-full bg-pitch px-5 py-2 font-sans text-sm text-chalk disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Admin Notifications Component ---
+function AdminNotifications() {
+  const [activeTab, setActiveTab] = useState<'send' | 'history'>('send');
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between border-b border-ink/10 pb-4">
+        <h2 className="font-sans text-xl font-semibold text-ink">Notification Center</h2>
+        <div className="flex gap-2 bg-surface-container rounded-lg p-1">
+          <button 
+            onClick={() => setActiveTab('send')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${activeTab === 'send' ? 'bg-white shadow text-ink' : 'text-on-surface-variant hover:text-ink'}`}
+          >
+            Send Notification
+          </button>
+          <button 
+            onClick={() => setActiveTab('history')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${activeTab === 'history' ? 'bg-white shadow text-ink' : 'text-on-surface-variant hover:text-ink'}`}
+          >
+            History
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'send' ? <AdminSendNotification /> : <AdminNotificationHistory />}
+    </div>
+  );
+}
+
+function AdminSendNotification() {
+  const [search, setSearch] = useState('');
+  const { data: users, isLoading } = useAdminUsers(
+    search.length >= 3 ? { search } : { limit: 10 }
+  );
+  const [selectedUser, setSelectedUser] = useState<ApiAdminUserView | null>(null);
+  
+  const [type, setType] = useState('general');
+  const [message, setMessage] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  
+  const sendNotification = useAdminSendNotification();
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser || !message.trim()) return;
+    
+    setError('');
+    setSuccess(false);
+    try {
+      await sendNotification.mutateAsync({
+        user_id: selectedUser.id,
+        type,
+        message,
+      });
+      setSuccess(true);
+      setMessage('');
+    } catch (err: any) {
+      setError(errorMessage(err));
+    }
+  };
+
+  return (
+    <div className="grid gap-6 md:grid-cols-[1fr_400px]">
+      <div className="space-y-4">
+        <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wider">Select Recipient</h3>
+        <input
+          type="text"
+          placeholder="Search by name, email, or phone..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-xl border border-ink/20 bg-transparent px-4 py-2 font-sans text-sm outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+        />
+        
+        <div className="rounded-xl border border-ink/10 overflow-hidden bg-surface">
+          {isLoading ? (
+            <div className="p-4 text-sm text-on-surface-variant">Searching...</div>
+          ) : users?.length === 0 ? (
+            <div className="p-4 text-sm text-on-surface-variant">No users found.</div>
+          ) : (
+            <div className="max-h-[400px] overflow-y-auto divide-y divide-ink/5">
+              {users?.map((user: ApiAdminUserView) => (
+                <button
+                  key={user.id}
+                  onClick={() => setSelectedUser(user)}
+                  className={`w-full text-left p-3 flex justify-between items-center transition ${selectedUser?.id === user.id ? 'bg-primary-container text-on-primary-container' : 'hover:bg-surface-container'}`}
+                >
+                  <div>
+                    <div className="font-medium text-sm">{user.name}</div>
+                    <div className="text-xs opacity-80">{user.email} • {user.phone || 'No phone'}</div>
+                  </div>
+                  <span className="text-xs font-semibold uppercase">{user.role}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wider">Compose</h3>
+        {selectedUser ? (
+          <form onSubmit={handleSend} className="space-y-4 rounded-2xl bg-surface-container p-5">
+            <div className="flex items-center gap-3 pb-4 border-b border-ink/10">
+              <div className="h-10 w-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
+                {selectedUser.name[0].toUpperCase()}
+              </div>
+              <div>
+                <div className="font-medium text-sm text-ink">{selectedUser.name}</div>
+                <div className="text-xs text-on-surface-variant">Recipient</div>
+              </div>
+            </div>
+            
+            {success && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">Notification sent successfully.</div>}
+            {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink">Type</label>
+              <GroundSelect
+                value={type}
+                onValueChange={setType}
+                options={[
+                  { value: 'general', label: 'General' },
+                  { value: 'booking', label: 'Booking' },
+                  { value: 'account', label: 'Account' },
+                  { value: 'support', label: 'Support' }
+                ]}
+                triggerClassName="w-full"
+              />
+            </div>
+            
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink">Message</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                className="w-full resize-none rounded-xl border border-ink/20 bg-transparent px-3 py-2 font-sans text-sm outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                placeholder="Message body..."
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={sendNotification.isPending}
+              className="w-full rounded-xl bg-emerald-600 py-2.5 font-sans text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {sendNotification.isPending ? 'Sending...' : 'Send Notification'}
+            </button>
+          </form>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-ink/20 p-8 text-center flex flex-col items-center justify-center text-on-surface-variant">
+            <Bell size={24} className="mb-2 opacity-50" />
+            <p className="text-sm">Select a user to compose a notification.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminNotificationHistory() {
+  const { data: notifications, isLoading } = useAdminNotifications();
+
+  if (isLoading) return <div className="shimmer h-64 rounded-2xl" />;
+  if (!notifications || notifications.length === 0) return <div className="p-8 text-center text-sm text-on-surface-variant">No notification history.</div>;
+
+  return (
+    <div className="rounded-2xl border border-ink/10 overflow-hidden bg-surface">
+      <table className="w-full text-left font-sans text-sm">
+        <thead className="bg-surface-container text-xs uppercase text-on-surface-variant">
+          <tr>
+            <th className="px-4 py-3 font-medium">Type</th>
+            <th className="px-4 py-3 font-medium">Message</th>
+            <th className="px-4 py-3 font-medium">Created</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink/5">
+          {notifications.map((n: any) => (
+            <tr key={n.id} className="hover:bg-surface-container/50">
+              <td className="px-4 py-3 whitespace-nowrap"><span className="rounded bg-ink/5 px-2 py-0.5 text-xs font-semibold uppercase">{n.type}</span></td>
+              <td className="px-4 py-3 max-w-xs truncate">{n.message}</td>
+              <td className="px-4 py-3 whitespace-nowrap text-on-surface-variant">{dateTimeStr(n.created_at)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                {n.read_at ? (
+                  <span className="text-emerald-600 font-medium text-xs flex items-center gap-1"><CheckCircle2 size={14}/> Read</span>
+                ) : (
+                  <span className="text-amber-600 font-medium text-xs flex items-center gap-1"><Clock size={14}/> Unread</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

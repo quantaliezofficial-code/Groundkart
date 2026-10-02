@@ -1,3 +1,4 @@
+import GroundSelect from './ui/GroundSelect';
 import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Star, Trash2, X } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -58,13 +59,13 @@ function StepIndicator({ current, total, labels }: { current: number; total: num
         <React.Fragment key={i}>
           <div className="flex flex-col items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-mono transition-all ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-mono transition ${
                 i < current
                   ? 'bg-pitch text-chalk'
                   : i === current
                     ? 'bg-marigold text-ink'
                     : 'bg-mist text-on-surface-variant border border-ink/10'
-              }`}
+              } ease-out`}
             >
               {i < current ? <CheckCircle2 size={14} /> : i + 1}
             </div>
@@ -73,7 +74,7 @@ function StepIndicator({ current, total, labels }: { current: number; total: num
             </span>
           </div>
           {i < total - 1 && (
-            <div className={`h-px w-8 mx-1 mt-[-12px] transition-all ${i < current ? 'bg-pitch' : 'bg-ink/10'}`} />
+            <div className={`h-px w-8 mx-1 mt-[-12px] transition ${i < current ? 'bg-pitch' : 'bg-ink/10'} ease-out`} />
           )}
         </React.Fragment>
       ))}
@@ -137,7 +138,7 @@ export default function OwnerVenueModal({ venue, onClose }: OwnerVenueModalProps
 
   // Aggressively clear error and "just saved" banner whenever the modal
   // transitions from create-wizard mode to edit mode (i.e. the moment
-  // savedVenue goes from null → a real venue). Without this, a stale
+  // savedVenue goes from null -> a real venue). Without this, a stale
   // basicsError from a previously failed attempt or a React Strict Mode
   // double-fire can survive the transition and show as a false error on the
   // freshly-rendered edit form.
@@ -146,7 +147,7 @@ export default function OwnerVenueModal({ venue, onClose }: OwnerVenueModalProps
     const prev = prevSavedVenueRef.current;
     prevSavedVenueRef.current = savedVenue;
     if (prev === null && savedVenue !== null) {
-      // Just transitioned create → edit: wipe any stale error / success banner.
+      // Just transitioned create -> edit: wipe any stale error / success banner.
       setBasicsError(null);
       setJustSaved(true); // show the success banner on the new edit form
     }
@@ -213,7 +214,7 @@ export default function OwnerVenueModal({ venue, onClose }: OwnerVenueModalProps
           <h2 className="font-display text-2xl text-pitch font-semibold">
             {isEditMode ? 'Manage Venue' : 'List a New Venue'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-mist rounded-full transition-colors cursor-pointer" aria-label="Close">
+          <button onClick={onClose} className="p-2 hover:bg-mist rounded-full transition-colors cursor-pointer ease-out" aria-label="Close">
             <X size={20} className="text-ink" />
           </button>
         </div>
@@ -336,7 +337,7 @@ export default function OwnerVenueModal({ venue, onClose }: OwnerVenueModalProps
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-pitch transition-colors cursor-pointer"
+                    className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-pitch transition-colors cursor-pointer ease-out"
                   >
                     <ChevronLeft size={16} /> Back to Location
                   </button>
@@ -380,7 +381,7 @@ function WizardNavBar({
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-pitch transition-colors cursor-pointer"
+          className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-pitch transition-colors cursor-pointer ease-out"
         >
           <ChevronLeft size={16} /> Back
         </button>
@@ -390,7 +391,7 @@ function WizardNavBar({
           type="button"
           onClick={onNext}
           disabled={!canNext}
-          className="flex items-center gap-1 px-5 py-2.5 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1 px-5 py-2.5 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition active:scale-[0.97] cursor-pointer disabled:opacity-50 ease-out"
         >
           Next <ChevronRight size={16} />
           <span className="text-chalk/60 text-xs ml-1">{step + 1}/{total}</span>
@@ -432,28 +433,21 @@ function BasicsStep({
       </label>
       <label className="block">
         <span className="text-xs font-semibold text-on-surface-variant">Category *</span>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-ink/10 bg-mist px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-marigold"
-        >
-          {CATEGORY_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+        <GroundSelect
+            value={category}
+            onValueChange={() => {}}
+            options={CATEGORY_OPTIONS.map((o) => ({ value: o.value, label: `${o.label}` }))}
+            triggerClassName="w-full sm:w-[200px]"
+          />
       </label>
       <label className="block">
         <span className="text-xs font-semibold text-on-surface-variant">Pricing unit *</span>
-        <select
-          value={unitType}
-          onChange={(e) => setUnitType(e.target.value as UnitType)}
-          disabled={Boolean(savedVenue)}
-          className="mt-1 w-full rounded-lg border border-ink/10 bg-mist px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-marigold disabled:opacity-60"
-        >
-          {UNIT_TYPE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+        <GroundSelect
+            value={unitType}
+            onValueChange={() => {}}
+            options={UNIT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: `${o.label}` }))}
+            triggerClassName="w-full sm:w-[200px]"
+          />
         {savedVenue && (
           <span className="text-[11px] text-ink/40">Locked after creation — existing slots depend on it.</span>
         )}
@@ -576,11 +570,11 @@ function AmenitiesStep({
           {presetAmenities.map((amenity) => (
             <label
               key={amenity}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-all text-sm font-sans select-none ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition text-sm font-sans select-none ${
                 checkedAmenities.has(amenity)
                   ? 'bg-pitch/5 border-pitch/30 text-pitch'
                   : 'border-ink/10 bg-mist text-on-surface-variant hover:border-pitch/20'
-              }`}
+              } ease-out`}
             >
               <input
                 type="checkbox"
@@ -657,7 +651,7 @@ function SubmitBar({
       <button
         type="submit"
         disabled={saving}
-        className="w-full sm:w-auto px-6 py-2.5 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
+        className="w-full sm:w-auto px-6 py-2.5 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition active:scale-[0.97] cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2 ease-out"
       >
         {saving && <Loader2 size={15} className="animate-spin" />}
         {savedVenue ? 'Save changes' : 'Create venue'}
@@ -703,7 +697,7 @@ function PhotosSection({ venue, onVenueUpdated }: { venue: ApiVenue; onVenueUpda
             )}
           </div>
         ))}
-        <label className="aspect-square rounded-lg border-2 border-dashed border-ink/20 flex flex-col items-center justify-center gap-1 text-ink/40 hover:border-pitch hover:text-pitch transition-colors cursor-pointer">
+        <label className="aspect-square rounded-lg border-2 border-dashed border-ink/20 flex flex-col items-center justify-center gap-1 text-ink/40 hover:border-pitch hover:text-pitch transition-colors cursor-pointer ease-out">
           {uploadImage.isPending ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
           <span className="text-[10px] font-semibold text-center px-1">
             {venue.images.length === 0 ? 'Add cover photo' : 'Add photo'}
@@ -832,7 +826,7 @@ function InventorySection({ venue }: { venue: ApiVenue }) {
           <button
             type="submit"
             disabled={addUnits.isPending}
-            className="ml-auto px-4 py-2 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-xs font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-60 flex items-center gap-2"
+            className="ml-auto px-4 py-2 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-xs font-bold transition active:scale-[0.97] cursor-pointer disabled:opacity-60 flex items-center gap-2 ease-out"
           >
             {addUnits.isPending && <Loader2 size={13} className="animate-spin" />}
             Add to calendar

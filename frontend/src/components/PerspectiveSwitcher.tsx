@@ -13,11 +13,11 @@ export default function PerspectiveSwitcher({ activeRole, setActiveRole }: Persp
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-6 left-6 z-50 bg-[#141A16] text-[#F3FAF4] border border-[#EFFF00]/30 shadow-2xl rounded-full p-3 flex items-center gap-2 hover:bg-pitch active:scale-95 transition-all cursor-pointer group"
+        className="fixed bottom-6 left-6 z-50 bg-[#141A16] text-[#F3FAF4] border border-[#EFFF00]/30 shadow-2xl rounded-full p-3 flex items-center gap-2 hover:bg-pitch active:scale-[0.97] transition cursor-pointer group ease-out"
         title="Show Perspective Switcher"
         id="perspective-restore-btn"
       >
-        <Layers size={18} className="text-[#EFFF00] group-hover:rotate-12 transition-transform" />
+        <Layers size={18} className="text-[#EFFF00] group-hover:rotate-12 transition-transform ease-out" />
         <span className="text-[11px] font-mono font-bold tracking-wider pr-1">Role: {activeRole}</span>
         <Eye size={14} className="text-chalk/40 group-hover:text-chalk/80" />
       </button>
@@ -38,7 +38,7 @@ export default function PerspectiveSwitcher({ activeRole, setActiveRole }: Persp
           <span className="text-on-surface-variant text-[9px] font-mono font-semibold uppercase tracking-wider opacity-60">TEST FLIGHT</span>
           <button
             onClick={() => setIsMinimized(true)}
-            className="p-1 hover:bg-chalk/10 rounded text-chalk/45 hover:text-chalk cursor-pointer transition-colors"
+            className="p-1 hover:bg-chalk/10 rounded text-chalk/45 hover:text-chalk cursor-pointer transition-colors ease-out"
             title="Minimize to Corner"
             id="perspective-minimize-btn"
           >
@@ -50,33 +50,33 @@ export default function PerspectiveSwitcher({ activeRole, setActiveRole }: Persp
       <div className="grid grid-cols-3 gap-1.5">
         <button
           onClick={() => setActiveRole('client')}
-          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer text-center ${
+          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition cursor-pointer text-center ${
             activeRole === 'client'
               ? 'bg-pitch text-[#F3FAF4] ring-1 ring-[#EFFF00] font-extrabold'
               : 'bg-chalk/5 hover:bg-chalk/10 text-chalk/60'
-          }`}
+          } ease-out`}
           id="perspective-role-client"
         >
           Client
         </button>
         <button
           onClick={() => setActiveRole('owner')}
-          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer text-center ${
+          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition cursor-pointer text-center ${
             activeRole === 'owner'
               ? 'bg-[#EFFF00] text-[#141A16] font-extrabold shadow-sm'
               : 'bg-chalk/5 hover:bg-chalk/10 text-chalk/60'
-          }`}
+          } ease-out`}
           id="perspective-role-owner"
         >
           Owner
         </button>
         <button
           onClick={() => setActiveRole('admin')}
-          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer text-center ${
+          className={`py-2 px-1 text-[11px] font-mono font-bold rounded-lg uppercase tracking-wider transition cursor-pointer text-center ${
             activeRole === 'admin'
               ? 'bg-clay text-chalk font-extrabold'
               : 'bg-chalk/5 hover:bg-chalk/10 text-chalk/60'
-          }`}
+          } ease-out`}
           id="perspective-role-admin"
         >
           Admin

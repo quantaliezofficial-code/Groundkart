@@ -38,12 +38,38 @@ class VenueUpdateRequest(BaseModel):
     amenity_names: list[str] | None = None
 
 
+
+class CategoryResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    description: str | None
+    is_active: bool
+    sort_order: int
+    model_config = {"from_attributes": True}
+
+class VenueTypeResponse(BaseModel):
+    id: uuid.UUID
+    category_id: uuid.UUID
+    name: str
+    slug: str
+    description: str | None
+    is_active: bool
+    model_config = {"from_attributes": True}
+
+class UseCaseResponse(BaseModel):
+    id: uuid.UUID
+    category_id: uuid.UUID
+    name: str
+    slug: str
+    description: str | None
+    is_active: bool
+    model_config = {"from_attributes": True}
+
 class VenueMediaResponse(BaseModel):
     id: uuid.UUID
     url: str
     is_cover: bool
-    media_type: str
-    thumbnail_url: str | None
     sort_order: int
 
     model_config = {"from_attributes": True}

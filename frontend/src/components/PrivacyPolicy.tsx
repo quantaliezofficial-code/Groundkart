@@ -4,8 +4,8 @@ export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-white">
       <Helmet>
-        <title>Privacy Policy — GroundBooking</title>
-        <meta name="description" content="GroundBooking Privacy Policy — how we collect, use, and protect your data." />
+        <title>Privacy Policy — GroundKart</title>
+        <meta name="description" content="GroundKart Privacy Policy — how we collect, use, and protect your data." />
       </Helmet>
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Privacy Policy</h1>
@@ -28,12 +28,12 @@ export default function PrivacyPolicy() {
 
         <section className="mb-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-3">4. Data retention</h2>
-          <p className="text-gray-600 leading-relaxed">Account data is retained while your account is active. Booking records are retained for accounting and dispute purposes. To request deletion of your data, contact us at support@groundbooking.in.</p>
+          <p className="text-gray-600 leading-relaxed">Account data is retained while your account is active. Booking records are retained for accounting and dispute purposes. To request deletion of your data, contact us at support@groundkart.in.</p>
         </section>
 
         <section className="mb-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-3">5. Contact</h2>
-          <p className="text-gray-600 leading-relaxed">Questions about this policy? Email <a href="mailto:support@groundbooking.in" className="text-green-600 underline">support@groundbooking.in</a>.</p>
+          <p className="text-gray-600 leading-relaxed">Questions about this policy? Email <a href="mailto:support@groundkart.in" className="text-green-600 underline">support@groundkart.in</a>.</p>
         </section>
       </div>
     </div>

@@ -7,10 +7,10 @@
   --font-display: "Fraunces", serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  --color-pitch: #1C5E3F;
-  --color-marigold: #F2A33B;
-  --color-ink: #1F2421;
-  --color-mist: #F4F6F3;
+  --color-pitch: #06281D;
+  --color-marigold: #F4B544;
+  --color-ink: #0B3D2E;
+  --color-mist: #F7F7F2;
   --color-chalk: #FFFFFF;
   --color-clay: #C0492E;
   --color-info: #3A6EA5;
@@ -21,9 +21,9 @@
   --color-surface-container-high: #e5e9e4;
   --color-surface-container-highest: #dfe4df;
   --color-on-surface-variant: #404942;
-  --color-primary-container: #1c5e3f;
+  --color-primary-container: #145A3E;
   --color-on-primary-container: #93d5ae;
-  --color-background-mist: #F4F6F3;
+  --color-background-mist: #F7F7F2;
 }
 
 @layer utilities {

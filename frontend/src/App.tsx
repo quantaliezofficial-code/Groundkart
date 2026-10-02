@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings } from 'lucide-react';
+import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings, Star, Zap, ShieldCheck, CircleDollarSign, Target } from 'lucide-react';
 import { motion, useInView } from 'framer-motion';
 import Header from './components/Header';
 
@@ -26,7 +26,7 @@ import AuthModal from './components/AuthModal';
 import { mockVenues } from './data';
 
 import { useAuth } from './lib/auth';
-import { useVenues, useVenue, useVenueSlots } from './hooks/useVenues';
+import { useVenues, useVenue, useVenueSlots, useHomepage } from './hooks/useVenues';
 import { useMyBookings, useCreateBooking, useCancelBooking } from './hooks/useBookings';
 
 // Lazy loading large sub-views to optimize first-load bundle size and protect the main thread
@@ -132,7 +132,7 @@ export default function App() {
   // purely as a dev convenience for jumping between roles without
   // separate logins, not as anything load-bearing for either dashboard.
   const [activeRole, setActiveRole] = useState<'client' | 'owner' | 'admin'>(() => {
-    const saved = localStorage.getItem('groundbooking_active_role');
+    const saved = localStorage.getItem('groundkart_active_role');
     return (saved as any) || 'client';
   });
 
@@ -147,7 +147,7 @@ export default function App() {
   // every unrelated re-render; they return to it via Header's own CTA.
   useEffect(() => {
     if (isAuthLoading) return;
-    if (!user) {
+    if (!user || user.role === 'customer') {
       setActiveRole('client');
       return;
     }
@@ -163,6 +163,7 @@ export default function App() {
   // *client-side* list the same way they did against mock data, just now
   // starting from a real list instead of a hardcoded one.
   const [searchParams, setSearchParams] = useState<{ city?: string; category?: string; available_on?: string }>({});
+  const { data: homepageData } = useHomepage();
   const { venues: realVenues, isLoading: isVenuesLoading } = useVenues(searchParams);
 
   // Real "My Bookings" — replaces the old localStorage-backed mock list
@@ -182,7 +183,8 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   // Navigation & Primary State
-  const [currentView, setCurrentView] = useState<'home' | 'search' | 'detail' | 'checkout' | 'my-bookings'>('home');
+  const [supportContext, setSupportContext] = useState<{ type: 'booking' | 'venue'; id: string } | null>(null);
+  const [currentView, setCurrentView] = useState<'home' | 'search' | 'detail' | 'checkout' | 'my-bookings' | 'support'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Hero inputs
@@ -220,7 +222,7 @@ export default function App() {
 
   // Synchronize state value writes to LocalStorage to retain cross-role testing inputs
   useEffect(() => {
-    localStorage.setItem('groundbooking_active_role', activeRole);
+    localStorage.setItem('groundkart_active_role', activeRole);
   }, [activeRole]);
 
   // Scroll to top on view changes to mirror SPA transitions
@@ -276,7 +278,7 @@ export default function App() {
   };
 
   // Navigating categories directly from index layout
-  const handleCategoryTileClick = (categoryName: 'Turfs' | 'Banquet Halls' | 'Courts' | 'Pools' | 'Farmhouses' | 'Corporate Hubs') => {
+  const handleCategoryTileClick = (categoryName: string) => {
     setIsLoading(true);
     setCategoryInput(categoryName);
     
@@ -341,7 +343,7 @@ export default function App() {
         const query = searchQuery.toLowerCase();
         const matchesName = venue.name.toLowerCase().includes(query);
         const matchesDistrict = venue.district.toLowerCase().includes(query);
-        const matchesSport = venue.sportType.toLowerCase().includes(query);
+        const matchesSport = venue.venueType.toLowerCase().includes(query);
         const matchesCategory = venue.category.toLowerCase().includes(query);
         if (!matchesName && !matchesDistrict && !matchesSport && !matchesCategory) {
           return false;
@@ -349,28 +351,23 @@ export default function App() {
       }
 
       // 2. Min Price matches
-      if (minPrice && venue.pricePerHour < parseFloat(minPrice)) {
+      if (minPrice && venue.basePrice < parseFloat(minPrice)) {
         return false;
       }
 
       // 3. Max Price matches
-      if (maxPrice && venue.pricePerHour > parseFloat(maxPrice)) {
+      if (maxPrice && venue.basePrice > parseFloat(maxPrice)) {
         return false;
       }
 
       // 4. Amenities check checks
-      if (selectedAmenities.freeParking && !venue.amenities.freeParking) {
-        return false;
-      }
-      if (selectedAmenities.floodlights && !venue.amenities.floodlights) {
-        return false;
-      }
-      if (selectedAmenities.airConditioning && !venue.amenities.airConditioning) {
-        return false;
-      }
-      if (selectedAmenities.lockerRooms && !venue.amenities.lockerRooms) {
-        return false;
-      }
+      const ams = venue.amenities || [];
+      const amLower = ams.map(a => a.toLowerCase());
+      
+      if (selectedAmenities.freeParking && !amLower.some(a => a.includes('park'))) return false;
+      if (selectedAmenities.floodlights && !amLower.some(a => a.includes('light'))) return false;
+      if (selectedAmenities.airConditioning && !amLower.some(a => a.includes('ac') || a.includes('air') || a.includes('climate'))) return false;
+      if (selectedAmenities.lockerRooms && !amLower.some(a => a.includes('room') || a.includes('bath'))) return false;
 
       // 5. Capacity filters
       if (selectedCapacity && venue.capacityGroup !== selectedCapacity) {
@@ -404,41 +401,55 @@ export default function App() {
 
   // Admin featured banner configuration or default to grand turf
   const featuredVenueObj = useMemo(() => {
+    if (homepageData?.featured?.[0]) {
+      const p = homepageData.featured[0];
+      const v = realVenues.find(v => v.id === p.id);
+      if (v) return { ...v, _badge: p.badge, _custom_title: p.custom_title, _custom_desc: p.custom_description };
+    }
     return realVenues[0] || mockVenues[0];
-  }, [realVenues]);
+  }, [realVenues, homepageData]);
 
   // State-aware trending list feed
   const trendingVenues = useMemo(() => {
+    if (homepageData?.trending && homepageData.trending.length > 0) {
+      return homepageData.trending.map(t => {
+        const v = realVenues.find(v => v.id === t.id);
+        return v ? { ...v, _badge: t.badge } : null;
+      }).filter(Boolean) as any[];
+    }
     return realVenues.filter((v) => v.id !== featuredVenueObj?.id).slice(0, 4);
-  }, [realVenues, featuredVenueObj]);
+  }, [realVenues, homepageData, featuredVenueObj]);
 
   return (
     <div className="bg-mist text-ink font-sans min-h-screen flex flex-col antialiased">
       
       {/* Global Transparent Sticky Header */}
-      <Header
-        currentView={activeRole !== 'client' ? 'home' : currentView}
-        onNavigate={(view) => {
-          setActiveRole('client');
-          if (view === 'search') {
-            setIsLoading(true);
-            setTimeout(() => setIsLoading(false), 500);
-          }
-          setCurrentView(view);
-        }}
-        searchQuery={searchQuery}
-        onSearchChange={(val) => {
-          setSearchQuery(val);
-          setActiveRole('client');
-          if (currentView !== 'search') {
-            setCurrentView('search');
-          }
-        }}
-        onListVenue={() => {
-          requireAuth(() => setActiveRole(user?.role === 'admin' ? 'admin' : 'owner'));
-        }}
-        onRequestAuth={() => setAuthModalMode('login')}
-      />
+      {activeRole === 'client' && (
+        <Header
+          currentView={currentView}
+          onNavigate={(view) => {
+            setActiveRole('client');
+            if (view === 'search') {
+              setIsLoading(true);
+              setTimeout(() => setIsLoading(false), 500);
+            }
+            setCurrentView(view);
+    if (view !== 'support') setSupportContext(null);
+          }}
+          searchQuery={searchQuery}
+          onSearchChange={(val) => {
+            setSearchQuery(val);
+            setActiveRole('client');
+            if (currentView !== 'search') {
+              setCurrentView('search');
+            }
+          }}
+          onListVenue={() => {
+            requireAuth(() => setActiveRole(user?.role === 'admin' ? 'admin' : 'owner'));
+          }}
+          onRequestAuth={() => setAuthModalMode('login')}
+        />
+      )}
 
       {authModalMode && (
         <AuthModal
@@ -467,13 +478,13 @@ export default function App() {
         {activeRole === 'owner' ? (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
             <React.Suspense fallback={<DashboardSkeleton />}>
-              <OwnerLayout />
+              <OwnerLayout onReturnToSite={() => setActiveRole('client')} />
             </React.Suspense>
           </div>
         ) : activeRole === 'admin' ? (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
             <React.Suspense fallback={<DashboardSkeleton />}>
-              <AdminLayout />
+              <AdminLayout onReturnToSite={() => setActiveRole('client')} />
             </React.Suspense>
           </div>
         ) : (
@@ -517,15 +528,15 @@ export default function App() {
                       </div>
                       <motion.button
                         whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileTap={{ scale: 0.97 }}
                         onClick={() => {
                           setCategoryInput('');
                           setCurrentView('search');
                         }}
-                        className="hidden md:flex items-center gap-1.5 font-sans text-sm font-bold text-pitch hover:text-marigold group cursor-pointer transition-colors px-4 py-2 rounded-full hover:bg-pitch/5"
+                        className="hidden md:flex items-center gap-1.5 font-sans text-sm font-bold text-pitch hover:text-marigold group cursor-pointer transition-colors px-4 py-2 rounded-full hover:bg-pitch/5 ease-out"
                       >
                         <span>View all trending</span>
-                        <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform ease-out" />
                       </motion.button>
                     </div>
                     </ScrollReveal>
@@ -536,9 +547,9 @@ export default function App() {
                         <ScrollReveal key={cat} delay={idx * 0.1}>
                           <motion.button
                             whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
+                            whileTap={{ scale: 0.97 }}
                             onClick={() => handleCategoryTileClick(cat)}
-                            className="shrink-0 bg-chalk/80 backdrop-blur-md border border-ink/5 text-pitch font-sans text-xs font-semibold px-5 py-2.5 rounded-full shadow-sm hover:bg-mist transition-all focus:ring-2 focus:ring-marigold focus:outline-none"
+                            className="shrink-0 bg-chalk/80 backdrop-blur-md border border-ink/5 text-pitch font-sans text-xs font-semibold px-5 py-2.5 rounded-full shadow-sm hover:bg-mist transition focus:ring-2 focus:ring-marigold focus:outline-none ease-out"
                           >
                             {cat}
                           </motion.button>
@@ -553,7 +564,7 @@ export default function App() {
                         setSelectedVenueId(featuredVenueObj.id);
                         setCurrentView('detail');
                       }}
-                      className="relative bg-[#143828] rounded-3xl overflow-hidden tracking-tight shadow-2xl shadow-pitch/10 border border-white/10 group cursor-pointer mb-10 animate-fade-in hover:-translate-y-1 transition-all duration-300"
+                      className="relative bg-[#143828] rounded-3xl overflow-hidden tracking-tight shadow-2xl shadow-pitch/10 border border-white/10 group cursor-pointer mb-10 animate-fade-in hover:-translate-y-1 transition duration-200 ease-out"
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-chalk/10 to-transparent pointer-events-none"></div>
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
@@ -561,7 +572,7 @@ export default function App() {
                           <img
                             src={featuredVenueObj.image}
                             alt={featuredVenueObj.name}
-                            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700"
+                            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700 ease-out"
                             referrerPolicy="no-referrer"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#143828] via-transparent to-transparent opacity-90"></div>
@@ -574,7 +585,7 @@ export default function App() {
                             <div className="flex justify-between items-center mb-3">
                               <span className="text-xs uppercase font-sans tracking-widest font-bold text-marigold truncate max-w-[200px]">{featuredVenueObj.district}</span>
                               <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full text-marigold text-xs font-bold font-sans backdrop-blur-sm">
-                                <span>★ {featuredVenueObj.rating}</span>
+                                <span className="flex items-center gap-1"><Star size={12} className="fill-marigold text-marigold" /> {featuredVenueObj.rating}</span>
                               </div>
                             </div>
                             <h3 className="font-display text-3xl sm:text-4xl text-chalk font-bold mb-3 drop-shadow-md">{featuredVenueObj.name}</h3>
@@ -585,9 +596,9 @@ export default function App() {
                           <div className="pt-5 border-t border-white/10 flex justify-between items-end">
                             <div>
                               <span className="font-sans text-[10px] text-chalk/60 uppercase font-semibold tracking-wider">Starting at</span>
-                              <p className="font-sans text-2xl text-marigold font-bold mt-0.5">₹{featuredVenueObj.pricePerHour}<span className="text-sm text-chalk/60 font-normal">/hr</span></p>
+                              <p className="font-sans text-2xl text-marigold font-bold mt-0.5">₹{featuredVenueObj.basePrice}<span className="text-sm text-chalk/60 font-normal">/hr</span></p>
                             </div>
-                            <span className="bg-gradient-to-r from-marigold to-amber-500 text-pitch text-sm font-bold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-shadow">
+                            <span className="bg-gradient-to-r from-marigold to-amber-500 text-pitch text-sm font-bold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-shadow ease-out">
                               View Details
                             </span>
                           </div>
@@ -622,113 +633,191 @@ export default function App() {
 
                   {/* Bento Grid illustration section */}
                   <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pt-8">
-                    
-                    {/* description columns */}
-                    <ScrollReveal className="lg:col-span-4 flex flex-col justify-center space-y-5">
-                      <h2 className="font-display text-3xl sm:text-5xl text-ink font-semibold leading-tight animate-fade-in">
-                        Host your next <span className="text-transparent bg-clip-text bg-gradient-to-r from-pitch to-marigold">grand event.</span>
-                      </h2>
-                      <p className="font-sans text-sm sm:text-base text-on-surface-variant leading-relaxed">
-                        Beyond the pitch, GroundBooking offers unparalleled access to premium banquet halls and sprawling farmhouses perfect for weddings, corporate offsites, and milestone celebrations.
-                      </p>
-                      
-                      {/* checked values checklist lists */}
-                      <ul className="space-y-4 font-sans text-sm text-ink pt-3">
-                        <li className="flex items-start gap-3">
-                          <CheckCircle size={20} className="text-marigold flex-shrink-0 mt-0.5" />
-                          <div>
-                            <h4 className="font-bold text-pitch">Verified Premium Venues</h4>
-                            <p className="text-xs text-on-surface-variant mt-0.5">Handpicked spaces meeting strict quality standards.</p>
-                          </div>
-                        </li>
-                        <li className="flex items-start gap-3">
-                          <CheckCircle size={20} className="text-marigold flex-shrink-0 mt-0.5" />
-                          <div>
-                            <h4 className="font-bold text-pitch">Transparent Pricing</h4>
-                            <p className="text-xs text-on-surface-variant mt-0.5">No hidden booking or technical fees. What you see is what you pay.</p>
-                          </div>
-                        </li>
-                      </ul>
+                      {/* description columns */}
+                      <ScrollReveal className="lg:col-span-4 flex flex-col justify-center space-y-5">
+                        <h2 className="font-display text-3xl sm:text-5xl text-ink font-semibold leading-tight animate-fade-in">
+                          One platform. <span className="text-transparent bg-clip-text bg-gradient-to-r from-pitch to-marigold">Every occasion.</span>
+                        </h2>
+                        <p className="font-sans text-sm sm:text-base text-on-surface-variant leading-relaxed">
+                          From weekend games and birthday celebrations to weddings, corporate meetings and private gatherings, GroundKart helps you find and book a space that fits the occasion.
+                        </p>
+                        
+                        {/* checked values checklist lists */}
+                        <ul className="space-y-4 font-sans text-sm text-ink pt-3">
+                          <li className="flex items-start gap-3">
+                            <CheckCircle size={20} className="text-marigold flex-shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="font-bold text-pitch">Verified Premium Venues</h4>
+                              <p className="text-xs text-on-surface-variant mt-0.5">Handpicked spaces meeting strict quality standards.</p>
+                            </div>
+                          </li>
+                          <li className="flex items-start gap-3">
+                            <CheckCircle size={20} className="text-marigold flex-shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="font-bold text-pitch">Transparent Pricing</h4>
+                              <p className="text-xs text-on-surface-variant mt-0.5">No hidden booking or technical fees. What you see is what you pay.</p>
+                            </div>
+                          </li>
+                        </ul>
 
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {
-                          setCategoryInput('Banquet Halls');
-                          setCurrentView('search');
-                        }}
-                        className="bg-chalk border-2 border-pitch/10 text-pitch hover:bg-pitch hover:border-pitch hover:text-chalk px-6 py-3 rounded-full font-sans text-sm font-bold transition-all duration-300 self-start cursor-pointer shadow-sm hover:shadow-md flex items-center gap-2 mt-2"
-                      >
-                        Explore Event Spaces <ArrowRight size={16} />
-                      </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setCategoryInput('');
+                            setCurrentView('search');
+                          }}
+                          className="bg-chalk border-2 border-pitch/10 text-pitch hover:bg-pitch hover:border-pitch hover:text-chalk px-6 py-3 rounded-full font-sans text-sm font-bold transition duration-200 self-start cursor-pointer shadow-sm hover:shadow-md flex items-center gap-2 mt-2 ease-out"
+                        >
+                          Explore All Spaces <ArrowRight size={16} />
+                        </motion.button>
+                      </ScrollReveal>
+
+                      {/* Bento Grid category images */}
+                      <div className="lg:col-span-8 grid grid-cols-2 grid-rows-2 gap-4 h-[400px] sm:h-[500px]">
+                        
+                        {/* Large banquet bento tile */}
+                        <ScrollReveal delay={0.1} className="row-span-2 col-span-1">
+                        <div
+                          onClick={() => handleCategoryTileClick('banquet')}
+                          className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
+                        >
+                          <img
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ease-out"
+                            src="https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=2098&auto=format&fit=crop"
+                            alt="Elegant Banquet Hall layout"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/20 to-transparent opacity-90 transition-opacity group-hover:opacity-100 ease-out" />
+                          <div className="absolute bottom-6 left-6 right-6">
+                            <span className="inline-block px-2 py-1 bg-white/20 backdrop-blur-md rounded-md text-chalk text-[10px] font-bold uppercase tracking-wider mb-2">Featured</span>
+                            <h3 className="font-display text-2xl sm:text-3xl text-chalk font-semibold mb-1">Banquet Halls</h3>
+                            <p className="font-sans text-xs sm:text-sm text-chalk/80 leading-snug font-medium">Elegant spaces for weddings, receptions and celebrations.</p>
+                          </div>
+                        </div>
+                        </ScrollReveal>
+
+                        {/* Sports bento tile */}
+                        <ScrollReveal delay={0.2} className="row-span-1 col-span-1">
+                        <div
+                          onClick={() => handleCategoryTileClick('football')}
+                          className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
+                        >
+                          <img
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ease-out"
+                            src="https://images.unsplash.com/photo-1459865264687-595d652de67e?q=80&w=2070&auto=format&fit=crop"
+                            alt="Football stadium"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-pitch/90 via-pitch/30 to-transparent" />
+                          <div className="absolute bottom-5 left-5 right-5">
+                            <h3 className="font-sans text-base sm:text-lg text-chalk font-bold mb-0.5">Sports Grounds</h3>
+                            <p className="font-sans text-[11px] text-chalk/80 leading-snug">Turfs, courts and grounds for your next game.</p>
+                          </div>
+                        </div>
+                        </ScrollReveal>
+
+                        {/* Corporate bento tile */}
+                        <ScrollReveal delay={0.3} className="row-span-1 col-span-1">
+                        <div
+                          onClick={() => handleCategoryTileClick('conference')}
+                          className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
+                        >
+                          <img
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ease-out"
+                            src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop"
+                            alt="Modern corporate boardroom"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-pitch/90 via-pitch/30 to-transparent" />
+                          <div className="absolute bottom-5 left-5 right-5">
+                            <h3 className="font-sans text-base sm:text-lg text-chalk font-bold mb-0.5">Corporate Spaces</h3>
+                            <p className="font-sans text-[11px] text-chalk/80 leading-snug">Professional spaces for meetings and offsites.</p>
+                          </div>
+                        </div>
+                        </ScrollReveal>
+
+                      </div>
+                    </section>
+                  {/* ================= WHY GROUNDKART ================= */}
+                  <div className="boundary-line-double">
+                    <div className="top" />
+                    <div className="bottom" />
+                  </div>
+                  
+                  <section className="py-12">
+                    <ScrollReveal>
+                      <h2 className="font-display text-3xl sm:text-4xl text-ink font-semibold mb-12 text-center">Why GroundKart?</h2>
                     </ScrollReveal>
-
-                    {/* Bento Grid category images */}
-                    <div className="lg:col-span-8 grid grid-cols-2 grid-rows-2 gap-4 h-[400px] sm:h-[500px]">
-                      
-                      {/* Large banquet bento tile */}
-                      <ScrollReveal delay={0.1} className="row-span-2 col-span-1">
-                      <div
-                        onClick={() => handleCategoryTileClick('Banquet Halls')}
-                        className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
-                      >
-                        <img
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuDmS4VUhDD4CN2fT_YWZsgEDJ9AMZ1I6B3GlPg71O4dJqxF395NcxwodO_BWNf8UIJsx6qfYK6l1v0rx6omfMKIaIYnaE2Jqh3wHCx84xYz65Cj4ArJ1kQ1VPrRlmASYl7-82Bgy8yqibfpgUqq5yZXuSzJxU0_opuAMXguNn7gaCIXH9jRzXdTb7O-OxBZsYO780x2--t0kKcSNxNiaomErW9uASwC8N8-AK5I3vjYXI1XNqkIOZXvZPTxEM6y_z3jyiRdF8BcBg"
-                          alt="Elegant Banquet Hall layout"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/20 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
-                        <div className="absolute bottom-6 left-6 right-6">
-                          <span className="inline-block px-2 py-1 bg-white/20 backdrop-blur-md rounded-md text-chalk text-[10px] font-bold uppercase tracking-wider mb-2">Most Popular</span>
-                          <h3 className="font-display text-2xl sm:text-3xl text-chalk font-semibold mb-1">Banquet Halls</h3>
-                          <p className="font-sans text-xs sm:text-sm text-chalk/80 leading-snug font-medium">Elegance scaled for your grandest moments.</p>
-                        </div>
-                      </div>
-                      </ScrollReveal>
-
-                      {/* Farmhouses bento tile */}
-                      <ScrollReveal delay={0.2} className="row-span-1 col-span-1">
-                      <div
-                        onClick={() => handleCategoryTileClick('Farmhouses')}
-                        className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
-                      >
-                        <img
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAJQJcOLiWCfCJ3nIA50IXtuqnINNnUb4b300fUWjW8Was5HMbbG7PTiHHxu3ef-852cT9vYov1GXKXPUbQeUo3-iZu6kVbBR_HhbqVo3ZXWD26t-g3MFMO8_PWvxIoUZDbI0vtI8zPPEaemQ0l2kLZEsrsIh1_wTEyS6aD6fAzT9XJMEJ3GDYAyApNZfX4-v6eZDbV9H8BFlC82gVdiHYkNRcaFZ5AVJ5ZvSqpOjAZisPTRlOSxj_-ptzVG4G41mN2nUhjvIut1g"
-                          alt="Luxury private farmhouse meadow"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-pitch/90 via-pitch/30 to-transparent" />
-                        <div className="absolute bottom-5 left-5 right-5">
-                          <h3 className="font-sans text-base sm:text-lg text-chalk font-bold mb-0.5">Lawn Farmhouses</h3>
-                          <p className="font-sans text-[11px] text-chalk/80 leading-snug">Private retreats with expansive green lawns.</p>
-                        </div>
-                      </div>
-                      </ScrollReveal>
-
-                      {/* Corporate meeting space bento tile */}
-                      <ScrollReveal delay={0.3} className="row-span-1 col-span-1">
-                      <div
-                        onClick={() => handleCategoryTileClick('Corporate Hubs')}
-                        className="w-full h-full rounded-3xl overflow-hidden relative group cursor-pointer shadow-lg shadow-pitch/5 border border-white/20 ring-1 ring-ink/5"
-                      >
-                        <img
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiI9LL5PUhVcsFP-4jBbEDzft6EdPxPcXuelonlyJxq_Eeg4EY5FItEpsY_r03J5BTRgO21MXybLhf26VFYIuRxG__Fh7l71qyGBXFWPR8L5PNj_KuRgatBgDL8CajMpD8twQlbaYkVbw2gLtU3AMNTLeQeawpkVsssatCG78t3RSLk_Y04u7EspAbjL9xYyBqt9ZPv3UWwIoqqWJEpQiHJ0t1qHZ275TmZlHmrQdUDVxaZwWpWjgrz42WPfSiu8hV2w4aW3Q3Dw"
-                          alt="Modern conference spaces"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-pitch/90 via-pitch/30 to-transparent" />
-                        <div className="absolute bottom-5 left-5 right-5">
-                          <h3 className="font-sans text-base sm:text-lg text-chalk font-bold mb-0.5">Corporate Hubs</h3>
-                          <p className="font-sans text-[11px] text-chalk/80 leading-snug">Professional spaces for summits and offsites.</p>
-                        </div>
-                      </div>
-                      </ScrollReveal>
-
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                      {[
+                        { title: 'Instant Booking', desc: 'No waiting, no calls. Book your ground instantly online.', icon: <Zap size={28} className="text-pitch" /> },
+                        { title: 'Verified Venues', desc: 'Every venue is physically verified for quality and safety.', icon: <ShieldCheck size={28} className="text-pitch" /> },
+                        { title: 'Transparent Pricing', desc: 'No hidden charges. The price you see is what you pay.', icon: <CircleDollarSign size={28} className="text-pitch" /> },
+                        { title: 'Smart Discovery', desc: 'Find the perfect ground based on your sport, location, and needs.', icon: <Target size={28} className="text-pitch" /> }
+                      ].map((feature, i) => (
+                        <ScrollReveal key={i} delay={i * 0.1} className="bg-white p-6 rounded-[20px] shadow-sm border border-ink/5 flex flex-col items-start gap-4 hover:shadow-md transition-shadow">
+                          <div className="text-3xl">{feature.icon}</div>
+                          <div>
+                            <h3 className="font-sans text-lg font-bold text-pitch mb-2">{feature.title}</h3>
+                            <p className="font-sans text-sm text-on-surface-variant leading-relaxed">{feature.desc}</p>
+                          </div>
+                        </ScrollReveal>
+                      ))}
                     </div>
+                  </section>
 
+                  {/* ================= TESTIMONIALS ================= */}
+                  <section className="py-12 bg-pitch/5 rounded-[32px] px-8 sm:px-12 my-12">
+                    <ScrollReveal>
+                      <h2 className="font-display text-3xl sm:text-4xl text-ink font-semibold mb-12 text-center">Loved by Our Community</h2>
+                    </ScrollReveal>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      {[
+                        { text: "Finding a quality ground for our weekend matches used to take hours. GroundKart made it effortless.", name: "Rahul Sharma", role: "Event Host" },
+                        { text: "The transparent pricing and instant booking are game changers. We book our corporate turfs here exclusively.", name: "Anita Desai", role: "HR Manager" },
+                        { text: "Super clean interface and verified grounds. I never have to worry about arriving to a double-booked turf again.", name: "Vikram Singh", role: "Cricket Captain" }
+                      ].map((t, i) => (
+                        <ScrollReveal key={i} delay={i * 0.1} className="bg-white p-8 rounded-[24px] shadow-sm border border-ink/5 flex flex-col justify-between">
+                          <p className="font-sans text-sm italic text-on-surface-variant leading-relaxed mb-6">"{t.text}"</p>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pitch to-marigold flex items-center justify-center text-chalk font-bold text-sm">
+                              {t.name.charAt(0)}
+                            </div>
+                            <div>
+                              <h4 className="font-sans text-sm font-bold text-ink">{t.name}</h4>
+                              <p className="font-sans text-xs text-on-surface-variant">{t.role}</p>
+                            </div>
+                          </div>
+                        </ScrollReveal>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* ================= FINAL CTA ================= */}
+                  <section className="py-16 sm:py-24 px-6 bg-pitch rounded-[32px] text-center relative overflow-hidden mb-12">
+                    <div className="absolute inset-0 bg-gradient-to-br from-pitch via-pitch/90 to-[#145A3E]" />
+                    <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.2)_0%,transparent_100%)] pointer-events-none" />
+                    
+                    <ScrollReveal className="relative z-10 max-w-2xl mx-auto flex flex-col items-center">
+                      <h2 className="font-display text-4xl sm:text-5xl text-chalk font-bold mb-4 drop-shadow-sm">Your next occasion starts here.</h2>
+                      <p className="font-sans text-lg text-chalk/80 mb-8 font-light">Discover, compare and book the perfect space.</p>
+                      
+                      <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto justify-center">
+                        <button
+                          onClick={() => {
+                            setCategoryInput('');
+                            setCurrentView('search');
+                          }}
+                          className="bg-marigold hover:bg-amber-500 text-pitch font-sans text-base font-bold px-8 py-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+                        >
+                          Explore Grounds
+                        </button>
+                        <button
+                          onClick={() => requireAuth(() => setActiveRole(user?.role === 'admin' ? 'admin' : 'owner'))}
+                          className="bg-transparent border border-chalk/30 hover:bg-chalk/10 text-chalk font-sans text-base font-bold px-8 py-4 rounded-full transition-colors"
+                        >
+                          List Your Venue
+                        </button>
+                      </div>
+                    </ScrollReveal>
                   </section>
 
                 </div>
@@ -829,13 +918,13 @@ export default function App() {
                       <div className="w-16 h-16 bg-mist rounded-full flex items-center justify-center mb-6 text-on-surface-variant">
                         <Search size={32} />
                       </div>
-                      <h3 className="font-sans text-lg font-bold text-ink mb-1.5">No exact matches found</h3>
+                      <h3 className="font-sans text-lg font-bold text-ink mb-1.5">No venues available yet</h3>
                       <p className="font-sans text-xs sm:text-sm text-on-surface-variant max-w-md mb-6 leading-relaxed">
-                        We could not identify any venues matching your precise filters. Try easing up on selected amenities, enlarging your pricing limits, or choosing all categories.
+                        New spaces are being added to GroundKart.
                       </p>
                       <button
                         onClick={handleClearFilters}
-                        className="bg-pitch hover:bg-[#15462E] text-chalk px-5 py-2.5 rounded-lg font-sans text-xs font-bold shadow-xs active:scale-97 transition-all cursor-pointer"
+                        className="bg-pitch hover:bg-[#15462E] text-chalk px-5 py-2.5 rounded-lg font-sans text-xs font-bold shadow-xs active:scale-[0.97] transition cursor-pointer ease-out"
                       >
                         Clear All Active Filters
                       </button>
@@ -854,6 +943,7 @@ export default function App() {
                     venue={activeVenueObj}
                     slots={activeVenueSlots}
                     onBack={() => setCurrentView('search')}
+                    onSupport={(id) => { setSupportContext({ type: 'venue', id }); setCurrentView('support'); }}
                     onInitiateBooking={handleInitiateBooking}
                     onRequestAuth={() => setAuthModalMode('login')}
                     waitingBooking={realBookings?.find(b => b.venueId === activeVenueObj.id && b.status === 'pending_payment')}
@@ -897,7 +987,9 @@ export default function App() {
                   <MyBookings
                     bookings={realBookings}
                     venues={realVenues}
+                    onSupport={(id) => { setSupportContext({ type: 'booking', id }); setCurrentView('support'); }}
                     onCancelBooking={(id) => {
+
                       cancelBookingMutation.mutate(
                         { bookingId: id },
                         {
@@ -926,7 +1018,7 @@ export default function App() {
       {currentView === 'search' && activeRole === 'client' && (
         <button
           onClick={() => setIsMobileDrawerOpen(true)}
-          className="fixed bottom-6 right-6 z-40 bg-pitch text-chalk flex items-center gap-2 px-5 py-3.5 rounded-full shadow-lg hover:bg-[#15462E] active:scale-95 transition-all md:hidden cursor-pointer"
+          className="fixed bottom-6 right-6 z-40 bg-pitch text-chalk flex items-center gap-2 px-5 py-3.5 rounded-full shadow-lg hover:bg-[#15462E] active:scale-[0.97] transition md:hidden cursor-pointer ease-out"
         >
           <Filter size={16} />
           <span className="font-sans text-xs font-bold">Filters</span>
@@ -934,88 +1026,72 @@ export default function App() {
       )}
 
 
+      
       {/* ================= GLOBAL DESIGN SYSTEM FOOTER ================= */}
-      <footer className="bg-[#0f1f17] mt-24 pt-16 pb-8 relative overflow-hidden">
-        {/* Top gradient border */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-marigold/0 via-marigold to-marigold/0 opacity-50"></div>
-        
-        <ScrollReveal>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {activeRole === 'client' && (
+<footer className="bg-pitch mt-auto pt-16 pb-8 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 lg:gap-8 mb-16">
             
             {/* Brand column */}
-            <div className="lg:col-span-4 space-y-6">
-              <span className="font-display text-3xl text-chalk font-semibold block tracking-tight">GroundBooking<span className="text-marigold">.</span></span>
+            <div className="lg:col-span-4 space-y-4">
+              <img src="/logo-full.png" alt="GroundKart" className="h-16 md:h-20 w-auto object-contain " />
               <p className="font-sans text-sm text-chalk/60 leading-relaxed max-w-sm font-light">
-                The ultimate premium marketplace for instant sports booking and high-stakes corporate event hosting. Precision in every play.
+                Find. Explore. Own. The ultimate premium marketplace for booking venues and event spaces.
               </p>
-              <div className="flex gap-4 pt-2">
-                {/* Social icons placeholder dots */}
-                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-marigold/20 hover:text-marigold text-chalk/60 transition-colors cursor-pointer"><span className="text-lg">𝕏</span></div>
-                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-marigold/20 hover:text-marigold text-chalk/60 transition-colors cursor-pointer"><span className="text-lg">in</span></div>
-                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-marigold/20 hover:text-marigold text-chalk/60 transition-colors cursor-pointer"><span className="text-lg">ig</span></div>
-              </div>
+            </div>
+            
+            <div className="lg:col-span-2 lg:col-start-6">
+              <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Explore</h4>
+              <ul className="space-y-3 font-sans text-sm text-chalk/60">
+                <li><button onClick={() => setCurrentView('search')} className="hover:text-marigold transition">Find Grounds</button></li>
+                <li><button className="hover:text-marigold transition">Sports</button></li>
+                <li><button className="hover:text-marigold transition">Cities</button></li>
+                <li><button className="hover:text-marigold transition">Popular Venues</button></li>
+              </ul>
+            </div>
+            
+            <div className="lg:col-span-2">
+              <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">For Owners</h4>
+              <ul className="space-y-3 font-sans text-sm text-chalk/60">
+                <li><button onClick={() => requireAuth(() => setActiveRole('owner'))} className="hover:text-marigold transition">List Your Venue</button></li>
+                <li><button className="hover:text-marigold transition">Owner Dashboard</button></li>
+                <li><button className="hover:text-marigold transition">Resources</button></li>
+              </ul>
+            </div>
+            
+            <div className="lg:col-span-2">
+              <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Company</h4>
+              <ul className="space-y-3 font-sans text-sm text-chalk/60">
+                <li><button className="hover:text-marigold transition">About</button></li>
+                <li><button className="hover:text-marigold transition">Contact</button></li>
+                <li><button className="hover:text-marigold transition">Help</button></li>
+              </ul>
             </div>
 
-            {/* Quick Links */}
-            <div className="lg:col-span-3 lg:col-start-6 flex flex-col gap-4">
-              <h4 className="font-sans text-sm uppercase font-bold text-chalk tracking-widest mb-2">Quick Links</h4>
-              <a href="#explore" onClick={(e) => { e.preventDefault(); setActiveRole('client'); setCurrentView('home'); }} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Premium Explore
-              </a>
-              <a href="#find" onClick={(e) => { e.preventDefault(); setActiveRole('client'); setSearchQuery(''); setCurrentView('search'); }} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Find Sports Fields
-              </a>
-              <a href="#events" onClick={(e) => { e.preventDefault(); setCategoryInput('Banquet Halls'); setCurrentView('search'); }} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Event Spaces
-              </a>
-              <a href="#support" onClick={(e) => { e.preventDefault(); alert('Help center ticketing is active at support@venuesetu.com'); }} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Help Center
-              </a>
+            <div className="lg:col-span-2">
+              <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Legal</h4>
+              <ul className="space-y-3 font-sans text-sm text-chalk/60">
+                <li><button className="hover:text-marigold transition">Privacy</button></li>
+                <li><button className="hover:text-marigold transition">Terms</button></li>
+                <li><button className="hover:text-marigold transition">Cookies</button></li>
+              </ul>
             </div>
-
-            {/* For Owners */}
-            <div className="lg:col-span-2 flex flex-col gap-4">
-              <h4 className="font-sans text-sm uppercase font-bold text-chalk tracking-widest mb-2">For Owners</h4>
-              <a href="#list" onClick={(e) => { e.preventDefault(); requireAuth(() => setActiveRole('owner')); }} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                List Your Venue
-              </a>
-              <a href="#partner" onClick={(e) => e.preventDefault()} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Partner Guidelines
-              </a>
-              <a href="#resources" onClick={(e) => e.preventDefault()} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Owner Resources
-              </a>
-            </div>
-
-            {/* Legal */}
-            <div className="lg:col-span-2 flex flex-col gap-4">
-              <h4 className="font-sans text-sm uppercase font-bold text-chalk tracking-widest mb-2">Legal</h4>
-              <a href="#privacy" onClick={(e) => e.preventDefault()} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Privacy Policy
-              </a>
-              <a href="#terms" onClick={(e) => e.preventDefault()} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Terms of Service
-              </a>
-              <a href="#cookies" onClick={(e) => e.preventDefault()} className="font-sans text-sm text-chalk/60 hover:text-marigold transition-colors w-fit">
-                Cookie Preferences
-              </a>
-            </div>
-
           </div>
-
+          
           {/* Bottom Bar */}
           <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="font-sans text-xs text-chalk/50 font-medium">
-              © {new Date().getFullYear()} GroundBooking Inc. All rights reserved.
+              © {new Date().getFullYear()} GroundKart. All rights reserved.
             </p>
             <p className="font-sans text-xs text-chalk/50 font-medium flex items-center gap-1.5">
               Made with <Heart size={12} className="text-marigold" fill="currentColor" /> in India
             </p>
           </div>
         </div>
-        </ScrollReveal>
       </footer>
+)}
+
 
     </div>
   );

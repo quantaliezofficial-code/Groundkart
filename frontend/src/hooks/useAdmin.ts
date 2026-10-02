@@ -352,3 +352,61 @@ export function useAdminReviewsPaginated(pageSize: number = 20) {
     hasMore: (query.data?.length ?? 0) === pageSize,
   };
 }
+
+
+// ---- Homepage Management ----
+export function useHomepagePlacements(section?: string) {
+  return useQuery({
+    queryKey: ['admin-homepage-placements', section],
+    queryFn: () => adminApi.listHomepagePlacements(section),
+  });
+}
+
+export function useCreateHomepagePlacement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: any) => adminApi.createHomepagePlacement(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-homepage-placements'] }),
+  });
+}
+
+export function useUpdateHomepagePlacement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: any }) => adminApi.updateHomepagePlacement(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-homepage-placements'] }),
+  });
+}
+
+export function useDeleteHomepagePlacement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminApi.deleteHomepagePlacement(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-homepage-placements'] }),
+  });
+}
+
+export function useReorderHomepageSection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ section, ordered_ids }: { section: string; ordered_ids: string[] }) => adminApi.reorderHomepageSection(section, ordered_ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-homepage-placements'] }),
+  });
+}
+
+// ---- Image Management ----
+export function useSetVenueCoverImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ venueId, imageId }: { venueId: string; imageId: string }) => adminApi.setVenueCoverImage(venueId, imageId),
+    onSuccess: (_, { venueId }) => qc.invalidateQueries({ queryKey: ['admin-venues'] }),
+  });
+}
+
+export function useDeleteVenueImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ venueId, imageId }: { venueId: string; imageId: string }) => adminApi.deleteVenueImage(venueId, imageId),
+    onSuccess: (_, { venueId }) => qc.invalidateQueries({ queryKey: ['admin-venues'] }),
+  });
+}

@@ -8,6 +8,7 @@ interface MyBookingsProps {
   venues: Venue[];
   onCancelBooking: (id: string) => void;
   onBookAgain: (venueId: string) => void;
+  onSupport?: (bookingId: string) => void;
 }
 
 const STATUS_BADGE: Record<BookingStatus, { label: string; className: string; icon: React.ReactNode; borderClass: string }> = {
@@ -23,7 +24,8 @@ export default function MyBookings({
   bookings,
   venues,
   onCancelBooking,
-  onBookAgain
+  onBookAgain,
+  onSupport
 }: MyBookingsProps) {
   const [activeTab, setActiveTab] = useState<'Upcoming' | 'Past' | 'Cancelled'>('Upcoming');
   const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
@@ -77,11 +79,11 @@ export default function MyBookings({
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`relative flex items-center gap-2 rounded-full px-5 py-2 text-sm transition-all duration-300 cursor-pointer ${
+              className={`relative flex items-center gap-2 rounded-full px-5 py-2 text-sm transition duration-200 cursor-pointer ${
                 isActive
                   ? 'text-pitch font-semibold'
                   : 'text-on-surface-variant hover:text-ink font-medium'
-              }`}
+              } ease-out`}
             >
               {isActive && (
                 <motion.div
@@ -95,7 +97,7 @@ export default function MyBookings({
                 {count > 0 && (
                   <span className={`px-1.5 py-0.5 rounded-full text-xs font-mono transition-colors ${
                     isActive ? 'bg-pitch/10 text-pitch' : 'bg-ink/5 text-on-surface-variant'
-                  }`}>
+                  } ease-out`}>
                     {count}
                   </span>
                 )}
@@ -128,7 +130,7 @@ export default function MyBookings({
                 whileHover={{ scale: 1.03 }} 
                 whileTap={{ scale: 0.97 }}
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
-                className="px-6 py-2.5 bg-gradient-to-r from-pitch to-marigold text-chalk font-semibold rounded-xl hover:shadow-lg transition-all cursor-pointer"
+                className="px-6 py-2.5 bg-gradient-to-r from-pitch to-marigold text-chalk font-semibold rounded-xl hover:shadow-lg transition cursor-pointer ease-out"
               >
                 Explore Venues
               </motion.button>
@@ -151,7 +153,7 @@ export default function MyBookings({
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.06, ease: 'easeOut' }}
-                    className="relative bg-chalk rounded-2xl ring-1 ring-ink/5 overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col sm:flex-row group"
+                    className="relative bg-chalk rounded-2xl ring-1 ring-ink/5 overflow-hidden hover:shadow-lg transition-shadow duration-200 flex flex-col sm:flex-row group ease-out"
                   >
                     {/* Left colored accent bar */}
                     <div className={`absolute left-0 top-0 bottom-0 w-1 ${badge.borderClass}`} />
@@ -162,7 +164,7 @@ export default function MyBookings({
                         <img
                           src={getVenueImage(booking.venueId)}
                           alt={booking.venueName}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
                           referrerPolicy="no-referrer"
                         />
                       </div>
@@ -170,7 +172,7 @@ export default function MyBookings({
                       <div className="flex-grow flex flex-col gap-3 justify-center">
                         <div className="flex justify-between items-start gap-4 flex-wrap">
                           <div>
-                            <h3 className="font-sans text-base font-bold text-ink group-hover:text-pitch transition-colors">
+                            <h3 className="font-sans text-base font-bold text-ink group-hover:text-pitch transition-colors ease-out">
                               {booking.venueName}
                             </h3>
                             {/* Reference ID */}
@@ -240,7 +242,7 @@ export default function MyBookings({
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={() => setBookingToCancel(booking.id)}
-                          className="px-4 py-2 border border-clay/20 text-clay hover:bg-clay/5 rounded-lg text-sm font-semibold transition-colors cursor-pointer w-full"
+                          className="px-4 py-2 border border-clay/20 text-clay hover:bg-clay/5 rounded-lg text-sm font-semibold transition-colors cursor-pointer w-full ease-out"
                         >
                           Cancel
                         </motion.button>
@@ -250,7 +252,7 @@ export default function MyBookings({
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={() => onBookAgain(booking.venueId)}
-                          className="px-4 py-2 bg-pitch hover:bg-pitch/90 text-chalk rounded-lg text-sm font-semibold transition-colors cursor-pointer w-full"
+                          className="px-4 py-2 bg-pitch hover:bg-pitch/90 text-chalk rounded-lg text-sm font-semibold transition-colors cursor-pointer w-full ease-out"
                         >
                           Book Again
                         </motion.button>
@@ -294,7 +296,7 @@ export default function MyBookings({
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setBookingToCancel(null)}
-                  className="flex-1 px-4 py-2.5 border border-ink/10 text-ink hover:bg-mist rounded-xl font-semibold transition-colors cursor-pointer"
+                  className="flex-1 px-4 py-2.5 border border-ink/10 text-ink hover:bg-mist rounded-xl font-semibold transition-colors cursor-pointer ease-out"
                 >
                   Keep Booking
                 </motion.button>
@@ -305,7 +307,7 @@ export default function MyBookings({
                     onCancelBooking(bookingToCancel);
                     setBookingToCancel(null);
                   }}
-                  className="flex-1 px-4 py-2.5 bg-clay hover:bg-clay/90 text-chalk rounded-xl font-semibold transition-colors cursor-pointer"
+                  className="flex-1 px-4 py-2.5 bg-clay hover:bg-clay/90 text-chalk rounded-xl font-semibold transition-colors cursor-pointer ease-out"
                 >
                   Yes, Cancel
                 </motion.button>

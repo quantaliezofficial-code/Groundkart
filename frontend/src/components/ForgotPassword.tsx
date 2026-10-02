@@ -1,3 +1,4 @@
+import { CheckCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
@@ -49,7 +50,7 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
       <Helmet>
-        <title>Reset Password — GroundBooking</title>
+        <title>Reset Password — GroundKart</title>
       </Helmet>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
         {step === 'request' && (
@@ -74,7 +75,7 @@ export default function ForgotPassword() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition-colors ease-out"
               >
                 {isSubmitting ? 'Sending...' : 'Send reset link'}
               </button>
@@ -123,7 +124,7 @@ export default function ForgotPassword() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition-colors ease-out"
               >
                 {isSubmitting ? 'Updating...' : 'Update password'}
               </button>
@@ -133,12 +134,12 @@ export default function ForgotPassword() {
 
         {step === 'done' && (
           <div className="text-center">
-            <p className="text-4xl mb-4">✅</p>
+            <CheckCircle size={48} className="text-pitch mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Password updated!</h1>
             <p className="text-gray-500 mb-6">You can now log in with your new password.</p>
             <Link
               to="/"
-              className="inline-flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-green-700 transition-colors ease-out"
             >
               Go to home
             </Link>

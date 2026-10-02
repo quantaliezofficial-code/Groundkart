@@ -1,28 +1,27 @@
+import GroundSelect from './ui/GroundSelect';
+import { DashboardShell, MetricCard, SafeImage, EmptyState, StatusBadge as DashboardStatusBadge } from './dashboard';
+import { Home, CalendarDays, Wallet, LayoutGrid, Plus, ShieldCheck, Activity, Building2 } from 'lucide-react';
 import {
   AlertCircle,
-  Building2,
-  CalendarDays,
-  ChevronLeft,
+    ChevronLeft,
   ChevronRight,
   Clock,
   Download,
   Flag,
-  LayoutGrid,
-  Loader2,
+    Loader2,
   MapPin,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  Wallet,
-} from 'lucide-react';
+    RefreshCw,
+    } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-import { useFlagBooking, useOwnerBookings, useOwnerPayouts, useOwnerVenues, useOwnerVerification, useSubmitVerification } from '../hooks/useOwner';
+import { useOwnerBookings, useOwnerPayouts, useOwnerVenues, useOwnerVerification, useSubmitVerification } from '../hooks/useOwner';
 import { ApiError } from '../lib/api/client';
 import type { ApiBookingDetail, ApiOwnerVerification, ApiPayout, ApiVenue } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
-import OwnerVenueModal from './OwnerVenueModal';
+import ListingBuilder from './owner/listing-builder/ListingBuilder';
+import OwnerCalendar from './owner/calendar/OwnerCalendar';
+import SupportTickets from './SupportTickets';
 
-type Tab = 'Listings' | 'Calendars' | 'Payouts' | 'Account';
+type Tab = 'Overview' | 'Listings' | 'Calendars' | 'Payouts' | 'Support' | 'Account';
 
 function money(value: string | number): string {
   const n = typeof value === 'string' ? Number(value) : value;
@@ -34,8 +33,8 @@ function errorMessage(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-export default function OwnerLayout() {
-  const { user } = useAuth();
+export default function OwnerLayout({ onReturnToSite }: { onReturnToSite?: () => void }) {
+  const { user, logout } = useAuth();
 
   if (!user) {
     // App.tsx's onListVenue already runs requireAuth before switching into
@@ -53,7 +52,7 @@ export default function OwnerLayout() {
     return <OwnerOnboardingGate />;
   }
 
-  return <OwnerDashboard />;
+  return <OwnerDashboard onReturnToSite={onReturnToSite} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,8 +99,10 @@ function OwnerOnboardingGate() {
 
   if (isLoading) {
     return (
-      <div className="max-w-xl mx-auto py-24 flex justify-center">
-        <Loader2 size={24} className="animate-spin text-ink/40" />
+      <div className="max-w-xl mx-auto py-24 space-y-6 animate-pulse">
+        <div className="w-16 h-16 bg-mist rounded-full mx-auto" />
+        <div className="w-64 h-8 bg-mist rounded-xl mx-auto" />
+        <div className="w-48 h-4 bg-mist rounded-lg mx-auto" />
       </div>
     );
   }
@@ -121,7 +122,7 @@ function OwnerOnboardingGate() {
         <button
           onClick={handleCheckStatus}
           disabled={checkingStatus}
-          className="inline-flex items-center gap-2 px-5 py-2.5 border border-pitch text-pitch rounded-lg text-sm font-semibold hover:bg-pitch hover:text-chalk transition-colors cursor-pointer disabled:opacity-60"
+          className="inline-flex items-center gap-2 px-5 py-2.5 border border-pitch text-pitch rounded-lg text-sm font-semibold hover:bg-pitch hover:text-chalk transition-colors cursor-pointer disabled:opacity-60 ease-out"
         >
           {checkingStatus ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
           Check status
@@ -136,7 +137,7 @@ function OwnerOnboardingGate() {
     <div className="max-w-xl mx-auto py-16 space-y-6 animate-fade-in">
       <div className="text-center space-y-2">
         <Building2 size={30} className="mx-auto text-pitch" />
-        <h1 className="font-display text-3xl text-pitch font-semibold">List your venue on GroundBooking</h1>
+        <h1 className="font-display text-3xl text-pitch font-semibold">List your venue on GroundKart</h1>
         <p className="font-sans text-sm text-on-surface-variant">
           A quick verification step — usually just a business or ID document — and you're set to start listing.
         </p>
@@ -164,16 +165,17 @@ function OwnerOnboardingGate() {
         </label>
                 <label className="block">
           <span className="text-xs font-semibold text-on-surface-variant">Identification Type</span>
-          <select
+          <GroundSelect
             value={identificationType}
-            onChange={(e) => setIdentificationType(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-ink/10 bg-mist px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-marigold"
-          >
-            <option value="National ID">National ID</option>
-            <option value="Passport">Passport</option>
-            <option value="Driving License">Driving License</option>
-            <option value="Business Registration">Business Registration</option>
-          </select>
+            onValueChange={() => {}}
+            options={[
+              { value: "National ID", label: "National ID" },
+              { value: "Passport", label: "Passport" },
+              { value: "Driving License", label: "Driving License" },
+              { value: "Business Registration", label: "Business Registration" }
+            ]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
         </label>
         <label className="block">
           <span className="text-xs font-semibold text-on-surface-variant">Identification Number</span>
@@ -199,7 +201,7 @@ function OwnerOnboardingGate() {
         <button
           type="submit"
           disabled={submitVerification.isPending}
-          className="w-full px-6 py-3 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
+          className="w-full px-6 py-3 bg-pitch hover:bg-[#15462E] text-chalk rounded-lg text-sm font-bold transition active:scale-[0.97] cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2 ease-out"
         >
           {submitVerification.isPending && <Loader2 size={15} className="animate-spin" />}
           Submit for review
@@ -212,14 +214,14 @@ function OwnerOnboardingGate() {
 // ---------------------------------------------------------------------------
 // Full dashboard — only reachable once user.role === 'owner'.
 // ---------------------------------------------------------------------------
-function OwnerDashboard() {
+function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem('initialOwnerTab') as Tab;
     if (saved) {
       sessionStorage.removeItem('initialOwnerTab');
       return saved;
     }
-    return 'Listings';
+    return 'Overview';
   });
   const [modalVenue, setModalVenue] = useState<ApiVenue | null | 'new'>(null);
 
@@ -238,47 +240,81 @@ function OwnerDashboard() {
   const { data: bookings = [], isLoading: bookingsLoading } = useOwnerBookings();
   const { data: payouts = [], isLoading: payoutsLoading } = useOwnerPayouts();
   const { data: verification } = useOwnerVerification();
+  const { user, logout } = useAuth();
 
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'Listings', label: 'Listings', icon: <LayoutGrid size={16} /> },
-    { key: 'Calendars', label: 'Bookings', icon: <CalendarDays size={16} /> },
-    { key: 'Payouts', label: 'Payouts', icon: <Wallet size={16} /> },
-    { key: 'Account', label: 'Account', icon: <ShieldCheck size={16} /> },
+  const activeVenuesCount = venues.filter(v => v.status === 'active').length;
+  const pendingRequestsCount = bookings.filter(b => b.status === 'pending_payment').length;
+  const totalEarnings = payouts.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.net_amount), 0);
+
+  const navItems = [
+    { id: 'Overview', label: 'Overview', icon: Activity, onClick: () => setActiveTab('Overview' as Tab) },
+    { id: 'Listings', label: 'Listings', icon: LayoutGrid, onClick: () => setActiveTab('Listings') },
+    { id: 'Calendars', label: 'Bookings', icon: CalendarDays, onClick: () => setActiveTab('Calendars') },
+    { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => setActiveTab('Payouts') },
+    { id: 'Account', label: 'Account', icon: ShieldCheck, onClick: () => setActiveTab('Account') },
   ];
 
+  const headerActions = (
+    <button
+      onClick={() => setModalVenue('new')}
+      className="flex items-center gap-1.5 bg-pitch hover:bg-[#15462E] text-chalk px-4 py-2 rounded-full font-sans text-sm font-semibold transition active:scale-[0.97] ease-out"
+    >
+      <Plus size={16} /> List a new venue
+    </button>
+  );
+
+  const titles: Record<string, { title: string; desc: string }> = {
+    Overview: { title: 'Owner Dashboard', desc: 'Manage your venues, bookings and earnings' },
+    Listings: { title: 'Venues', desc: 'Manage your property listings' },
+    Calendars: { title: 'Bookings', desc: 'View and manage venue reservations' },
+    Payouts: { title: 'Payouts', desc: 'Track your earnings and transfers' },
+    Account: { title: 'Account Settings', desc: 'Manage your owner profile and verification' },
+  };
+
+  const currentInfo = titles[activeTab] || titles.Overview;
+
   return (
-    <div className="w-full space-y-8 animate-fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div className="space-y-3">
-          <h1 className="font-display text-4xl sm:text-5xl font-bold text-pitch tracking-tight">Owner Dashboard</h1>
-          <div className="relative h-[6px] w-40 flex flex-col justify-between">
-            <div className="h-[1px] w-full bg-pitch" />
-            <div className="h-[1px] w-full bg-pitch opacity-20" />
+    <DashboardShell
+      title={currentInfo.title}
+      description={currentInfo.desc}
+      navItems={navItems}
+      activeNavId={activeTab}
+      headerActions={headerActions}
+      userName={user?.name}
+      userRole={user?.role}
+        onLogout={logout}
+        onReturnToSite={onReturnToSite}
+    >
+      {activeTab === 'Overview' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <MetricCard label="Active Venues" value={activeVenuesCount} isLoading={venuesLoading} />
+            <MetricCard label="Total Bookings" value={bookings.length} isLoading={bookingsLoading} />
+            <MetricCard label="Pending Requests" value={pendingRequestsCount} isLoading={bookingsLoading} />
+            <MetricCard label="Available Balance" value={`₹${totalEarnings.toLocaleString('en-IN')}`} isLoading={payoutsLoading} />
+          </div>
+          
+          <div className="grid gap-6 md:grid-cols-2">
+             <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+               <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Quick Actions</h3>
+               <div className="grid gap-3">
+                 <button onClick={() => setActiveTab('Listings')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container/10 text-primary-container">
+                      <LayoutGrid size={16} />
+                    </div>
+                    <span className="font-sans text-sm font-medium text-ink">Manage Venues</span>
+                  </button>
+                  <button onClick={() => setActiveTab('Calendars')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-marigold/10 text-marigold">
+                      <CalendarDays size={16} />
+                    </div>
+                    <span className="font-sans text-sm font-medium text-ink">View Bookings</span>
+                  </button>
+               </div>
+             </div>
           </div>
         </div>
-        {activeTab === 'Listings' && (
-          <button
-            onClick={() => setModalVenue('new')}
-            className="flex items-center gap-1.5 bg-pitch hover:bg-[#15462E] text-chalk px-4 py-2.5 rounded-lg font-sans text-sm font-bold transition-all active:scale-95 cursor-pointer shrink-0"
-          >
-            <Plus size={16} /> List a new venue
-          </button>
-        )}
-      </div>
-
-      <div className="flex gap-2 border-b border-ink/10 overflow-x-auto">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold whitespace-nowrap transition-all cursor-pointer border-b-2 -mb-px ${
-              activeTab === t.key ? 'text-pitch border-pitch' : 'text-on-surface-variant border-transparent hover:text-pitch'
-            }`}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+      )}
 
       {activeTab === 'Listings' && (
         <ListingsTab
@@ -289,18 +325,17 @@ function OwnerDashboard() {
         />
       )}
       {activeTab === 'Calendars' && (
-        <CalendarsTab venues={venues} bookings={bookings} isLoading={bookingsLoading} />
+        <OwnerCalendar venues={venues} bookings={bookings} isLoading={bookingsLoading} />
       )}
       {activeTab === 'Payouts' && <PayoutsTab payouts={payouts} isLoading={payoutsLoading} />}
       {activeTab === 'Account' && <AccountTab verification={verification} />}
 
       {modalVenue !== null && (
-        <OwnerVenueModal venue={modalVenue === 'new' ? null : modalVenue} onClose={() => setModalVenue(null)} />
+        <ListingBuilder venueId={modalVenue === 'new' ? null : modalVenue?.id} onClose={() => setModalVenue(null)} onComplete={() => setModalVenue(null)} />
       )}
-    </div>
+    </DashboardShell>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Listings tab
 // ---------------------------------------------------------------------------
@@ -325,13 +360,6 @@ function ListingsTab({
     return counts;
   }, [bookings]);
 
-  const STATUS_STYLE: Record<string, string> = {
-    active: 'bg-primary-container text-on-primary-container',
-    pending_review: 'bg-marigold/15 text-marigold',
-    suspended: 'bg-red-50 text-clay border border-red-200',
-    draft: 'bg-mist text-on-surface-variant border border-ink/10',
-  };
-
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -344,11 +372,12 @@ function ListingsTab({
 
   if (venues.length === 0) {
     return (
-      <div className="bg-chalk border border-ink/10 rounded-2xl py-16 px-6 flex flex-col items-center text-center max-w-lg mx-auto">
-        <Building2 size={28} className="text-on-surface-variant mb-3" />
-        <h3 className="font-sans font-bold text-ink mb-1">No venues yet</h3>
-        <p className="font-sans text-sm text-on-surface-variant">List your first venue to start taking bookings.</p>
-      </div>
+      <EmptyState 
+        icon={Building2} 
+        title="No venues yet" 
+        description="Your listed venues will appear here." 
+        action={<button onClick={() => onManage({} as any)} className="mt-2 text-primary-container font-medium hover:underline text-sm">Add your first venue</button>}
+      />
     );
   }
 
@@ -357,39 +386,38 @@ function ListingsTab({
       {venues.map((v) => {
         const cover = v.images.find((i) => i.is_cover) ?? v.images[0];
         return (
-          <div key={v.id} className="bg-chalk border border-ink/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all">
+          <div key={v.id} className="bg-surface-container-lowest border border-surface-container rounded-2xl overflow-hidden soft-lift transition ease-out flex flex-col">
             <div className="aspect-[4/3] bg-mist relative">
               {cover ? (
-                <img src={cover.url} alt={v.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                <SafeImage src={cover.url} alt={v.name} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-ink/40">
-                  <Building2 size={28} />
+                <div className="w-full h-full flex items-center justify-center bg-mist text-on-surface-variant/40">
+                  <Building2 size={32} />
                 </div>
               )}
-              <span
-                className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLE[v.status] ?? 'bg-mist text-on-surface-variant'}`}
-              >
-                {v.status.replace('_', ' ')}
-              </span>
-            </div>
-            <div className="p-4 space-y-2">
-              <h3 className="font-sans font-bold text-ink truncate">{v.name}</h3>
-              <p className="text-xs text-on-surface-variant flex items-center gap-1">
-                <MapPin size={12} /> {v.city}
-              </p>
-              <div className="flex items-center justify-between pt-1">
-                <span className="font-mono text-sm font-bold text-pitch">
-                  {money(v.base_price)}
-                  <span className="text-[10px] font-sans text-ink/40"> /{v.unit_type === 'hour' ? 'hr' : v.unit_type === 'half_day' ? 'half-day' : 'day'}</span>
-                </span>
-                <span className="text-[11px] text-ink/40">{bookingCountByVenue[v.id] ?? 0} bookings</span>
+              <div className="absolute top-2.5 left-2.5">
+                <DashboardStatusBadge status={v.status} className="bg-surface-container-lowest" />
               </div>
-              <button
-                onClick={() => onManage(v)}
-                className="w-full mt-2 py-2 border border-pitch text-pitch rounded-lg text-xs font-bold hover:bg-pitch hover:text-chalk transition-colors cursor-pointer"
-              >
-                Manage
-              </button>
+            </div>
+            <div className="p-4 flex flex-col flex-1">
+              <h3 className="font-sans font-bold text-ink truncate">{v.name}</h3>
+              <p className="text-xs text-on-surface-variant flex items-center gap-1 mt-1 truncate">
+                <MapPin size={12} className="shrink-0" /> {v.city}
+              </p>
+              
+              <div className="mt-3 flex items-center justify-between text-sm">
+                <span className="font-semibold text-ink">₹{v.base_price} <span className="font-normal text-xs text-on-surface-variant">/ {v.unit_type.replace('_', ' ')}</span></span>
+                <span className="text-xs text-on-surface-variant font-medium">{bookingCountByVenue[v.id] || 0} bookings</span>
+              </div>
+              
+              <div className="mt-4 pt-3 border-t border-surface-container mt-auto">
+                <button
+                  onClick={() => onManage(v)}
+                  className="w-full py-2 bg-surface-container hover:bg-surface-container-high text-ink rounded-lg text-sm font-semibold transition-colors"
+                >
+                  Manage Venue
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -397,7 +425,6 @@ function ListingsTab({
     </div>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Calendars ("Bookings") tab — a real month grid, populated from real
 // bookings. No customer/guest identity is ever available here — see
@@ -420,8 +447,7 @@ function CalendarsTab({
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const flagBooking = useFlagBooking();
-  const [flagError, setFlagError] = useState<string | null>(null);
+
 
   const filtered = useMemo(
     () => (selectedVenueId === 'all' ? bookings : bookings.filter((b) => b.venue_id === selectedVenueId)),
@@ -445,30 +471,17 @@ function CalendarsTab({
 
   const dayBookings = selectedDate ? filtered.filter((b) => b.slot_date === selectedDate) : [];
 
-  const handleFlag = async (bookingId: string) => {
-    const reason = window.prompt('Describe the genuine conflict (this cancels the booking and refunds the customer 100%):');
-    if (!reason) return;
-    setFlagError(null);
-    try {
-      await flagBooking.mutateAsync({ bookingId, reason });
-    } catch (err) {
-      setFlagError(errorMessage(err));
-    }
-  };
+
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={selectedVenueId}
-          onChange={(e) => setSelectedVenueId(e.target.value)}
-          className="rounded-lg border border-ink/10 bg-mist px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-marigold"
-        >
-          <option value="all">All venues</option>
-          {venues.map((v) => (
-            <option key={v.id} value={v.id}>{v.name}</option>
-          ))}
-        </select>
+        <GroundSelect
+            value={selectedVenueId}
+            onValueChange={() => {}}
+            options={[{ value: "all", label: "All venues" }, ...venues.map((v) => ({ value: v.id, label: `${v.name}` }))]}
+            triggerClassName="w-full sm:w-[200px]"
+          />
         <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={() => setMonthCursor(new Date(year, month - 1, 1))}
@@ -508,13 +521,13 @@ function CalendarsTab({
                 <button
                   key={day}
                   onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                  className={`aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-all cursor-pointer ${
+                  className={`aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-semibold transition cursor-pointer ${
                     isSelected
                       ? 'bg-pitch text-chalk'
                       : count > 0
                         ? 'bg-marigold/15 text-ink hover:bg-marigold/25'
                         : 'hover:bg-mist text-on-surface-variant'
-                  }`}
+                  } ease-out`}
                 >
                   <span>{day}</span>
                   {count > 0 && <span className="w-1 h-1 rounded-full bg-current" />}
@@ -530,13 +543,11 @@ function CalendarsTab({
           <h3 className="font-sans text-sm font-bold text-ink">
             Bookings on {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })}
           </h3>
-          {flagError && <p className="text-sm text-clay">{flagError}</p>}
+
           {dayBookings.length === 0 ? (
             <p className="text-sm text-ink/40">No bookings on this day.</p>
           ) : (
             dayBookings.map((b) => {
-              const inGraceWindow =
-                b.status === 'confirmed' && b.grace_period_ends_at !== null && new Date(b.grace_period_ends_at) > new Date();
               return (
                 <div key={b.id} className="bg-chalk border border-ink/10 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -557,16 +568,6 @@ function CalendarsTab({
                     >
                       {b.status}
                     </span>
-                    {inGraceWindow && (
-                      <button
-                        onClick={() => void handleFlag(b.id)}
-                        disabled={flagBooking.isPending}
-                        className="flex items-center gap-1 px-2.5 py-1 border border-clay text-clay rounded-full text-[11px] font-bold hover:bg-clay hover:text-chalk transition-colors cursor-pointer disabled:opacity-60"
-                        title={`Grace window open until ${new Date(b.grace_period_ends_at as string).toLocaleTimeString()}`}
-                      >
-                        <Flag size={11} /> Flag conflict
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -602,7 +603,7 @@ function PayoutsTab({ payouts, isLoading }: { payouts: ApiPayout[]; isLoading: b
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `groundbooking-payouts-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `groundkart-payouts-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -680,7 +681,7 @@ function PayoutsTab({ payouts, isLoading }: { payouts: ApiPayout[]; isLoading: b
 // pre-approval state).
 // ---------------------------------------------------------------------------
 function AccountTab({ verification }: { verification: ApiOwnerVerification | null | undefined }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   return (
     <div className="max-w-lg space-y-4">
       <div className="bg-chalk border border-ink/10 rounded-2xl p-6 space-y-4">

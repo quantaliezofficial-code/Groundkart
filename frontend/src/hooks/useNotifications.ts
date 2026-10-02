@@ -62,3 +62,22 @@ export function useDeleteAllNotifications() {
     onSuccess: () => invalidateNotificationViews(queryClient),
   });
 }
+
+export function useAdminNotifications(params: NotificationsParams = {}) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin-notifications', params],
+    queryFn: () => notificationsApi.adminList(params),
+    enabled: user?.role === 'admin',
+  });
+}
+
+export function useAdminSendNotification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { user_id: string; type: string; message: string; entity_type?: string; entity_id?: string }) => notificationsApi.adminSend(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
+    },
+  });
+}

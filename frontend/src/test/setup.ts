@@ -19,3 +19,8 @@ afterEach(() => {
 
 class MockIntersectionObserver { constructor() {} observe() {} unobserve() {} disconnect() {} }
 window.IntersectionObserver = MockIntersectionObserver as any;
+
+afterEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});

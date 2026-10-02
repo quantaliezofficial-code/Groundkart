@@ -1,3 +1,5 @@
+import { SafeImage } from './dashboard';
+import GroundSelect from './ui/GroundSelect';
 import React, { useMemo, useState, useRef } from 'react';
 import { ArrowLeft, ChevronRight, MapPin, Star, Zap, Wind, ShieldCheck, Car, Bath, Wifi, CalendarDays, CheckCircle, Clock, Shield, Send, Loader2, Trash2, X } from 'lucide-react';
 import { motion, useInView } from 'framer-motion';
@@ -11,6 +13,7 @@ interface DetailViewProps {
   venue: Venue;
   slots: VenueSlot[];
   onBack: () => void;
+  onSupport?: (venueId: string) => void;
   onInitiateBooking: (selectedSlot: string, date: string, slotId: string) => void;
   onRequestAuth?: () => void;
   waitingBooking?: AppBooking;
@@ -118,7 +121,7 @@ export default function DetailView({
       return;
     }
     try {
-      await createReview.mutateAsync({ venueId: venue.id, body: { rating: reviewRating, content: reviewContent } });
+      await createReview.mutateAsync({ venueId: venue.id, body: { booking_id: "", rating: reviewRating, content: reviewContent } });
       setReviewRating(0);
       setReviewContent('');
       setReviewSuccess(true);
@@ -149,12 +152,12 @@ export default function DetailView({
       <div className="mb-6 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="flex items-center justify-center p-2 rounded-full hover:bg-mist transition-colors cursor-pointer text-ink hover:text-pitch"
+          className="flex items-center justify-center p-2 rounded-full hover:bg-mist transition-colors cursor-pointer text-ink hover:text-pitch ease-out"
         >
           <ArrowLeft size={20} />
         </button>
         <div className="flex items-center gap-2 text-sm">
-          <button onClick={onBack} className="text-on-surface-variant hover:text-pitch transition-colors font-sans">Explore</button>
+          <button onClick={onBack} className="text-on-surface-variant hover:text-pitch transition-colors font-sans ease-out">Explore</button>
           <ChevronRight size={14} className="text-on-surface-variant/50" />
           <span className="text-on-surface-variant font-sans">{venue.category}</span>
           <ChevronRight size={14} className="text-on-surface-variant/50" />
@@ -197,32 +200,32 @@ export default function DetailView({
             <div className="h-[340px] sm:h-[450px] rounded-2xl overflow-hidden shadow-lg shadow-pitch/5">
               <motion.div whileHover={{ scale: 1.02 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="w-full h-full relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-10 pointer-events-none" />
-                <img className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} photo`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} photo`} referrerPolicy="no-referrer" />
               </motion.div>
             </div>
           ) : imageCount === 2 ? (
             <div className="grid grid-cols-2 gap-3 h-[340px] sm:h-[450px] rounded-2xl overflow-hidden shadow-lg shadow-pitch/5">
               <motion.div whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-10 pointer-events-none" />
-                <img className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} main view`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} main view`} referrerPolicy="no-referrer" />
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="relative overflow-hidden">
-                <img className="w-full h-full object-cover" src={galleryImages[1]} alt={`${venue.name} photo 2`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[1]} alt={`${venue.name} photo 2`} referrerPolicy="no-referrer" />
               </motion.div>
             </div>
           ) : (
             <div className="grid grid-cols-4 grid-rows-2 gap-3 h-[340px] sm:h-[450px] rounded-2xl overflow-hidden shadow-lg shadow-pitch/5">
               <motion.div whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="col-span-3 row-span-2 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-10 pointer-events-none" />
-                <img className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} main view`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[0]} alt={`${venue.name} main view`} referrerPolicy="no-referrer" />
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="col-span-1 row-span-1 relative overflow-hidden">
-                <img className="w-full h-full object-cover" src={galleryImages[1]} alt={`${venue.name} photo 2`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[1]} alt={`${venue.name} photo 2`} referrerPolicy="no-referrer" />
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} className="col-span-1 row-span-1 relative overflow-hidden group">
-                <img className="w-full h-full object-cover" src={galleryImages[2]} alt={`${venue.name} photo 3`} referrerPolicy="no-referrer" />
+                <SafeImage className="w-full h-full object-cover" src={galleryImages[2]} alt={`${venue.name} photo 3`} referrerPolicy="no-referrer" />
                 {imageCount > 3 && (
-                  <div className="absolute inset-0 bg-ink/30 flex items-center justify-center transition-colors">
+                  <div className="absolute inset-0 bg-ink/30 flex items-center justify-center transition-colors ease-out">
                     <div className="bg-chalk/80 backdrop-blur-lg px-4 py-2 rounded-full shadow-lg">
                       <span className="text-ink font-sans text-sm font-semibold">+{imageCount - 3} Photos</span>
                     </div>
@@ -262,7 +265,7 @@ export default function DetailView({
                 const Icon = item.icon;
                 return (
                   <FadeInWhenVisible key={item.key} delay={index * 0.05}>
-                    <div className={`flex flex-col items-center justify-center p-4 rounded-xl text-center transition-all ${isActive ? 'bg-pitch/5 border border-pitch/10' : 'opacity-40 line-through'}`}>
+                    <div className={`flex flex-col items-center justify-center p-4 rounded-xl text-center transition ${isActive ? 'bg-pitch/5 border border-pitch/10' : 'opacity-40 line-through'} ease-out`}>
                       <Icon size={24} className={`mb-2 ${isActive ? 'text-pitch' : 'text-on-surface-variant'}`} />
                       <span className="font-sans text-sm font-medium text-ink">{item.label}</span>
                     </div>
@@ -275,7 +278,7 @@ export default function DetailView({
           {/* Reviews Section — live data */}
           <section className="space-y-4">
             <FadeInWhenVisible>
-              <h2 className="font-sans text-lg font-bold text-ink">Player Reviews</h2>
+              <h2 className="font-sans text-lg font-bold text-ink">Reviews</h2>
               <div className="w-10 h-1 rounded-full bg-gradient-to-r from-pitch to-marigold mt-2" />
             </FadeInWhenVisible>
 
@@ -308,7 +311,7 @@ export default function DetailView({
                   <button
                     type="submit"
                     disabled={createReview.isPending}
-                    className="flex items-center gap-2 px-5 py-2 bg-pitch hover:bg-[#15462E] text-chalk text-sm font-semibold rounded-xl transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+                    className="flex items-center gap-2 px-5 py-2 bg-pitch hover:bg-[#15462E] text-chalk text-sm font-semibold rounded-xl transition active:scale-[0.97] disabled:opacity-60 cursor-pointer ease-out"
                   >
                     {createReview.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                     Submit Review
@@ -321,7 +324,7 @@ export default function DetailView({
                   <p className="font-sans text-sm text-on-surface-variant">Log in to leave a review</p>
                   <button
                     onClick={onRequestAuth}
-                    className="px-6 py-2 bg-pitch text-chalk text-sm font-bold rounded-full hover:bg-pitch/90 transition-colors shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                    className="px-6 py-2 bg-pitch text-chalk text-sm font-bold rounded-full hover:bg-pitch/90 transition-colors shadow-sm inline-flex items-center gap-2 cursor-pointer ease-out"
                   >
                     Log In
                   </button>
@@ -331,8 +334,19 @@ export default function DetailView({
 
             {/* Review cards */}
             {reviewsLoading ? (
-              <div className="flex justify-center py-6">
-                <Loader2 size={24} className="animate-spin text-pitch/40" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2].map(skeleton => (
+                  <div key={skeleton} className="bg-chalk rounded-2xl ring-1 ring-ink/5 shadow-sm p-4 animate-pulse flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-mist rounded-full" />
+                      <div className="flex flex-col gap-1.5 flex-1">
+                        <div className="w-24 h-3 bg-mist rounded-full" />
+                        <div className="w-16 h-2 bg-mist rounded-full" />
+                      </div>
+                    </div>
+                    <div className="w-full h-12 bg-mist rounded-lg mt-1" />
+                  </div>
+                ))}
               </div>
             ) : reviews.length === 0 ? (
               <p className="text-sm text-on-surface-variant italic text-center py-4">
@@ -350,13 +364,13 @@ export default function DetailView({
                   const isAdmin = user?.role === 'admin';
                   return (
                     <FadeInWhenVisible key={review.id} delay={index * 0.08}>
-                      <div className="bg-chalk p-5 rounded-2xl ring-1 ring-ink/5 shadow-lg shadow-pitch/5 hover:-translate-y-1 transition-all duration-300 relative group">
+                      <div className="bg-chalk p-5 rounded-2xl ring-1 ring-ink/5 shadow-lg shadow-pitch/5 hover:-translate-y-1 transition duration-200 relative group ease-out">
                         {isAdmin && (
                           <button
                             onClick={() => deleteReview.mutate({ reviewId: review.id, venueId: venue.id })}
                             disabled={deleteReview.isPending}
                             title="Remove review"
-                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-clay hover:bg-red-50 rounded-lg cursor-pointer disabled:opacity-40"
+                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-clay hover:bg-red-50 rounded-lg cursor-pointer disabled:opacity-40 ease-out"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -397,14 +411,14 @@ export default function DetailView({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="lg:sticky lg:top-[95px] bg-chalk rounded-2xl shadow-xl ring-1 ring-ink/5 overflow-hidden transition-all duration-300"
+            className="lg:sticky lg:top-[95px] bg-chalk rounded-2xl shadow-xl ring-1 ring-ink/5 overflow-hidden transition duration-200 ease-out"
           >
 
             {/* Price tag & reviews rating */}
             <div className="bg-gradient-to-r from-[#143828] via-pitch to-[#1a5438] p-6 text-chalk">
               <div className="flex justify-between items-end">
                 <div>
-                  <span className="font-display text-3xl font-bold">{venue.currency || '₹'}{venue.pricePerHour}</span>
+                  <span className="font-display text-3xl font-bold">{venue.currency || '₹'}{venue.basePrice}</span>
                   <span className="font-sans text-sm text-chalk/80">/ {venue.unitType === 'hour' ? 'hour' : venue.unitType === 'half_day' ? 'half day' : 'day'}</span>
                 </div>
 
@@ -430,15 +444,12 @@ export default function DetailView({
                     No availability listed yet
                   </div>
                 ) : (
-                  <select
-                    value={selectedDate}
-                    onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlotId(null); }}
-                    className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-mono text-sm text-ink font-semibold focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition-all cursor-pointer appearance-none"
-                  >
-                    {availableDates.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                  <GroundSelect
+            value={selectedDate}
+            onValueChange={() => {}}
+            options={availableDates.map((d) => ({ value: d, label: `${d}` }))}
+            triggerClassName="w-full sm:w-[200px]"
+          />
                 )}
               </div>
 
@@ -457,7 +468,7 @@ export default function DetailView({
                         <button
                           key={slot.id}
                           disabled={true}
-                          className="py-2 px-3 rounded-full text-xs font-mono font-medium transition-all text-center select-none bg-clay/10 text-clay/50 cursor-not-allowed opacity-50"
+                          className="py-2 px-3 rounded-full text-xs font-mono font-medium transition text-center select-none bg-clay/10 text-clay/50 cursor-not-allowed opacity-50 ease-out"
                         >
                           {label} (Booked)
                         </button>
@@ -468,13 +479,13 @@ export default function DetailView({
                       <motion.button
                         key={slot.id}
                         whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileTap={{ scale: 0.97 }}
                         onClick={() => handleSlotClick(slot)}
-                        className={`py-2 px-3 rounded-full text-xs font-mono font-medium transition-all text-center select-none ${
+                        className={`py-2 px-3 rounded-full text-xs font-mono font-medium transition text-center select-none ${
                           isSelected
                             ? 'bg-pitch text-chalk shadow-md'
                             : 'bg-mist text-ink hover:bg-pitch hover:text-chalk'
-                        }`}
+                        } ease-out`}
                       >
                         {label}
                       </motion.button>
@@ -489,7 +500,7 @@ export default function DetailView({
                   onClick={onGoToBookings}
                   whileHover={{ scale: 1.03, boxShadow: '0 8px 30px rgba(234,179,8,0.3)' }}
                   whileTap={{ scale: 0.97 }}
-                  className="w-full font-sans text-sm font-semibold py-3.5 rounded-xl mb-3 flex justify-center items-center gap-2 cursor-pointer transition-all duration-300 bg-gradient-to-r from-marigold to-yellow-600 text-ink shadow-lg shadow-marigold/20"
+                  className="w-full font-sans text-sm font-semibold py-3.5 rounded-xl mb-3 flex justify-center items-center gap-2 cursor-pointer transition duration-200 bg-gradient-to-r from-marigold to-yellow-600 text-ink shadow-lg shadow-marigold/20 ease-out"
                 >
                   <Clock size={18} />
                   <span>Waiting (Check Status)</span>
@@ -500,11 +511,11 @@ export default function DetailView({
                   disabled={venue.isFullyBookedToday || !selectedSlotObj}
                   whileHover={!venue.isFullyBookedToday && selectedSlotObj ? { scale: 1.03, boxShadow: '0 8px 30px rgba(28,94,63,0.3)' } : {}}
                   whileTap={!venue.isFullyBookedToday && selectedSlotObj ? { scale: 0.97 } : {}}
-                  className={`w-full font-sans text-sm font-semibold py-3.5 rounded-xl mb-3 flex justify-center items-center gap-2 cursor-pointer transition-all duration-300 ${
+                  className={`w-full font-sans text-sm font-semibold py-3.5 rounded-xl mb-3 flex justify-center items-center gap-2 cursor-pointer transition duration-200 ${
                     venue.isFullyBookedToday
                       ? 'bg-mist text-on-surface-variant cursor-not-allowed'
                       : 'bg-gradient-to-r from-pitch to-[#15462E] text-chalk shadow-lg shadow-pitch/20'
-                  }`}
+                  } ease-out`}
                 >
                   <span>Book Now</span>
                 </motion.button>

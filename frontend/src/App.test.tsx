@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
@@ -27,19 +28,19 @@ function renderApp() {
   return render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <App />
+        <MemoryRouter><App /></MemoryRouter>
       </AuthProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('App smoke test', () => {
-  it('renders the home view with the GroundBooking brand', async () => {
+  it('renders the home view with the GroundKart brand', async () => {
     renderApp();
     // findAllByText, not findByText: the brand name correctly appears in
     // both the header logo and the footer, so an exact-single-match query
     // is the wrong assertion — the test only cares that it renders at all.
-    const matches = await screen.findAllByText('GroundBooking');
+    const matches = await screen.findAllByAltText('GroundKart');
     expect(matches.length).toBeGreaterThan(0);
   });
 

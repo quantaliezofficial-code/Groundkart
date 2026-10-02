@@ -30,7 +30,7 @@ function NotificationBell() {
       <button
         onClick={() => setIsOpen((v) => !v)}
         aria-label="Notifications"
-        className="relative p-2 rounded-full text-chalk/70 hover:text-marigold hover:bg-white/10 transition-all duration-200 cursor-pointer"
+        className="relative p-2 rounded-full text-chalk/70 hover:text-marigold hover:bg-white/10 transition duration-200 cursor-pointer ease-out"
       >
         <Bell size={19} />
         {unreadCount > 0 && (
@@ -81,7 +81,7 @@ function NotificationBell() {
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`relative flex items-start justify-between w-full px-4 py-3 text-left transition-colors hover:bg-mist/60 group ${n.read_at ? 'opacity-50' : 'bg-pitch/[0.03]'}`}
+                  className={`relative flex items-start justify-between w-full px-4 py-3 text-left transition-colors hover:bg-mist/60 group ${n.read_at ? 'opacity-50' : 'bg-pitch/[0.03]'} ease-out`}
                 >
                   <button
                     onClick={() => !n.read_at && markRead.mutate(n.id)}
@@ -98,7 +98,7 @@ function NotificationBell() {
                       deleteNotification.mutate(n.id);
                     }}
                     disabled={deleteNotification.isPending}
-                    className="absolute right-3 top-3 p-1 text-ink/30 hover:text-clay hover:bg-clay/10 rounded-full opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-50"
+                    className="absolute right-3 top-3 p-1 text-ink/30 hover:text-clay hover:bg-clay/10 rounded-full opacity-0 group-hover:opacity-100 transition cursor-pointer disabled:opacity-50 ease-out"
                     aria-label="Clear notification"
                   >
                     <X size={14} />
@@ -127,8 +127,9 @@ interface HeaderProps {
 
 const NAV_ITEMS = [
   { label: 'Explore', view: 'home' as const },
-  { label: 'Find Space', view: 'search' as const },
+  { label: 'Find Venues', view: 'search' as const },
   { label: 'My Bookings', view: 'my-bookings' as const, requireAuth: true },
+  { label: 'Support', view: 'support' as const, requireAuth: true },
 ];
 
 export default function Header({
@@ -142,8 +143,18 @@ export default function Header({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const { user, logout } = useAuth();
+
+  
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Close profile menu on outside click
   useEffect(() => {
@@ -158,14 +169,18 @@ export default function Header({
     <>
       <header className="fixed top-0 left-0 right-0 z-50">
         {/* Main dark nav */}
-        <div className="bg-gradient-to-r from-[#143828] via-pitch to-[#1a5438]">
+        <div className={`transition-colors duration-300 ease-out ${
+          isScrolled || currentView !== 'home'
+            ? 'bg-[#06281D]/85 backdrop-blur-md border-b border-white/10'
+            : 'bg-transparent border-b border-transparent'
+        }`}>
           <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-[64px]">
+            <div className="flex items-center justify-between h-[72px]">
 
               {/* ── Logo ── */}
               <motion.button
                 whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.97 }}
                 onClick={() => {
                   if (user?.role === 'admin') {
                     window.dispatchEvent(new CustomEvent('navigate-admin-tab', { detail: 'Overview' }));
@@ -175,25 +190,19 @@ export default function Header({
                     onNavigate('home');
                   }
                 }}
-                className="flex items-center gap-2 flex-shrink-0 cursor-pointer group"
+                className="flex items-center flex-shrink-0 cursor-pointer"
                 id="logo"
               >
-                {/* Logo icon */}
-                <div className="w-8 h-8 rounded-lg bg-marigold/20 flex items-center justify-center group-hover:bg-marigold/30 transition-colors">
-                  <span className="text-marigold font-display text-lg font-bold leading-none">G</span>
-                </div>
-                <span className="font-display text-[22px] sm:text-2xl text-chalk tracking-tight leading-none group-hover:text-chalk/90 transition-colors">
-                  Ground<span className="text-marigold">Booking</span>
-                </span>
+                <img src="/logo-full.png" alt="GroundKart" className="h-12 sm:h-14 w-auto object-contain py-1" />
               </motion.button>
 
               {/* ── Center search ── */}
               {currentView !== 'detail' && user?.role !== 'admin' && user?.role !== 'owner' && (
                 <motion.div 
                   layout
-                  className={`relative hidden md:block mx-6 lg:mx-10 flex-1 max-w-lg transition-all duration-300 ${isSearchFocused ? 'max-w-xl' : ''}`}
+                  className={`relative hidden md:block mx-6 lg:mx-10 flex-1 max-w-lg transition duration-200 ${isSearchFocused ? 'max-w-xl' : ''} ease-out`}
                 >
-                  <div className={`relative rounded-full transition-all duration-300 ${isSearchFocused ? 'ring-2 ring-marigold/40 bg-white/15' : 'bg-white/10 hover:bg-white/[0.13]'}`}>
+                  <div className={`relative rounded-full transition duration-200 ${isSearchFocused ? 'ring-2 ring-marigold/40 bg-white/15' : 'bg-white/10 hover:bg-white/[0.13]'} ease-out`}>
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-chalk/40">
                       <Search size={16} />
                     </span>
@@ -204,7 +213,7 @@ export default function Header({
                       onChange={(e) => onSearchChange(e.target.value)}
                       onFocus={() => setIsSearchFocused(true)}
                       onBlur={() => setIsSearchFocused(false)}
-                      className="w-full bg-transparent rounded-full pl-11 pr-4 py-2.5 text-[13px] text-chalk placeholder:text-chalk/35 focus:outline-none transition-all"
+                      className="w-full bg-transparent rounded-full pl-11 pr-4 py-2.5 text-[13px] text-chalk placeholder:text-chalk/35 focus:outline-none transition ease-out"
                     />
                   </div>
                 </motion.div>
@@ -220,11 +229,11 @@ export default function Header({
                       <button
                         key={view}
                         onClick={() => (requireAuth && !user ? onRequestAuth() : onNavigate(view))}
-                        className={`relative px-3.5 py-2 rounded-full text-[13px] font-medium transition-all duration-200 cursor-pointer ${
+                        className={`relative px-3.5 py-2 rounded-full text-[13px] font-medium transition duration-200 cursor-pointer ${
                           isActive
                             ? 'text-marigold bg-white/10'
                             : 'text-chalk/70 hover:text-chalk hover:bg-white/[0.07]'
-                        }`}
+                        } ease-out`}
                       >
                         {label}
                         {isActive && (
@@ -245,7 +254,7 @@ export default function Header({
                 {user?.role !== 'customer' && (
                   <button
                     onClick={onListVenue}
-                    className="hidden sm:flex items-center gap-1.5 bg-marigold hover:bg-[#e5952e] text-pitch px-4 py-[7px] rounded-full text-[13px] font-semibold active:scale-[0.97] transition-all cursor-pointer shadow-[0_2px_8px_rgba(242,163,59,0.25)]"
+                    className="hidden sm:flex items-center gap-1.5 bg-marigold hover:bg-[#e5952e] text-pitch px-4 py-[7px] rounded-full text-[13px] font-semibold active:scale-[0.97] transition cursor-pointer shadow-[0_2px_8px_rgba(242,163,59,0.25)] ease-out"
                   >
                     <PlusCircle size={14} strokeWidth={2.5} />
                     <span>{user?.role === 'owner' || user?.role === 'admin' ? 'Dashboard' : 'List a Venue'}</span>
@@ -261,13 +270,13 @@ export default function Header({
                     <button
                       onClick={() => setShowProfileMenu((v) => !v)}
                       aria-label="Account menu"
-                      className="flex items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-chalk/80 transition-all duration-200 hover:bg-white/10 cursor-pointer ml-0.5"
+                      className="flex items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-chalk/80 transition duration-200 hover:bg-white/10 cursor-pointer ml-0.5 ease-out"
                     >
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-marigold to-[#e5952e] text-[11px] font-bold text-pitch shadow-sm">
                         {user.name.charAt(0).toUpperCase()}
                       </span>
                       <span className="hidden sm:inline text-[13px] font-medium">{user.name.split(' ')[0]}</span>
-                      <ChevronDown size={13} className={`hidden sm:block transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
+                      <ChevronDown size={13} className={`hidden sm:block transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''} ease-out`} />
                     </button>
                     <AnimatePresence>
                       {showProfileMenu && (
@@ -291,7 +300,7 @@ export default function Header({
                                 onListVenue(); 
                                 window.dispatchEvent(new CustomEvent('navigate-admin-tab', { detail: 'ApprovalQueue' })); // fallback if already mounted
                               }}
-                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors"
+                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors ease-out"
                             >
                               <ShieldCheck size={15} className="text-on-surface-variant" /> Approval Queue
                             </button>
@@ -303,14 +312,14 @@ export default function Header({
                                 onListVenue(); 
                                 window.dispatchEvent(new CustomEvent('navigate-owner-tab', { detail: 'Calendars' })); // fallback if already mounted
                               }}
-                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors"
+                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors ease-out"
                             >
                               <CalendarDays size={15} className="text-on-surface-variant" /> My Bookings
                             </button>
                           ) : (
                             <button
                               onClick={() => { setShowProfileMenu(false); onNavigate('my-bookings'); }}
-                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors"
+                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-mist transition-colors ease-out"
                             >
                               <User size={15} className="text-on-surface-variant" /> My Bookings
                             </button>
@@ -318,7 +327,7 @@ export default function Header({
                           <div className="border-t border-ink/5 mt-0.5 pt-0.5">
                             <button
                               onClick={() => { setShowProfileMenu(false); void logout(); }}
-                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-clay hover:bg-clay/5 transition-colors"
+                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] text-clay hover:bg-clay/5 transition-colors ease-out"
                             >
                               <LogOut size={15} /> Log out
                             </button>
@@ -330,7 +339,7 @@ export default function Header({
                 ) : (
                   <button
                     onClick={onRequestAuth}
-                    className="rounded-full border border-chalk/25 px-4 py-[7px] text-[13px] font-semibold text-chalk transition-all hover:bg-chalk hover:text-pitch cursor-pointer active:scale-[0.97] ml-0.5"
+                    className="rounded-full border border-chalk/25 px-4 py-[7px] text-[13px] font-semibold text-chalk transition hover:bg-chalk hover:text-pitch cursor-pointer active:scale-[0.97] ml-0.5 ease-out"
                   >
                     Log in
                   </button>
@@ -339,7 +348,7 @@ export default function Header({
                 {/* Mobile hamburger */}
                 <button
                   onClick={() => setMobileMenuOpen((v) => !v)}
-                  className="lg:hidden p-2 text-chalk/70 hover:text-chalk rounded-full hover:bg-white/10 transition-all cursor-pointer ml-0.5"
+                  className="lg:hidden p-2 text-chalk/70 hover:text-chalk rounded-full hover:bg-white/10 transition cursor-pointer ml-0.5 ease-out"
                   aria-label="Toggle menu"
                 >
                   {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -349,7 +358,7 @@ export default function Header({
           </div>
 
           {/* Gradient accent line */}
-          <div className="h-[2px] w-full bg-gradient-to-r from-marigold/0 via-marigold/60 to-marigold/0" />
+          
         </div>
 
         {/* ── Mobile menu ── */}
@@ -374,7 +383,7 @@ export default function Header({
                       placeholder="Search venues, sports, cities..."
                       value={searchQuery}
                       onChange={(e) => onSearchChange(e.target.value)}
-                      className="w-full bg-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-chalk placeholder:text-chalk/35 focus:outline-none focus:ring-2 focus:ring-marigold/40 transition-all"
+                      className="w-full bg-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-chalk placeholder:text-chalk/35 focus:outline-none focus:ring-2 focus:ring-marigold/40 transition ease-out"
                     />
                   </div>
                 )}
@@ -386,11 +395,11 @@ export default function Header({
                       else onNavigate(view);
                       setMobileMenuOpen(false);
                     }}
-                    className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                    className={`block w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition ${
                       currentView === view
                         ? 'text-marigold bg-white/10'
                         : 'text-chalk/70 hover:text-chalk hover:bg-white/[0.06]'
-                    }`}
+                    } ease-out`}
                   >
                     {label}
                   </button>
@@ -398,7 +407,7 @@ export default function Header({
                 {user?.role !== 'customer' && (
                   <button
                     onClick={() => { onListVenue(); setMobileMenuOpen(false); }}
-                    className="flex sm:hidden items-center gap-2 w-full bg-marigold hover:bg-[#e5952e] text-pitch px-4 py-3 rounded-xl text-sm font-semibold transition-all mt-3"
+                    className="flex sm:hidden items-center gap-2 w-full bg-marigold hover:bg-[#e5952e] text-pitch px-4 py-3 rounded-xl text-sm font-semibold transition mt-3 ease-out"
                   >
                     <PlusCircle size={16} />
                     <span>{user?.role === 'owner' || user?.role === 'admin' ? 'Dashboard' : 'List a Venue'}</span>
@@ -410,8 +419,7 @@ export default function Header({
         </AnimatePresence>
       </header>
 
-      {/* Spacer */}
-      <div className="h-[66px]" />
+      {currentView !== 'home' && <div className="h-[72px]" />}
     </>
   );
 }

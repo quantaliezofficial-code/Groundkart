@@ -55,7 +55,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
     setIsSubmitting(true);
     try {
       if (isSignup) {
-        await signup(name, email, password, phone ? phone : undefined);
+        await signup(name, email, password);
         onSuccess(accountType);
       } else {
         await login(email, password);
@@ -79,16 +79,16 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex items-center justify-center px-4 transition-all duration-300 ${
+      className={`fixed inset-0 z-[100] flex items-center justify-center px-4 transition duration-200 ${
         isVisible ? 'bg-ink/50 backdrop-blur-sm' : 'bg-ink/0'
-      }`}
+      } ease-out`}
       onClick={handleClose}
       role="presentation"
     >
       <div
-        className={`relative w-full max-w-[440px] overflow-hidden rounded-3xl bg-chalk shadow-2xl transition-all duration-300 ${
+        className={`relative w-full max-w-[440px] overflow-hidden rounded-3xl bg-chalk shadow-2xl transition duration-200 ${
           isVisible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4'
-        }`}
+        } ease-out`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -104,17 +104,15 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
               type="button"
               onClick={handleClose}
               aria-label="Close"
-              className="p-1.5 rounded-full bg-white/10 text-chalk/70 hover:bg-white/20 hover:text-chalk transition-all cursor-pointer"
+              className="p-1.5 rounded-full bg-white/10 text-chalk/70 hover:bg-white/20 hover:text-chalk transition cursor-pointer ease-out"
             >
               <X size={16} />
             </button>
           </div>
           <div className="absolute bottom-5 left-7">
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-8 h-8 rounded-lg bg-marigold/20 flex items-center justify-center">
-                <Sparkles size={16} className="text-marigold" />
-              </div>
-              <span className="text-chalk/50 text-xs font-medium tracking-wider uppercase">GroundBooking</span>
+              <img src="/logo-icon.png" alt="GroundKart Icon" className="w-8 h-8 object-contain drop-shadow-md" />
+              <span className="text-chalk/50 text-xs font-medium tracking-wider uppercase">GroundKart</span>
             </div>
             <h2 id="auth-modal-title" className="font-display text-[22px] font-semibold text-chalk leading-tight">
               {isSignup ? 'Create your account' : 'Welcome back'}
@@ -141,7 +139,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   Full name
                 </label>
                 <div className="relative group">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors ease-out">
                     <UserIcon size={16} />
                   </span>
                   <input
@@ -151,7 +149,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition-all"
+                    className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition ease-out"
                     placeholder="Your full name"
                   />
                 </div>
@@ -168,22 +166,22 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   <button
                     type="button"
                     onClick={() => setAccountType('client')}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition cursor-pointer ${
                       accountType === 'client'
                         ? 'border-pitch bg-pitch/5 text-pitch'
                         : 'border-ink/10 bg-mist/50 text-ink/50 hover:bg-chalk hover:text-ink/80'
-                    }`}
+                    } ease-out`}
                   >
                     Book Venues
                   </button>
                   <button
                     type="button"
                     onClick={() => setAccountType('owner')}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition cursor-pointer ${
                       accountType === 'owner'
                         ? 'border-pitch bg-pitch/5 text-pitch'
                         : 'border-ink/10 bg-mist/50 text-ink/50 hover:bg-chalk hover:text-ink/80'
-                    }`}
+                    } ease-out`}
                   >
                     List a Venue
                   </button>
@@ -197,7 +195,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                 {isSignup ? 'Email address (optional)' : 'Email or Phone number'}
               </label>
               <div className="relative group">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors ease-out">
                   <Mail size={16} />
                 </span>
                 <input
@@ -207,7 +205,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   required={!isSignup}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition-all"
+                  className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition ease-out"
                   placeholder={isSignup ? "you@example.com" : "you@example.com or phone"}
                 />
               </div>
@@ -220,7 +218,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   Phone number
                 </label>
                 <div className="relative group">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors ease-out">
                     <UserIcon size={16} />
                   </span>
                   <input
@@ -229,7 +227,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition-all"
+                    className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition ease-out"
                     placeholder="Your phone number"
                   />
                 </div>
@@ -242,7 +240,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                 Password
               </label>
               <div className="relative group">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/25 group-focus-within:text-pitch transition-colors ease-out">
                   <Lock size={16} />
                 </span>
                 <input
@@ -252,13 +250,13 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-12 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition-all"
+                  className="w-full rounded-xl border border-ink/10 bg-mist/50 pl-10 pr-12 py-3 text-sm text-ink placeholder:text-ink/30 outline-none focus:border-pitch/30 focus:ring-2 focus:ring-pitch/10 focus:bg-chalk transition ease-out"
                   placeholder={isSignup ? 'Min. 8 characters' : 'Enter your password'}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-ink/30 hover:text-ink/60 transition-colors cursor-pointer rounded"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-ink/30 hover:text-ink/60 transition-colors cursor-pointer rounded ease-out"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   tabIndex={-1}
                 >
@@ -273,9 +271,9 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                     {[1, 2, 3].map((level) => (
                       <div
                         key={level}
-                        className={`h-1 flex-1 rounded-full transition-all duration-300 ${
+                        className={`h-1 flex-1 rounded-full transition duration-200 ${
                           passwordStrength >= level ? strengthColors[passwordStrength] : 'bg-ink/8'
-                        }`}
+                        } ease-out`}
                       />
                     ))}
                   </div>
@@ -292,14 +290,14 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
             <button
               type="submit"
               disabled={isSubmitting}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pitch to-[#1a5438] py-3.5 font-semibold text-chalk transition-all hover:shadow-lg hover:shadow-pitch/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed mt-2 cursor-pointer"
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pitch to-[#1a5438] py-3.5 font-semibold text-chalk transition hover:shadow-lg hover:shadow-pitch/20 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed mt-2 cursor-pointer ease-out"
             >
               {isSubmitting ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
                 <>
                   {isSignup ? 'Create account' : 'Log in'}
-                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5 ease-out" />
                 </>
               )}
             </button>
@@ -321,7 +319,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
             <button
               type="button"
               onClick={() => onSwitchMode(isSignup ? 'login' : 'signup')}
-              className="font-semibold text-pitch hover:text-pitch/80 transition-colors cursor-pointer"
+              className="font-semibold text-pitch hover:text-pitch/80 transition-colors cursor-pointer ease-out"
             >
               {isSignup ? 'Log in instead' : 'Create one free'}
             </button>
@@ -331,5 +329,6 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
     </div>
   );
 }
+
 
 

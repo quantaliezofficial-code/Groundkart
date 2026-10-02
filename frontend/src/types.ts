@@ -46,25 +46,16 @@ export interface Venue {
   image: string;
   gallery?: string[];
   /** The price for one unit of unitType (an hour, a half day, or a full day) — not always "per hour" despite the field name kept for component compatibility. */
-  pricePerHour: number;
+  basePrice: number;
   unitType: UnitType;
   currency: string;
   rating: number;
   reviewCount: number;
-  category: VenueCategoryLabel;
-  sportType: string;
+  category: string;
+  venueType: string;
   description: string;
   rules?: string[];
-  amenities: {
-    freeParking: boolean;
-    floodlights: boolean;
-    airConditioning: boolean;
-    lockerRooms: boolean;
-    highSpeedWifi: boolean;
-    climateControl: boolean;
-    fifaCertified: boolean;
-    stadiumLighting: boolean;
-  };
+  amenities: string[];
   capacityGroup: '1-5' | '6-10' | '11-20' | '20+';
   isFullyBookedToday?: boolean;
   isFastFill?: boolean;

@@ -157,6 +157,25 @@ async def get_venue(
     return venue
 
 
+
+async def list_categories(session: AsyncSession) -> list[Category]:
+    from app.models.core import Category
+    from sqlalchemy import select
+    result = await session.execute(select(Category).order_by(Category.name))
+    return list(result.scalars().all())
+
+async def list_venue_types(session: AsyncSession) -> list[VenueType]:
+    from app.models.core import VenueType
+    from sqlalchemy import select
+    result = await session.execute(select(VenueType).order_by(VenueType.name))
+    return list(result.scalars().all())
+
+async def list_use_cases(session: AsyncSession) -> list[UseCase]:
+    from app.models.core import UseCase
+    from sqlalchemy import select
+    result = await session.execute(select(UseCase).order_by(UseCase.name))
+    return list(result.scalars().all())
+
 async def list_venues(
     session: AsyncSession,
     city: str | None = None,

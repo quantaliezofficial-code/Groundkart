@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Sliders, Check } from 'lucide-react';
+import { X, Sliders, Check, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface FiltersSidebarProps {
@@ -61,7 +61,7 @@ export default function FiltersSidebar({
             <motion.button
               onClick={handleClearLocal}
               whileHover={{ color: '#C0492E' }}
-              className="text-xs font-medium text-on-surface-variant transition-colors cursor-pointer"
+              className="text-xs font-medium text-on-surface-variant transition-colors cursor-pointer ease-out"
             >
               Clear all
             </motion.button>
@@ -81,7 +81,7 @@ export default function FiltersSidebar({
                   placeholder="Min"
                   value={minPrice}
                   onChange={(e) => onMinPriceChange(e.target.value)}
-                  className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition-all"
+                  className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition ease-out"
                 />
               </div>
               <span className="text-on-surface-variant/50 text-sm">-</span>
@@ -92,7 +92,7 @@ export default function FiltersSidebar({
                   placeholder="Max"
                   value={maxPrice}
                   onChange={(e) => onMaxPriceChange(e.target.value)}
-                  className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition-all"
+                  className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition ease-out"
                 />
               </div>
             </div>
@@ -116,7 +116,7 @@ export default function FiltersSidebar({
                 return (
                   <motion.label 
                     key={key}
-                    whileTap={{ scale: 0.98 }}
+                    whileTap={{ scale: 0.97 }}
                     className="flex items-center gap-3 cursor-pointer group select-none"
                   >
                     <div className="relative flex items-center justify-center w-5 h-5">
@@ -124,11 +124,11 @@ export default function FiltersSidebar({
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => onAmenityToggle(key)}
-                        className="peer appearance-none w-5 h-5 rounded-[6px] bg-mist border-none checked:bg-pitch transition-colors cursor-pointer"
+                        className="peer appearance-none w-5 h-5 rounded-[6px] bg-mist border-none checked:bg-pitch transition-colors cursor-pointer ease-out"
                       />
-                      <Check size={12} className={`absolute text-chalk pointer-events-none stroke-[3] transition-opacity duration-200 ${isChecked ? 'opacity-100' : 'opacity-0'}`} />
+                      <Check size={12} className={`absolute text-chalk pointer-events-none stroke-[3] transition-opacity duration-200 ${isChecked ? 'opacity-100' : 'opacity-0'} ease-out`} />
                     </div>
-                    <span className={`font-sans text-sm transition-colors ${isChecked ? 'text-ink font-medium' : 'text-on-surface-variant group-hover:text-ink'}`}>
+                    <span className={`font-sans text-sm transition-colors ${isChecked ? 'text-ink font-medium' : 'text-on-surface-variant group-hover:text-ink'} ease-out`}>
                       {labels[key]}
                     </span>
                   </motion.label>
@@ -147,14 +147,14 @@ export default function FiltersSidebar({
               {['1-5', '6-10', '11-20', '20+'].map((cap) => (
                 <motion.button
                   key={cap}
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={{ scale: 0.97 }}
                   layout
                   onClick={() => onCapacitySet(selectedCapacity === cap ? '' : cap)}
-                  className={`py-1.5 px-4 rounded-full font-sans text-sm transition-all cursor-pointer ${
+                  className={`py-1.5 px-4 rounded-full font-sans text-sm transition cursor-pointer ${
                     selectedCapacity === cap
                       ? 'bg-pitch text-chalk font-medium shadow-md shadow-pitch/10'
                       : 'bg-chalk ring-1 ring-ink/10 text-on-surface-variant hover:bg-mist'
-                  }`}
+                  } ease-out`}
                 >
                   {cap}
                 </motion.button>
@@ -172,16 +172,16 @@ export default function FiltersSidebar({
               {[3.0, 4.0, 4.5].map((rate) => (
                 <motion.button
                   key={rate}
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={{ scale: 0.97 }}
                   layout
                   onClick={() => onRatingSet(selectedRating === rate ? 0 : rate)}
-                  className={`flex-1 py-1.5 rounded-full font-sans text-sm flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  className={`flex-1 py-1.5 rounded-full font-sans text-sm flex items-center justify-center gap-1 transition cursor-pointer ${
                     selectedRating === rate
                       ? 'bg-marigold/15 text-marigold ring-1 ring-marigold/30 font-semibold'
                       : 'bg-chalk ring-1 ring-ink/10 text-on-surface-variant hover:bg-mist'
-                  }`}
+                  } ease-out`}
                 >
-                  ★ {rate.toFixed(1)}+
+                  <Star size={14} className="inline fill-marigold text-marigold mr-1" /> {rate.toFixed(1)}+
                 </motion.button>
               ))}
             </div>
@@ -228,7 +228,7 @@ export default function FiltersSidebar({
                 </div>
                 <button
                   onClick={onCloseMobileDrawer}
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-mist transition-colors cursor-pointer text-on-surface-variant hover:text-ink"
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-mist transition-colors cursor-pointer text-on-surface-variant hover:text-ink ease-out"
                 >
                   <X size={20} />
                 </button>
@@ -256,7 +256,7 @@ export default function FiltersSidebar({
                         placeholder="Min"
                         value={minPrice}
                         onChange={(e) => onMinPriceChange(e.target.value)}
-                        className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition-all"
+                        className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition ease-out"
                       />
                     </div>
                     <span className="text-on-surface-variant/50">-</span>
@@ -267,7 +267,7 @@ export default function FiltersSidebar({
                         placeholder="Max"
                         value={maxPrice}
                         onChange={(e) => onMaxPriceChange(e.target.value)}
-                        className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition-all"
+                        className="w-full bg-mist border-none rounded-xl pl-8 pr-3 py-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pitch/15 transition ease-out"
                       />
                     </div>
                   </div>
@@ -296,19 +296,19 @@ export default function FiltersSidebar({
                       return (
                         <motion.button
                           key={key}
-                          whileTap={{ scale: 0.95 }}
+                          whileTap={{ scale: 0.97 }}
                           layout
                           onClick={() => onAmenityToggle(key)}
-                          className={`py-3 px-4 rounded-xl text-left text-sm transition-all flex items-center gap-3 cursor-pointer ${
+                          className={`py-3 px-4 rounded-xl text-left text-sm transition flex items-center gap-3 cursor-pointer ${
                             isChecked
                               ? 'bg-pitch/5 text-pitch font-medium ring-1 ring-pitch/20'
                               : 'bg-mist text-ink hover:bg-mist/80'
-                          }`}
+                          } ease-out`}
                         >
                           <div className={`w-5 h-5 rounded-[6px] flex items-center justify-center transition-colors ${
                             isChecked ? 'bg-pitch' : 'bg-chalk ring-1 ring-ink/10'
-                          }`}>
-                            <Check size={12} className={`text-chalk stroke-[3] transition-opacity ${isChecked ? 'opacity-100' : 'opacity-0'}`} />
+                          } ease-out`}>
+                            <Check size={12} className={`text-chalk stroke-[3] transition-opacity ${isChecked ? 'opacity-100' : 'opacity-0'} ease-out`} />
                           </div>
                           <span>{labels[key]}</span>
                         </motion.button>
@@ -332,14 +332,14 @@ export default function FiltersSidebar({
                     {['1-5', '6-10', '11-20', '20+'].map((cap) => (
                       <motion.button
                         key={cap}
-                        whileTap={{ scale: 0.95 }}
+                        whileTap={{ scale: 0.97 }}
                         layout
                         onClick={() => onCapacitySet(selectedCapacity === cap ? '' : cap)}
-                        className={`px-5 py-2.5 rounded-full font-sans text-sm transition-all cursor-pointer ${
+                        className={`px-5 py-2.5 rounded-full font-sans text-sm transition cursor-pointer ${
                           selectedCapacity === cap
                             ? 'bg-pitch text-chalk font-medium shadow-md shadow-pitch/10'
                             : 'bg-chalk ring-1 ring-ink/10 text-on-surface-variant hover:bg-mist'
-                        }`}
+                        } ease-out`}
                       >
                         {cap}
                       </motion.button>
@@ -362,16 +362,16 @@ export default function FiltersSidebar({
                     {[3.0, 4.0, 4.5].map((rate) => (
                       <motion.button
                         key={rate}
-                        whileTap={{ scale: 0.95 }}
+                        whileTap={{ scale: 0.97 }}
                         layout
                         onClick={() => onRatingSet(selectedRating === rate ? 0 : rate)}
-                        className={`flex-1 py-2.5 rounded-full font-sans text-sm flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                        className={`flex-1 py-2.5 rounded-full font-sans text-sm flex items-center justify-center gap-1 transition cursor-pointer ${
                           selectedRating === rate
                             ? 'bg-marigold/15 text-marigold ring-1 ring-marigold/30 font-semibold'
                             : 'bg-chalk ring-1 ring-ink/10 text-on-surface-variant hover:bg-mist'
-                        }`}
+                        } ease-out`}
                       >
-                        ★ {rate.toFixed(1)}+
+                        <Star size={14} className="inline fill-marigold text-marigold mr-1" /> {rate.toFixed(1)}+
                       </motion.button>
                     ))}
                   </div>
@@ -387,15 +387,15 @@ export default function FiltersSidebar({
                     onCloseMobileDrawer();
                   }}
                   whileHover={{ color: '#C0492E' }}
-                  className="text-on-surface-variant font-sans text-sm font-medium transition-colors cursor-pointer"
+                  className="text-on-surface-variant font-sans text-sm font-medium transition-colors cursor-pointer ease-out"
                 >
                   Clear all
                 </motion.button>
                 <motion.button
                   onClick={onCloseMobileDrawer}
                   whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex-1 bg-gradient-to-r from-pitch to-[#1a5438] text-chalk font-sans text-sm font-semibold py-3.5 rounded-xl transition-all text-center cursor-pointer shadow-lg shadow-pitch/20"
+                  whileTap={{ scale: 0.97 }}
+                  className="flex-1 bg-gradient-to-r from-pitch to-[#1a5438] text-chalk font-sans text-sm font-semibold py-3.5 rounded-xl transition text-center cursor-pointer shadow-lg shadow-pitch/20 ease-out"
                 >
                   Show {resultsCount} Results
                 </motion.button>

@@ -65,7 +65,7 @@ from app.schemas.booking import (
 )
 from app.schemas.catalog import (
     InventoryUnitBatchCreateRequest,
-    InventoryUnitResponse,
+    CategoryResponse, VenueTypeResponse, UseCaseResponse, InventoryUnitResponse,
     ReviewCreateRequest,
     ReviewResponse,
     VenueCreateRequest,
@@ -726,6 +726,22 @@ async def create_venue_route(
     )
     return VenueResponse.from_venue(venue)
 
+
+
+@app.get("/api/v1/categories", response_model=list[CategoryResponse])
+async def list_categories(db: AsyncSession = Depends(get_db)):
+    cats = await catalog_service.list_categories(db)
+    return [CategoryResponse.model_validate(c) for c in cats]
+
+@app.get("/api/v1/venue-types", response_model=list[VenueTypeResponse])
+async def list_venue_types(db: AsyncSession = Depends(get_db)):
+    vtypes = await catalog_service.list_venue_types(db)
+    return [VenueTypeResponse.model_validate(v) for v in vtypes]
+
+@app.get("/api/v1/use-cases", response_model=list[UseCaseResponse])
+async def list_use_cases(db: AsyncSession = Depends(get_db)):
+    ucases = await catalog_service.list_use_cases(db)
+    return [UseCaseResponse.model_validate(u) for u in ucases]
 
 @app.get("/api/v1/venues", response_model=VenueListResponse)
 async def list_venues_route(
@@ -1402,6 +1418,17 @@ async def custom_exception_handler(request, exc):
 from app.schemas.ticket import TicketCreateRequest, TicketResponse, TicketDetailResponse, TicketCommentRequest, TicketUpdateRequest
 from app.modules.support import service as support_service
 
+@app.get("/api/v1/admin/support/tickets", response_model=list[TicketResponse], dependencies=[Depends(require_role("admin"))])
+async def list_admin_tickets_route(
+    status: str | None = None,
+    category: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    tickets = await support_service.list_tickets_for_admin(db, status=status, category=category, limit=limit, offset=offset)
+    return [TicketResponse.from_ticket(t) for t in tickets]
+
 @app.post("/api/v1/support/tickets", response_model=TicketResponse, status_code=201)
 async def create_ticket_route(
     req: TicketCreateRequest,
@@ -1445,9 +1472,9 @@ async def get_ticket_route(
             venue_result = await db.execute(select(Venue).where(Venue.id == ticket.venue_id))
             venue = venue_result.scalar_one_or_none()
             if not venue or venue.owner_id != current_user.id:
-                raise HTTPException(status_code=403, detail="Not authorized")
+                raise HTTPException(status_code=404, detail="Ticket not found")
         else:
-            raise HTTPException(status_code=403, detail="Not authorized")
+            raise HTTPException(status_code=404, detail="Ticket not found")
             
     events = ticket.events
     if current_user.role != "admin":
@@ -1472,7 +1499,7 @@ async def update_ticket_route(
 
 from app.schemas.ticket import TicketEventResponse
 
-@app.post("/api/v1/support/tickets/{ticket_id}/comments", response_model=TicketEventResponse)
+@app.post("/api/v1/support/tickets/{ticket_id}/comments", response_model=TicketEventResponse, status_code=201)
 async def add_comment_route(
     ticket_id: uuid.UUID,
     req: TicketCommentRequest,
