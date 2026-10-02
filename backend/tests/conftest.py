@@ -44,10 +44,11 @@ async def clean_tables(test_engine):
         async with test_engine.begin() as conn:
             await conn.execute(
                 text(
-                    "TRUNCATE blocks, venue_images, venue_amenities, amenities, audit_logs, "
+                    "TRUNCATE ticket_events, support_tickets, "
+                    "blocks, venue_media, venue_amenities, amenities, audit_logs, "
                     "owner_verifications, refresh_tokens, login_rate_limits, payments, "
                     "payouts, bookings, booking_events, notifications, reviews, "
-                    "inventory_units, venues, users, idempotency_keys, outbox_events CASCADE"
+                    "inventory_units, categories, venue_types, use_cases, venue_use_cases, venues, users, idempotency_keys, outbox_events, jobs, pricing_rules CASCADE"
                 )
             )
 

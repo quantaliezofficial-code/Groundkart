@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 import asyncio
 import logging
 import uuid
@@ -78,6 +79,17 @@ from app.schemas.catalog import (
 from app.schemas.notifications import NotificationResponse, UnreadCountResponse
 from app.schemas.owner_verification import OwnerVerificationResponse, RejectVerificationRequest
 from app.schemas.payout import PayoutDetail, PayoutRunRequest
+
+from app.schemas.homepage import (
+    HomepagePlacementCreate,
+    HomepagePlacementUpdate,
+    HomepagePlacementResponse,
+    HomepageResponse,
+    SectionReorderRequest,
+)
+from app.modules.homepage import service as homepage_service
+from app.schemas.catalog import VenueMediaResponse
+
 from app.storage_client import get_file_storage
 
 logger = logging.getLogger("groundbooking.hold_sweep")
@@ -730,7 +742,7 @@ async def list_venues_route(
     venues, total = await catalog_service.list_venues(
         session=db,
         city=city,
-        category=category,
+        category_id=category,
         available_on=available_on,
         price_max=price_max,
         limit=limit,
@@ -813,8 +825,8 @@ async def update_venue_route(
     return VenueResponse.from_venue(refreshed)
 
 
-@app.post("/api/v1/venues/{venue_id}/images", response_model=VenueResponse, status_code=201)
-async def upload_venue_image_route(
+@app.post("/api/v1/venues/{venue_id}/media", response_model=VenueResponse, status_code=201)
+async def upload_venue_media_route(
     venue_id: uuid.UUID,
     image: UploadFile = File(...),
     is_cover: bool = Form(default=False),
@@ -823,7 +835,7 @@ async def upload_venue_image_route(
     storage=Depends(get_file_storage),
 ) -> VenueResponse:
     content = await image.read()
-    await catalog_service.upload_venue_image(
+    await catalog_service.upload_venue_media(
         session=db,
         venue_id=venue_id,
         viewer=current_user,
@@ -1088,7 +1100,7 @@ async def list_users_for_admin_route(
     ID, but nothing let an admin discover which user IDs exist to act on —
     there was no user-listing route anywhere in this codebase."""
     users = await admin_service.list_users_for_admin(
-        db, role=role, suspended_only=suspended, limit=limit, offset=offset
+        db, role=role, suspended_only=suspended_only, search=search, limit=limit, offset=offset
     )
     return [AdminUserView.model_validate(u) for u in users]
 
@@ -1257,3 +1269,265 @@ async def list_all_reviews_admin_route(
     result = await db.execute(stmt)
     reviews = result.scalars().all()
     return [AdminReviewView.from_review(r) for r in reviews]
+
+
+# ---------------------------------------------------------------------------
+# Homepage Curation
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/homepage", response_model=HomepageResponse)
+async def get_homepage_route(
+    db: AsyncSession = Depends(get_db),
+) -> HomepageResponse:
+    return await homepage_service.get_homepage(db)
+
+
+@app.get("/api/v1/admin/homepage/placements", response_model=list[HomepagePlacementResponse])
+async def list_admin_placements_route(
+    section: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[HomepagePlacementResponse]:
+    placements = await homepage_service.list_admin_placements(db, section=section)
+    return [HomepagePlacementResponse.from_placement(p) for p in placements]
+
+
+@app.post("/api/v1/admin/homepage/placements", response_model=HomepagePlacementResponse, status_code=201)
+async def create_placement_route(
+    body: HomepagePlacementCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> HomepagePlacementResponse:
+    placement = await homepage_service.create_placement(
+        session=db,
+        venue_id=body.venue_id,
+        section=body.section,
+        enabled=body.enabled,
+        priority=body.priority,
+        badge=body.badge,
+        custom_title=body.custom_title,
+        custom_description=body.custom_description,
+        start_at=body.start_at,
+        end_at=body.end_at,
+    )
+    return HomepagePlacementResponse.from_placement(placement)
+
+
+@app.patch("/api/v1/admin/homepage/placements/{placement_id}", response_model=HomepagePlacementResponse)
+async def update_placement_route(
+    placement_id: uuid.UUID,
+    body: HomepagePlacementUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> HomepagePlacementResponse:
+    placement = await homepage_service.update_placement(
+        session=db,
+        placement_id=placement_id,
+        changes=body.model_dump(exclude_unset=True),
+    )
+    return HomepagePlacementResponse.from_placement(placement)
+
+
+@app.delete("/api/v1/admin/homepage/placements/{placement_id}", status_code=204)
+async def delete_placement_route(
+    placement_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+):
+    await homepage_service.delete_placement(db, placement_id)
+    return Response(status_code=204)
+
+
+@app.patch("/api/v1/admin/homepage/sections/{section}/reorder", response_model=list[HomepagePlacementResponse])
+async def reorder_section_route(
+    section: str,
+    body: SectionReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[HomepagePlacementResponse]:
+    placements = await homepage_service.reorder_section(
+        session=db,
+        section=section,
+        ordered_ids=body.ordered_ids,
+    )
+    return [HomepagePlacementResponse.from_placement(p) for p in placements]
+
+
+# ---------------------------------------------------------------------------
+# Venue Image Management (Cover & Delete)
+# ---------------------------------------------------------------------------
+
+@app.patch("/api/v1/venues/{venue_id}/images/{image_id}/cover", response_model=VenueMediaResponse)
+async def set_cover_image_route(
+    venue_id: uuid.UUID,
+    image_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenueMediaResponse:
+    image = await homepage_service.set_cover_image(
+        session=db,
+        venue_id=venue_id,
+        image_id=image_id,
+    )
+    return VenueMediaResponse.model_validate(image)
+
+
+@app.delete("/api/v1/venues/{venue_id}/images/{image_id}", status_code=204)
+async def delete_image_route(
+    venue_id: uuid.UUID,
+    image_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+):
+    await homepage_service.delete_image(
+        session=db,
+        venue_id=venue_id,
+        image_id=image_id,
+    )
+    return Response(status_code=204)
+
+
+@app.exception_handler(Exception)
+async def custom_exception_handler(request, exc):
+    import traceback
+    traceback.print_exc()
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
+# -----------------------------------------------------------------------------
+# Support Tickets & Admin Notifications (Appended)
+# -----------------------------------------------------------------------------
+
+from app.schemas.ticket import TicketCreateRequest, TicketResponse, TicketDetailResponse, TicketCommentRequest, TicketUpdateRequest
+from app.modules.support import service as support_service
+
+@app.post("/api/v1/support/tickets", response_model=TicketResponse, status_code=201)
+async def create_ticket_route(
+    req: TicketCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    ticket = await support_service.create_ticket(
+        db, current_user.id, **req.model_dump()
+    )
+    return TicketResponse.from_ticket(ticket)
+
+@app.get("/api/v1/support/tickets", response_model=list[TicketResponse])
+async def list_tickets_route(
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TicketResponse]:
+    if current_user.role == "admin":
+        tickets = await support_service.list_tickets_for_admin(db, status=status, limit=limit, offset=offset)
+    elif current_user.role == "owner":
+        tickets = await support_service.list_tickets_for_owner(db, current_user.id, status=status, limit=limit, offset=offset)
+    else:
+        tickets = await support_service.list_tickets_for_customer(db, current_user.id, status=status, limit=limit, offset=offset)
+    return [TicketResponse.from_ticket(t) for t in tickets]
+
+@app.get("/api/v1/support/tickets/{ticket_id}", response_model=TicketDetailResponse)
+async def get_ticket_route(
+    ticket_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TicketDetailResponse:
+    ticket = await support_service.get_ticket(db, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    # Authorization
+    if current_user.role != "admin" and ticket.creator_id != current_user.id:
+        if ticket.venue_id:
+            venue_result = await db.execute(select(Venue).where(Venue.id == ticket.venue_id))
+            venue = venue_result.scalar_one_or_none()
+            if not venue or venue.owner_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Not authorized")
+        else:
+            raise HTTPException(status_code=403, detail="Not authorized")
+            
+    events = ticket.events
+    if current_user.role != "admin":
+        events = [e for e in events if not e.internal]
+        
+    return TicketDetailResponse.from_ticket_with_events(ticket, events)
+
+@app.patch("/api/v1/admin/support/tickets/{ticket_id}", response_model=TicketDetailResponse)
+async def update_ticket_route(
+    ticket_id: uuid.UUID,
+    req: TicketUpdateRequest,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+) -> TicketDetailResponse:
+    # Service layer update
+    ticket = await support_service.update_ticket(
+        db, current_user.id, ticket_id, **req.model_dump(exclude_unset=True)
+    )
+    # Re-fetch to get updated events
+    ticket_with_events = await support_service.get_ticket(db, ticket_id)
+    return TicketDetailResponse.from_ticket_with_events(ticket_with_events, ticket_with_events.events)
+
+from app.schemas.ticket import TicketEventResponse
+
+@app.post("/api/v1/support/tickets/{ticket_id}/comments", response_model=TicketEventResponse)
+async def add_comment_route(
+    ticket_id: uuid.UUID,
+    req: TicketCommentRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TicketEventResponse:
+    event = await support_service.add_comment(
+        db, current_user.id, current_user.role, ticket_id, **req.model_dump()
+    )
+    return TicketEventResponse.from_event(event)
+
+class AdminSendNotificationRequest(BaseModel):
+    user_id: uuid.UUID
+    type: str
+    message: str
+    entity_type: str | None = None
+    entity_id: uuid.UUID | None = None
+
+@app.post("/api/v1/admin/notifications/send", response_model=NotificationResponse)
+async def admin_send_notification_route(
+    req: AdminSendNotificationRequest,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+) -> NotificationResponse:
+    objs = notifications_service.notify(
+        req.user_id,
+        req.type,
+        req.message,
+        req.entity_type,
+        req.entity_id,
+    )
+    db.add_all(objs)
+    notification = objs[0]
+    
+    from app.models.core import AuditLog
+    audit = AuditLog(
+        actor_id=current_user.id,
+        action="notification.sent",
+        entity_type="notification",
+        entity_id=notification.id,
+        extra_data={"recipient_id": str(req.user_id), "type": req.type}
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(notification)
+    return NotificationResponse.model_validate(notification)
+
+@app.get("/api/v1/admin/notifications", response_model=list[NotificationResponse])
+async def list_all_notifications_route(
+    limit: int = 50,
+    offset: int = 0,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+) -> list[NotificationResponse]:
+    query = select(Notification).order_by(Notification.created_at.desc()).limit(limit).offset(offset)
+    result = await db.execute(query)
+    notifications = list(result.scalars().all())
+    return [NotificationResponse.model_validate(n) for n in notifications]

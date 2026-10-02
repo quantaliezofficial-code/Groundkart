@@ -38,10 +38,12 @@ class VenueUpdateRequest(BaseModel):
     amenity_names: list[str] | None = None
 
 
-class VenueImageResponse(BaseModel):
+class VenueMediaResponse(BaseModel):
     id: uuid.UUID
     url: str
     is_cover: bool
+    media_type: str
+    thumbnail_url: str | None
     sort_order: int
 
     model_config = {"from_attributes": True}
@@ -66,7 +68,7 @@ class VenueResponse(BaseModel):
     suspension_reason: str | None
     pending_changes: dict | None = None
     avg_rating: Decimal
-    images: list[VenueImageResponse] = []
+    media: list[VenueMediaResponse] = []
     amenities: list[str] = []
     created_at: datetime
 
@@ -93,7 +95,7 @@ class VenueResponse(BaseModel):
             suspension_reason=venue.suspension_reason,
             pending_changes=getattr(venue, "pending_changes", None),
             avg_rating=venue.avg_rating,
-            images=[VenueImageResponse.model_validate(i) for i in venue.images],
+            media=[VenueMediaResponse.model_validate(i) for i in getattr(venue, "media", [])],
             amenities=[a.name for a in venue.amenities],
             created_at=venue.created_at,
         )

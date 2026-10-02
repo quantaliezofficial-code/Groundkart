@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.catalog import VenueImageResponse
+from app.schemas.catalog import VenueMediaResponse
 from app.schemas.booking import BookingDetail
 
 
@@ -122,7 +122,7 @@ class AdminVenueView(BaseModel):
     rejection_reason: str | None
     suspension_reason: str | None
     avg_rating: Decimal
-    images: list[VenueImageResponse] = []
+    media: list[VenueMediaResponse] = []
     amenities: list[str] = []
     created_at: datetime
 
@@ -149,7 +149,7 @@ class AdminVenueView(BaseModel):
             rejection_reason=venue.rejection_reason,
             suspension_reason=venue.suspension_reason,
             avg_rating=venue.avg_rating,
-            images=[VenueImageResponse.model_validate(i) for i in venue.images],
+            media=[VenueMediaResponse.model_validate(i) for i in getattr(venue, "media", [])],
             amenities=[a.name for a in venue.amenities],
             created_at=venue.created_at,
         )
@@ -286,3 +286,4 @@ class AdminReviewView(BaseModel):
             content=review.content,
             created_at=review.created_at,
         )
+

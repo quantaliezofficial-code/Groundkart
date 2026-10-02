@@ -14,6 +14,7 @@ import uuid
 from datetime import date as date_, datetime, time
 from decimal import Decimal
 
+from sqlalchemy import Text, event
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -23,6 +24,7 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     text,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,11 +38,21 @@ from app.models.base import (
     PayoutStatus,
     UnitType,
     UserRole,
-    VenueCategory,
     VenueStatus,
     IdempotencyStatus,
     BlockStatus,
     OutboxEventStatus,
+    NotificationChannel,
+    DeliveryStatus,
+    JobStatus,
+    TicketStatus,
+    TicketCategory,
+    TicketPriority,
+    PricingRuleType,
+    PricingAdjustmentType,
+    ActionType,
+    RequestStatus,
+    ActionReasonCode,
 )
 
 
@@ -83,6 +95,9 @@ class User(Base):
     )
     payouts: Mapped[list["Payout"]] = relationship(back_populates="owner")
     reviews: Mapped[list["Review"]] = relationship(back_populates="user")
+    support_tickets: Mapped[list["SupportTicket"]] = relationship(
+        back_populates="creator", foreign_keys="SupportTicket.creator_id"
+    )
 
 
 class Venue(Base):
@@ -97,6 +112,11 @@ class Venue(Base):
             "category",
             postgresql_where=text("deleted_at IS NULL AND status = 'active'"),
         ),
+        Index(
+            "idx_venues_owner_active",
+            "owner_id",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -105,7 +125,9 @@ class Venue(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     name: Mapped[str]
     slug: Mapped[str] = mapped_column(unique=True)
-    category: Mapped[str] = mapped_column(VenueCategory)
+    category: Mapped[str] = mapped_column(Text)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
+    venue_type_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("venue_types.id", ondelete="RESTRICT"))
     description: Mapped[str | None]
     address: Mapped[str]
     city: Mapped[str]
@@ -155,8 +177,11 @@ class Venue(Base):
     deleted_at: Mapped[datetime | None]
 
     owner: Mapped["User"] = relationship(back_populates="venues")
-    images: Mapped[list["VenueImage"]] = relationship(
-        back_populates="venue", order_by="VenueImage.sort_order", cascade="all, delete-orphan"
+    venue_category_rel: Mapped["Category | None"] = relationship(foreign_keys=[category_id])
+    venue_type: Mapped["VenueType | None"] = relationship(foreign_keys=[venue_type_id])
+    use_cases: Mapped[list["UseCase"]] = relationship(secondary="venue_use_cases", back_populates="venues")
+    media: Mapped[list["VenueMedia"]] = relationship(
+        back_populates="venue", order_by="VenueMedia.sort_order", cascade="all, delete-orphan"
     )
     amenities: Mapped[list["Amenity"]] = relationship(
         secondary="venue_amenities", back_populates="venues"
@@ -164,6 +189,12 @@ class Venue(Base):
     inventory_units: Mapped[list["InventoryUnit"]] = relationship(back_populates="venue")
     reviews: Mapped[list["Review"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan", order_by="desc(Review.created_at)"
+    )
+    pricing_rules: Mapped[list["PricingRule"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
+    homepage_placements: Mapped[list["HomepagePlacement"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
     )
 
 
@@ -221,6 +252,8 @@ class Booking(Base):
             unique=True,
             postgresql_where=text("status IN ('pending_payment', 'confirmed')"),
         ),
+        Index("idx_bookings_customer_id", "customer_id"),
+        Index("idx_bookings_venue_status", "venue_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -251,7 +284,7 @@ class Booking(Base):
     # Snapshotted at creation time so booking history is unaffected by a
     # venue being renamed/recategorized/deleted later.
     venue_name: Mapped[str]
-    venue_category: Mapped[str] = mapped_column(VenueCategory)
+    venue_category: Mapped[str] = mapped_column(Text)
     inventory_unit_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("inventory_units.id", ondelete="RESTRICT")
     )
@@ -283,6 +316,10 @@ class Booking(Base):
     events: Mapped[list["BookingEvent"]] = relationship(
         back_populates="booking", cascade="all, delete-orphan", order_by="BookingEvent.created_at"
     )
+    action_requests: Mapped[list["BookingActionRequest"]] = relationship(
+        back_populates="booking", cascade="all, delete-orphan", order_by="BookingActionRequest.created_at"
+    )
+    review: Mapped["Review | None"] = relationship(back_populates="booking", uselist=False)
 
     # A real gap found while starting frontend integration (Phase D):
     # BookingDetail had no way to show *when* a booking is actually for —
@@ -303,6 +340,11 @@ class Booking(Base):
     @property
     def slot_start_time(self) -> time | None:
         return self.inventory_unit.start_time
+
+    @property
+    def reviewed_at(self) -> datetime | None:
+        # Requires eager-loading self.review
+        return self.review.created_at if self.review else None
 
     @property
     def slot_end_time(self) -> time | None:
@@ -332,6 +374,7 @@ class BookingEvent(Base):
     )
     booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"))
     event_type: Mapped[str]
+    correlation_id: Mapped[str | None] = mapped_column(Text)
     actor_type: Mapped[str | None]
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     extra_data: Mapped[dict | None] = mapped_column("metadata", JSONB)
@@ -341,8 +384,46 @@ class BookingEvent(Base):
     actor: Mapped["User | None"] = relationship()
 
 
+class BookingActionRequest(Base):
+    """Admin control lifecycle request for important booking state changes."""
+    __tablename__ = "booking_action_requests"
+    __table_args__ = (
+        Index("idx_booking_actions_booking", "booking_id", "status"),
+        Index("idx_booking_actions_requested_at", "requested_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"))
+    action_type: Mapped[str] = mapped_column(ActionType)
+    requested_by_type: Mapped[str] = mapped_column(UserRole)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    requested_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    reason: Mapped[str | None] = mapped_column(ActionReasonCode)
+    notes: Mapped[str | None]
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    status: Mapped[str] = mapped_column(RequestStatus, default="pending")
+    assigned_admin_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reviewed_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reviewed_at: Mapped[datetime | None]
+    admin_decision: Mapped[str | None]
+    decision_reason: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    booking: Mapped["Booking"] = relationship(back_populates="action_requests")
+    requested_by_user: Mapped["User | None"] = relationship(foreign_keys=[requested_by_user_id])
+    assigned_admin: Mapped["User | None"] = relationship(foreign_keys=[assigned_admin_id])
+    reviewed_by_admin: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by_admin_id])
+
+
 class Payment(Base):
     __tablename__ = "payments"
+    __table_args__ = (
+        Index("idx_payments_booking_id", "booking_id"),
+        Index("idx_payments_payout_id", "payout_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -469,6 +550,7 @@ class OwnerVerification(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     document_url: Mapped[str]
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     identification_type: Mapped[str | None]
     identification_number: Mapped[str | None]
     business_name: Mapped[str | None]
@@ -512,6 +594,23 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     user: Mapped["User"] = relationship()
+    deliveries: Mapped[list["NotificationDelivery"]] = relationship(back_populates="notification", cascade="all, delete-orphan")
+
+
+class NotificationDelivery(Base):
+    __tablename__ = "notification_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    notification_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"))
+    channel: Mapped[str] = mapped_column(NotificationChannel)
+    status: Mapped[str] = mapped_column(DeliveryStatus, default="queued")
+    provider_response: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    notification: Mapped["Notification"] = relationship(back_populates="deliveries")
 
 
 class AuditLog(Base):
@@ -522,12 +621,17 @@ class AuditLog(Base):
     written, is never changed, only ever read."""
 
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("idx_audit_logs_entity", "entity_type", "entity_id", "created_at"),
+        Index("idx_audit_logs_actor", "actor_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str]
+    correlation_id: Mapped[str | None] = mapped_column(Text)
     entity_type: Mapped[str]
     entity_id: Mapped[uuid.UUID | None]
     # Python attribute is `extra_data`, not `metadata` — SQLAlchemy's
@@ -569,13 +673,13 @@ class Amenity(Base):
     venues: Mapped[list["Venue"]] = relationship(secondary=venue_amenities, back_populates="amenities")
 
 
-class VenueImage(Base):
+class VenueMedia(Base):
     """06_Backend_Schema.md §4: 'partial unique index ensures only one
     is_cover = true per venue' — implemented exactly as the doc's summary
     describes, same partial-unique-index pattern used everywhere else in
     this schema (uq_active_booking_per_unit, uq_one_pending_verification_per_user)."""
 
-    __tablename__ = "venue_images"
+    __tablename__ = "venue_media"
     __table_args__ = (
         Index(
             "uq_one_cover_image_per_venue",
@@ -590,11 +694,12 @@ class VenueImage(Base):
     )
     venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
     url: Mapped[str]
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_cover: Mapped[bool] = mapped_column(default=False)
     sort_order: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
-    venue: Mapped["Venue"] = relationship(back_populates="images")
+    venue: Mapped["Venue"] = relationship(back_populates="media")
 
 
 class LoginRateLimit(Base):
@@ -637,6 +742,7 @@ class Payout(Base):
     __table_args__ = (
         CheckConstraint("period_start <= period_end", name="chk_payout_period_valid"),
         CheckConstraint("gross_amount >= 0", name="chk_payout_gross_nonneg"),
+        Index("idx_payouts_owner_period", "owner_id", "period_start"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -670,6 +776,7 @@ class Review(Base):
     __table_args__ = (
         CheckConstraint("rating BETWEEN 1 AND 5", name="chk_review_rating_range"),
         Index("idx_reviews_venue_id_created_at", "venue_id", "created_at"),
+        UniqueConstraint("booking_id", name="uq_reviews_booking_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -677,12 +784,14 @@ class Review(Base):
     )
     venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bookings.id", ondelete="SET NULL"))
     rating: Mapped[int]
     content: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     venue: Mapped["Venue"] = relationship(back_populates="reviews")
     user: Mapped["User"] = relationship(back_populates="reviews")
+    booking: Mapped["Booking"] = relationship(back_populates="review")
 
 
 class IdempotencyKey(Base):
@@ -745,6 +854,7 @@ class Block(Base):
             "venue_id",
             postgresql_where=text("status = 'active'"),
         ),
+        Index("idx_blocks_venue_time", "venue_id", "start_time"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -780,6 +890,7 @@ class OutboxEvent(Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     event_type: Mapped[str]
+    correlation_id: Mapped[str | None] = mapped_column(Text)
     aggregate_type: Mapped[str]
     aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     payload: Mapped[dict] = mapped_column(JSONB)
@@ -789,3 +900,246 @@ class OutboxEvent(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     processed_at: Mapped[datetime | None]
     error_details: Mapped[str | None]
+
+
+class Job(Base):
+    """Unified background jobs model."""
+    __tablename__ = "jobs"
+    __table_args__ = (
+        Index(
+            "idx_jobs_pending",
+            "status",
+            "next_attempt_at",
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+        Index(
+            "idx_jobs_correlation",
+            "job_type",
+            "correlation_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+    )
+    
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    job_type: Mapped[str] = mapped_column(Text)
+    correlation_id: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(JobStatus, default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=3)
+    error_details: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    started_at: Mapped[datetime | None]
+    completed_at: Mapped[datetime | None]
+
+class SupportTicket(Base):
+    """Lightweight support/dispute model — reuses existing bookings, users,
+    venues, audit logs, and notifications rather than building a separate CRM.
+
+    category="dispute" requires a non-null booking_id. Dispute resolution
+    records outcomes in TicketEvent metadata but cannot bypass booking/payment
+    invariants — any refund or status change on the booking itself must go
+    through the existing booking service endpoints."""
+
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        Index("idx_support_tickets_creator", "creator_id", "created_at"),
+        Index(
+            "idx_support_tickets_venue_status",
+            "venue_id",
+            "status",
+            postgresql_where=text("venue_id IS NOT NULL"),
+        ),
+        Index("idx_support_tickets_status", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    subject: Mapped[str]
+    description: Mapped[str]
+    status: Mapped[str] = mapped_column(TicketStatus, default="open")
+    category: Mapped[str] = mapped_column(TicketCategory, default="general")
+    priority: Mapped[str] = mapped_column(TicketPriority, default="medium")
+    creator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    assignee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bookings.id", ondelete="SET NULL")
+    )
+    venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("venues.id", ondelete="SET NULL")
+    )
+    resolved_at: Mapped[datetime | None]
+    closed_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    creator: Mapped["User"] = relationship(
+        back_populates="support_tickets", foreign_keys=[creator_id]
+    )
+    assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
+    booking: Mapped["Booking | None"] = relationship()
+    venue: Mapped["Venue | None"] = relationship()
+    events: Mapped[list["TicketEvent"]] = relationship(
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketEvent.created_at",
+    )
+
+
+class TicketEvent(Base):
+    """Immutable event log for a support ticket — mirrors BookingEvent's
+    pattern. Rows with internal=True are admin-only notes hidden from
+    customers and venue owners."""
+
+    __tablename__ = "ticket_events"
+    __table_args__ = (
+        Index("idx_ticket_events_ticket", "ticket_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("support_tickets.id", ondelete="CASCADE")
+    )
+    event_type: Mapped[str]
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    old_status: Mapped[str | None]
+    new_status: Mapped[str | None]
+    comment: Mapped[str | None]
+    internal: Mapped[bool] = mapped_column(default=False)
+    extra_data: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    ticket: Mapped["SupportTicket"] = relationship(back_populates="events")
+    actor: Mapped["User | None"] = relationship()
+
+
+from app.modules.core.logging import request_id_ctx
+
+@event.listens_for(BookingEvent, "before_insert")
+def receive_before_insert_booking_event(mapper, connection, target):
+    if target.correlation_id is None:
+        target.correlation_id = request_id_ctx.get()
+
+@event.listens_for(AuditLog, "before_insert")
+def receive_before_insert_audit_log(mapper, connection, target):
+    if target.correlation_id is None:
+        target.correlation_id = request_id_ctx.get()
+class PricingRule(Base):
+    __tablename__ = "pricing_rules"
+    __table_args__ = (
+        Index("idx_pricing_rules_venue_active", "venue_id", postgresql_where=text("is_active = true")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
+    name: Mapped[str]
+    rule_type: Mapped[str] = mapped_column(PricingRuleType)
+    adjustment_type: Mapped[str] = mapped_column(PricingAdjustmentType)
+    adjustment_value: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    
+    start_date: Mapped[date_ | None]
+    end_date: Mapped[date_ | None]
+    start_time: Mapped[time | None]
+    end_time: Mapped[time | None]
+    days_of_week: Mapped[list[int] | None] = mapped_column(JSONB)
+    
+    priority: Mapped[int] = mapped_column(default=0)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship(back_populates="pricing_rules")
+
+
+class HomepagePlacement(Base):
+    """Admin-curated homepage section placement.
+
+    Each row says "venue X should appear in section Y at position Z."
+    The homepage API enforces venue.status='active' + scheduling at query
+    time — this table only stores the admin's intent, not a visibility
+    guarantee. The client never decides which venues appear publicly; all
+    filtering is server-side.
+
+    Sections (fixed string set, no enum — avoids a migration per new section):
+      featured | trending | popular | recommended | new
+
+    Scheduling:
+      start_at IS NULL  → show immediately
+      end_at   IS NULL  → no expiry
+      Both set          → only visible within that UTC window
+    """
+
+    __tablename__ = "homepage_placements"
+    __table_args__ = (
+        # A venue appears at most once per section — prevents duplicate cards.
+        UniqueConstraint("venue_id", "section", name="uq_venue_section"),
+        # Primary query index: homepage API fetches by section + enabled,
+        # ordered by priority ASC. Partial on enabled keeps the index tiny.
+        Index(
+            "idx_hp_section_priority",
+            "section",
+            "priority",
+            postgresql_where=text("enabled = TRUE"),
+        ),
+        # Secondary index for venue-level admin queries.
+        Index("idx_hp_venue_id", "venue_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("venues.id", ondelete="CASCADE", name="fk_homepage_placements_venue_id")
+    )
+    section: Mapped[str] = mapped_column(nullable=False)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    priority: Mapped[int] = mapped_column(default=0)
+    badge: Mapped[str | None] = mapped_column(nullable=True)
+    custom_title: Mapped[str | None] = mapped_column(nullable=True)
+    custom_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Scheduling — UTC datetimes. NULL = show immediately / no expiry.
+    start_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    end_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship(back_populates="homepage_placements")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    name: Mapped[str] = mapped_column(unique=True)
+
+class VenueType(Base):
+    __tablename__ = "venue_types"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
+    name: Mapped[str]
+    category: Mapped["Category"] = relationship()
+
+class UseCase(Base):
+    __tablename__ = "use_cases"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    name: Mapped[str] = mapped_column(unique=True)
+    venues: Mapped[list["Venue"]] = relationship(secondary="venue_use_cases", back_populates="use_cases")
+
+venue_use_cases = Table(
+    "venue_use_cases",
+    Base.metadata,
+    Column("venue_id", ForeignKey("venues.id", ondelete="CASCADE"), primary_key=True),
+    Column("use_case_id", ForeignKey("use_cases.id", ondelete="CASCADE"), primary_key=True),
+)

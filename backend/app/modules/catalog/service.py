@@ -7,7 +7,7 @@ three rules that are easy to get subtly wrong:
 2. Re-review on edit (update_venue): only an ACTUAL content change should
    knock a listing back to pending_review. A no-op PATCH (resubmitting the
    same values) shouldn't silently re-trigger review.
-3. Cover image uniqueness (upload_venue_image): setting a new cover image
+3. Cover image uniqueness (upload_venue_media): setting a new cover image
    has to atomically un-cover the old one, in the same transaction as the
    insert, or uq_one_cover_image_per_venue will reject it.
 """
@@ -23,7 +23,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.core import Amenity, AuditLog, InventoryUnit, Venue, VenueImage
+from app.models.core import Amenity, AuditLog, InventoryUnit, Venue, VenueMedia
 from app.modules.auth.dependencies import CurrentUser
 from app.modules.notifications.service import notify
 from app.modules.storage.base import FileStorage, UnsupportedFileError
@@ -88,7 +88,7 @@ async def _get_with_relations(session: AsyncSession, venue_id: uuid.UUID) -> Ven
     just created/edited it, or an admin who just acted on it)."""
     result = await session.execute(
         select(Venue)
-        .options(selectinload(Venue.images), selectinload(Venue.amenities))
+        .options(selectinload(Venue.media), selectinload(Venue.amenities))
         .where(Venue.id == venue_id, Venue.deleted_at.is_(None))
     )
     return result.scalar_one_or_none()
@@ -131,7 +131,7 @@ async def create_venue(
         await session.flush()
         venue_id = venue.id
 
-    # Re-fetch with images/amenities eagerly loaded — venue.images is an
+    # Re-fetch with images/amenities eagerly loaded — venue.media is an
     # empty, never-touched lazy collection at this point. Accessing it
     # after this function returns (the route immediately serializes the
     # venue via VenueResponse.from_venue) would trigger an implicit lazy
@@ -160,7 +160,8 @@ async def get_venue(
 async def list_venues(
     session: AsyncSession,
     city: str | None = None,
-    category: str | None = None,
+    category_id: uuid.UUID | None = None,
+    venue_type_id: uuid.UUID | None = None,
     available_on: date_ | None = None,
     price_max: Decimal | None = None,
     limit: int = 20,
@@ -172,8 +173,10 @@ async def list_venues(
 
     if city:
         query = query.where(Venue.city.ilike(city))
-    if category:
-        query = query.where(Venue.category == category)
+    if category_id:
+        query = query.where(Venue.category_id == category_id)
+    if venue_type_id:
+        query = query.where(Venue.venue_type_id == venue_type_id)
     if price_max is not None:
         query = query.where(Venue.base_price <= price_max)
     if available_on is not None:
@@ -193,7 +196,7 @@ async def list_venues(
     ).scalar_one()
 
     query = query.options(
-        selectinload(Venue.images), selectinload(Venue.amenities)
+        selectinload(Venue.media), selectinload(Venue.amenities)
     ).order_by(Venue.created_at.desc())
     query = query.limit(limit).offset(offset)
     venues = (await session.execute(query)).scalars().all()
@@ -214,7 +217,7 @@ async def list_venues_for_owner(session: AsyncSession, owner_id: uuid.UUID) -> l
     query = (
         select(Venue)
         .where(Venue.owner_id == owner_id, Venue.deleted_at.is_(None))
-        .options(selectinload(Venue.images), selectinload(Venue.amenities))
+        .options(selectinload(Venue.media), selectinload(Venue.amenities))
         .order_by(Venue.created_at.desc())
     )
     result = await session.execute(query)
@@ -241,7 +244,7 @@ async def list_venues_for_admin(
     query = (
         select(Venue)
         .where(Venue.deleted_at.is_(None))
-        .options(selectinload(Venue.images), selectinload(Venue.amenities), selectinload(Venue.owner))
+        .options(selectinload(Venue.media), selectinload(Venue.amenities), selectinload(Venue.owner))
         .order_by(Venue.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -309,7 +312,7 @@ async def update_venue(
     return venue
 
 
-async def upload_venue_image(
+async def upload_venue_media(
     session: AsyncSession,
     venue_id: uuid.UUID,
     viewer: CurrentUser,
@@ -317,7 +320,7 @@ async def upload_venue_image(
     content_type: str,
     storage: FileStorage,
     is_cover: bool = False,
-) -> VenueImage:
+) -> VenueMedia:
     async with session.begin():
         result = await session.execute(select(Venue).where(Venue.id == venue_id))
         venue = result.scalar_one_or_none()
@@ -337,13 +340,13 @@ async def upload_venue_image(
             # transaction as the insert below — otherwise
             # uq_one_cover_image_per_venue rejects the new row.
             await session.execute(
-                update(VenueImage)
-                .where(VenueImage.venue_id == venue_id, VenueImage.is_cover.is_(True))
+                update(VenueMedia)
+                .where(VenueMedia.venue_id == venue_id, VenueMedia.is_cover.is_(True))
                 .values(is_cover=False)
             )
 
-        image = VenueImage(venue_id=venue_id, url=url, is_cover=is_cover)
-        session.add(image)
+        media_item = VenueMedia(venue_id=venue_id, url=url, is_cover=is_cover, media_type="video" if content_type.startswith("video/") else "image")
+        session.add(media_item)
         await session.flush()
 
     return image
@@ -650,3 +653,68 @@ async def update_block(
         await session.flush()
         
     return block
+
+from app.models.core import PricingRule
+
+async def create_pricing_rule(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    rule_data: dict
+) -> PricingRule:
+    venue = await get_venue(session, venue_id, viewer)
+    rule = PricingRule(venue_id=venue.id, **rule_data)
+    session.add(rule)
+    await session.commit()
+    await session.refresh(rule)
+    return rule
+
+async def list_pricing_rules(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser
+) -> list[PricingRule]:
+    await get_venue(session, venue_id, viewer)
+    result = await session.execute(
+        select(PricingRule).where(PricingRule.venue_id == venue_id).order_by(PricingRule.priority.desc())
+    )
+    return list(result.scalars().all())
+
+async def update_pricing_rule(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    viewer: CurrentUser,
+    rule_data: dict
+) -> PricingRule:
+    await get_venue(session, venue_id, viewer)
+    result = await session.execute(
+        select(PricingRule).where(PricingRule.id == rule_id, PricingRule.venue_id == venue_id)
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Pricing rule not found")
+        
+    for key, value in rule_data.items():
+        setattr(rule, key, value)
+        
+    await session.commit()
+    await session.refresh(rule)
+    return rule
+
+async def delete_pricing_rule(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    viewer: CurrentUser
+) -> None:
+    await get_venue(session, venue_id, viewer)
+    result = await session.execute(
+        select(PricingRule).where(PricingRule.id == rule_id, PricingRule.venue_id == venue_id)
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Pricing rule not found")
+        
+    await session.delete(rule)
+    await session.commit()
