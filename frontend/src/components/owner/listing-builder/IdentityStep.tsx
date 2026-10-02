@@ -24,7 +24,7 @@ export default function IdentityStep({ data, update }: Props) {
             id="name"
             value={data.name || ''}
             onChange={(e) => update({ name: e.target.value })}
-            className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch focus:border-pitch"
+            className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch focus:border-pitch"
             placeholder="e.g. Green Meadows Turf, The Grand Banquet"
             maxLength={60}
           />
@@ -42,7 +42,7 @@ export default function IdentityStep({ data, update }: Props) {
             value={data.description || ''}
             onChange={(e) => update({ description: e.target.value })}
             rows={4}
-            className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch focus:border-pitch"
+            className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch focus:border-pitch"
             placeholder="Tell guests what makes this space special..."
             maxLength={500}
           />

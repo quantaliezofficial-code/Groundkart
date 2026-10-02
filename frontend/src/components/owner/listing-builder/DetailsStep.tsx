@@ -40,7 +40,7 @@ export default function DetailsStep({ data, update }: Props) {
                 type="number"
                 value={data.base_price || ''}
                 onChange={e => update({ base_price: e.target.value })}
-                className="w-full rounded-lg border-surface-container-highest pl-8 pr-4 py-3 focus:ring-2 focus:ring-pitch"
+                className="w-full rounded-lg border border-surface-container-highest pl-8 pr-4 py-3 focus:ring-2 focus:ring-pitch"
                 placeholder="1000"
               />
             </div>
@@ -50,7 +50,7 @@ export default function DetailsStep({ data, update }: Props) {
             <select
               value={data.unit_type || 'hour'}
               onChange={e => update({ unit_type: e.target.value as any })}
-              className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch bg-chalk"
+              className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch bg-chalk"
             >
               <option value="hour">Per Hour</option>
               <option value="half_day">Per Half Day</option>
@@ -65,7 +65,7 @@ export default function DetailsStep({ data, update }: Props) {
             type="number"
             value={data.capacity || ''}
             onChange={e => update({ capacity: parseInt(e.target.value) || undefined })}
-            className="w-full md:w-1/2 rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
+            className="w-full md:w-1/2 rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
             placeholder="Maximum guests/players"
           />
         </div>
@@ -78,7 +78,7 @@ export default function DetailsStep({ data, update }: Props) {
               value={newAmenity}
               onChange={e => setNewAmenity(e.target.value)}
               onKeyDown={addAmenity}
-              className="flex-1 rounded-lg border-surface-container-highest px-4 py-2 focus:ring-2 focus:ring-pitch text-sm"
+              className="flex-1 rounded-lg border border-surface-container-highest px-4 py-2 focus:ring-2 focus:ring-pitch text-sm"
               placeholder="e.g. Floodlights, Parking, WiFi..."
             />
             <button 

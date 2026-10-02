@@ -22,7 +22,7 @@ export default function LocationStep({ data, update }: Props) {
             type="text"
             value={data.address || ''}
             onChange={e => update({ address: e.target.value })}
-            className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
+            className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
             placeholder="House, Flat, Bldg, etc."
           />
         </div>
@@ -34,7 +34,7 @@ export default function LocationStep({ data, update }: Props) {
               type="text"
               value={data.city || ''}
               onChange={e => update({ city: e.target.value })}
-              className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
+              className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
               placeholder="e.g. Lucknow"
             />
           </div>
@@ -44,7 +44,7 @@ export default function LocationStep({ data, update }: Props) {
               type="text"
               value={data.state || ''}
               onChange={e => update({ state: e.target.value })}
-              className="w-full rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
+              className="w-full rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
             />
           </div>
         </div>
@@ -55,7 +55,7 @@ export default function LocationStep({ data, update }: Props) {
             type="text"
             value={data.pincode || ''}
             onChange={e => update({ pincode: e.target.value })}
-            className="w-full md:w-1/2 rounded-lg border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
+            className="w-full md:w-1/2 rounded-lg border border-surface-container-highest px-4 py-3 focus:ring-2 focus:ring-pitch"
           />
         </div>
       </div>
