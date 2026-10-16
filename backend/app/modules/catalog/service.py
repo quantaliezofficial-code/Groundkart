@@ -223,54 +223,54 @@ async def create_venue(
             detail="unit_type must be one of 'hour', 'half_day', 'full_day'",
         )
 
-    cat = None
-    if category_id is not None:
-        cat = (
-            await session.execute(select(Category).where(Category.id == category_id))
-        ).scalar_one_or_none()
-        if not cat:
-            raise HTTPException(status_code=422, detail="Category not found")
-        if not category or not category.strip():
-            category = cat.name
-
-    if venue_type_id is not None:
-        vt = (
-            await session.execute(select(VenueType).where(VenueType.id == venue_type_id))
-        ).scalar_one_or_none()
-        if not vt:
-            raise HTTPException(status_code=422, detail="Venue type not found")
-        if category_id is not None and vt.category_id != category_id:
-            raise HTTPException(
-                status_code=422,
-                detail="Venue type does not belong to the selected category",
-            )
-        if category_id is None:
-            category_id = vt.category_id
-            if not category or not category.strip():
-                if not cat:
-                    cat = (
-                        await session.execute(
-                            select(Category).where(Category.id == category_id)
-                        )
-                    ).scalar_one_or_none()
-                if cat:
-                    category = cat.name
-
-    if not category or not category.strip():
-        raise HTTPException(status_code=422, detail="Category is required")
-
-    use_case_objects = []
-    if use_case_ids:
-        uc_res = await session.execute(
-            select(UseCase).where(UseCase.id.in_(use_case_ids))
-        )
-        use_case_objects = list(uc_res.scalars().all())
-        if len(use_case_objects) != len(set(use_case_ids)):
-            raise HTTPException(status_code=422, detail="Unknown use case id in use_case_ids")
-
-    actual_status = "draft" if save_as_draft else (status or "pending_review")
-
     async with session.begin():
+        cat = None
+        if category_id is not None:
+            cat = (
+                await session.execute(select(Category).where(Category.id == category_id))
+            ).scalar_one_or_none()
+            if not cat:
+                raise HTTPException(status_code=422, detail="Category not found")
+            if not category or not category.strip():
+                category = cat.name
+
+        if venue_type_id is not None:
+            vt = (
+                await session.execute(select(VenueType).where(VenueType.id == venue_type_id))
+            ).scalar_one_or_none()
+            if not vt:
+                raise HTTPException(status_code=422, detail="Venue type not found")
+            if category_id is not None and vt.category_id != category_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Venue type does not belong to the selected category",
+                )
+            if category_id is None:
+                category_id = vt.category_id
+                if not category or not category.strip():
+                    if not cat:
+                        cat = (
+                            await session.execute(
+                                select(Category).where(Category.id == category_id)
+                            )
+                        ).scalar_one_or_none()
+                    if cat:
+                        category = cat.name
+
+        if not category or not category.strip():
+            raise HTTPException(status_code=422, detail="Category is required")
+
+        use_case_objects = []
+        if use_case_ids:
+            uc_res = await session.execute(
+                select(UseCase).where(UseCase.id.in_(use_case_ids))
+            )
+            use_case_objects = list(uc_res.scalars().all())
+            if len(use_case_objects) != len(set(use_case_ids)):
+                raise HTTPException(status_code=422, detail="Unknown use case id in use_case_ids")
+
+        actual_status = "draft" if save_as_draft else (status or "pending_review")
+
         slug = await _unique_slug(session, name)
         venue = Venue(
             owner_id=owner_id,

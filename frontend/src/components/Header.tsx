@@ -1,14 +1,84 @@
 import { Bell, ChevronDown, LogOut, Menu, PlusCircle, Search, User, X, ShieldCheck, CalendarDays } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications, useUnreadNotificationCount, useDeleteNotification, useDeleteAllNotifications } from '../hooks/useNotifications';
 import { useAuth } from '../lib/auth';
+import type { ApiNotification } from '../lib/api/types';
+
+/* ─── Notification Navigation Helper ─────────────────────────────────── */
+
+function getNotificationTarget(n: ApiNotification, role?: string): { url: string; label: string } | null {
+  const type = n.type || '';
+  const entityType = n.entity_type || '';
+  const entityId = n.entity_id;
+
+  if (entityType === 'support_ticket' || type.startsWith('support_ticket') || type === 'support') {
+    if (role === 'admin') {
+      return {
+        url: entityId ? `/admin?tab=Support&ticketId=${entityId}` : '/admin?tab=Support',
+        label: 'View Ticket',
+      };
+    }
+    return {
+      url: entityId ? `/support?ticketId=${entityId}` : '/support',
+      label: 'View Ticket',
+    };
+  }
+
+  if (entityType === 'booking' || type.startsWith('booking')) {
+    if (role === 'owner') {
+      return { url: '/owner', label: 'View Bookings' };
+    }
+    if (role === 'admin') {
+      return { url: '/admin?tab=Bookings', label: 'View Bookings' };
+    }
+    return { url: '/my-bookings', label: 'View Booking' };
+  }
+
+  if (entityType === 'venue' || type.startsWith('venue')) {
+    if (type === 'venue_rejected' || type === 'venue_suspended') {
+      return { url: '/owner', label: 'Manage Venue' };
+    }
+    if (role === 'admin') {
+      return { url: '/admin?tab=Venues', label: 'View Venues' };
+    }
+    if (entityId) {
+      return { url: `/venues/${entityId}`, label: 'View Venue' };
+    }
+    return { url: role === 'owner' ? '/owner' : '/search', label: 'View Venues' };
+  }
+
+  if (entityType === 'owner_verification' || type.startsWith('verification')) {
+    if (role === 'admin') {
+      return { url: '/admin?tab=ApprovalQueue', label: 'Review Verification' };
+    }
+    return { url: '/owner', label: 'Check Status' };
+  }
+
+  if (entityType === 'payout' || type.startsWith('payout')) {
+    if (role === 'admin') {
+      return { url: '/admin?tab=Payouts', label: 'View Payouts' };
+    }
+    return { url: '/owner', label: 'View Payouts' };
+  }
+
+  if (entityType === 'user' || type.startsWith('account')) {
+    if (role === 'admin') {
+      return { url: '/admin?tab=Users', label: 'View User' };
+    }
+  }
+
+  return null;
+}
 
 /* ─── Notification Bell ──────────────────────────────────────────────── */
 
 function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: unreadData } = useUnreadNotificationCount();
   const { data: notifications = [] } = useNotifications({ limit: 20 });
   const markRead = useMarkNotificationRead();
@@ -16,6 +86,17 @@ function NotificationBell() {
   const deleteNotification = useDeleteNotification();
   const deleteAllNotifications = useDeleteAllNotifications();
   const unreadCount = unreadData?.unread_count ?? 0;
+
+  const handleNotificationClick = (n: ApiNotification) => {
+    if (!n.read_at) {
+      markRead.mutate(n.id);
+    }
+    setIsOpen(false);
+    const target = getNotificationTarget(n, user?.role);
+    if (target) {
+      navigate(target.url);
+    }
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -48,6 +129,7 @@ function NotificationBell() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ type: 'spring', bounce: 0.3, duration: 0.6 }}
             className="absolute right-0 top-full mt-3 max-h-[420px] w-80 overflow-y-auto rounded-2xl bg-chalk py-2 shadow-2xl ring-1 ring-ink/10 z-50"
+            data-lenis-prevent
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-ink/5">
               <span className="font-sans text-sm font-bold text-ink tracking-tight">Notifications</span>
@@ -78,33 +160,43 @@ function NotificationBell() {
                 <p className="font-sans text-sm text-on-surface-variant">No notifications yet</p>
               </div>
             ) : (
-              notifications.map((n) => (
-                <div
-                  key={n.id}
-                  className={`relative flex items-start justify-between w-full px-4 py-3 text-left transition-colors hover:bg-mist/60 group ${n.read_at ? 'opacity-50' : 'bg-pitch/[0.03]'} ease-out`}
-                >
-                  <button
-                    onClick={() => !n.read_at && markRead.mutate(n.id)}
-                    className="flex-grow text-left pr-6 cursor-pointer"
+              notifications.map((n) => {
+                const target = getNotificationTarget(n, user?.role);
+                return (
+                  <div
+                    key={n.id}
+                    className={`relative flex items-start justify-between w-full px-4 py-3 text-left transition-colors hover:bg-mist/60 group ${n.read_at ? 'opacity-50' : 'bg-pitch/[0.03]'} ease-out`}
                   >
-                    <p className="font-sans text-[13px] text-ink leading-snug">{n.message}</p>
-                    <p className="mt-1 font-sans text-[11px] text-on-surface-variant">
-                      {new Date(n.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-                    </p>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteNotification.mutate(n.id);
-                    }}
-                    disabled={deleteNotification.isPending}
-                    className="absolute right-3 top-3 p-1 text-ink/30 hover:text-clay hover:bg-clay/10 rounded-full opacity-0 group-hover:opacity-100 transition cursor-pointer disabled:opacity-50 ease-out"
-                    aria-label="Clear notification"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))
+                    <button
+                      onClick={() => handleNotificationClick(n)}
+                      className="flex-grow text-left pr-6 cursor-pointer"
+                    >
+                      <p className="font-sans text-[13px] text-ink leading-snug">{n.message}</p>
+                      <div className="mt-1 flex items-center justify-between">
+                        <span className="font-sans text-[11px] text-on-surface-variant">
+                          {new Date(n.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                        {target && (
+                          <span className="font-sans text-[11px] font-medium text-emerald-700 group-hover:underline flex items-center gap-0.5">
+                            {target.label} →
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteNotification.mutate(n.id);
+                      }}
+                      disabled={deleteNotification.isPending}
+                      className="absolute right-3 top-3 p-1 text-ink/30 hover:text-clay hover:bg-clay/10 rounded-full opacity-0 group-hover:opacity-100 transition cursor-pointer disabled:opacity-50 ease-out"
+                      aria-label="Clear notification"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </motion.div>
         )}
@@ -115,9 +207,11 @@ function NotificationBell() {
 
 /* ─── Header ─────────────────────────────────────────────────────────── */
 
+type HeaderView = 'home' | 'search' | 'detail' | 'checkout' | 'my-bookings' | 'support' | 'about' | 'contact' | 'terms' | 'privacy' | '404';
+
 interface HeaderProps {
-  currentView: 'home' | 'search' | 'detail' | 'checkout' | 'my-bookings';
-  onNavigate: (view: 'home' | 'search' | 'detail' | 'checkout' | 'my-bookings') => void;
+  currentView: HeaderView;
+  onNavigate: (view: HeaderView) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onListVenue: () => void;
@@ -170,9 +264,9 @@ export default function Header({
       <header className="fixed top-0 left-0 right-0 z-50">
         {/* Main dark nav */}
         <div className={`transition-colors duration-300 ease-out ${
-          isScrolled || currentView !== 'home'
-            ? 'bg-[#06281D]/85 backdrop-blur-md border-b border-white/10'
-            : 'bg-transparent border-b border-transparent'
+          currentView === 'home' 
+            ? 'bg-[#032017]/72 backdrop-blur-md border-b border-white/5' 
+            : 'bg-[#06281D]/85 backdrop-blur-md border-b border-white/10'
         }`}>
           <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-[72px]">
@@ -193,14 +287,14 @@ export default function Header({
                 className="flex items-center flex-shrink-0 cursor-pointer"
                 id="logo"
               >
-                <img src="/logo-full.png" alt="GroundKart" className="h-12 sm:h-14 w-auto object-contain py-1" />
+                <img src="/logo-full.png" alt="GroundKart" className="h-14 sm:h-16 w-auto object-contain py-1" />
               </motion.button>
 
               {/* ── Center search ── */}
-              {currentView !== 'detail' && user?.role !== 'admin' && user?.role !== 'owner' && (
+              {currentView !== 'detail' && user?.role !== 'owner' && (
                 <motion.div 
                   layout
-                  className={`relative hidden md:block mx-6 lg:mx-10 flex-1 max-w-lg transition duration-200 ${isSearchFocused ? 'max-w-xl' : ''} ease-out`}
+                  className={`relative hidden md:block mx-4 lg:mx-8 w-[280px] lg:w-[320px] transition duration-200 ${isSearchFocused ? 'w-[320px] lg:w-[360px]' : ''} ease-out`}
                 >
                   <div className={`relative rounded-full transition duration-200 ${isSearchFocused ? 'ring-2 ring-marigold/40 bg-white/15' : 'bg-white/10 hover:bg-white/[0.13]'} ease-out`}>
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-chalk/40">
@@ -208,7 +302,7 @@ export default function Header({
                     </span>
                     <input
                       type="text"
-                      placeholder="Search venues, sports, cities..."
+                      placeholder={user?.role === "admin" ? "Search bookings, venues, users, tickets..." : "Search venues, sports, cities..."}
                       value={searchQuery}
                       onChange={(e) => onSearchChange(e.target.value)}
                       onFocus={() => setIsSearchFocused(true)}
@@ -373,14 +467,14 @@ export default function Header({
             >
               <div className="max-w-7xl mx-auto px-4 py-4 space-y-2">
                 {/* Mobile search */}
-                {currentView !== 'detail' && user?.role !== 'admin' && user?.role !== 'owner' && (
+                {currentView !== 'detail' && user?.role !== 'owner' && (
                   <div className="relative mb-3">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-chalk/40">
                       <Search size={16} />
                     </span>
                     <input
                       type="text"
-                      placeholder="Search venues, sports, cities..."
+                      placeholder={user?.role === "admin" ? "Search bookings, venues, users, tickets..." : "Search venues, sports, cities..."}
                       value={searchQuery}
                       onChange={(e) => onSearchChange(e.target.value)}
                       className="w-full bg-white/10 rounded-full pl-11 pr-4 py-3 text-sm text-chalk placeholder:text-chalk/35 focus:outline-none focus:ring-2 focus:ring-marigold/40 transition ease-out"

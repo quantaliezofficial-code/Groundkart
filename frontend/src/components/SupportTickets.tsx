@@ -1,17 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useMyTickets, useCreateTicket, useTicketDetail, useAddComment } from '../hooks/useSupport';
-import { MessageSquare, Plus, ArrowLeft, Send } from 'lucide-react';
-import { dateTimeStr } from '../lib/api/client';
+import { AlertTriangle, MessageSquare, Plus, ArrowLeft, Send } from 'lucide-react';
 import GroundSelect from './ui/GroundSelect';
 import type { ApiSupportTicket, ApiTicketEvent } from '../lib/api/types';
 
+function dateTimeStr(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 export default function SupportTickets({ defaultContext }: { defaultContext?: { type: 'booking' | 'venue'; id: string } | null }) {
   const { user } = useAuth();
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(!!defaultContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTicketId = searchParams.get('ticketId');
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(urlTicketId);
+  const [isCreating, setIsCreating] = useState(!!defaultContext && !urlTicketId);
 
   const { data: tickets, isLoading } = useMyTickets();
+
+  useEffect(() => {
+    if (urlTicketId) {
+      setSelectedTicketId(urlTicketId);
+      setIsCreating(false);
+    } else {
+      setSelectedTicketId(null);
+    }
+  }, [urlTicketId]);
+
+  const handleSelectTicket = (id: string) => {
+    setSelectedTicketId(id);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('ticketId', id);
+      return next;
+    });
+  };
+
+  const handleBack = () => {
+    setSelectedTicketId(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('ticketId');
+      return next;
+    });
+  };
 
   if (!user) return null;
 
@@ -19,7 +52,7 @@ export default function SupportTickets({ defaultContext }: { defaultContext?: { 
     return (
       <TicketDetailView 
         ticketId={selectedTicketId} 
-        onBack={() => setSelectedTicketId(null)} 
+        onBack={handleBack} 
       />
     );
   }
@@ -55,7 +88,7 @@ export default function SupportTickets({ defaultContext }: { defaultContext?: { 
           {tickets.map((ticket: ApiSupportTicket) => (
             <button
               key={ticket.id}
-              onClick={() => setSelectedTicketId(ticket.id)}
+              onClick={() => handleSelectTicket(ticket.id)}
               className="flex w-full flex-col gap-2 rounded-2xl bg-surface-container p-5 text-left transition hover:bg-surface-container-high"
             >
               <div className="flex w-full items-center justify-between">
@@ -168,12 +201,25 @@ function CreateTicketView({ onBack, defaultContext }: { onBack: () => void; defa
 }
 
 function TicketDetailView({ ticketId, onBack }: { ticketId: string; onBack: () => void }) {
-  const { data: ticket, isLoading } = useTicketDetail(ticketId);
+  const { data: ticket, isLoading, isError } = useTicketDetail(ticketId);
   const [comment, setComment] = useState('');
   const addComment = useAddComment(ticketId);
 
-  if (isLoading || !ticket) {
+  if (isLoading) {
     return <div className="mx-auto max-w-3xl pt-6"><div className="shimmer h-96 rounded-2xl" /></div>;
+  }
+
+  if (isError || !ticket) {
+    return (
+      <div className="mx-auto max-w-3xl pt-6 space-y-4">
+        <button onClick={onBack} className="mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-ink">
+          <ArrowLeft size={16} /> Back to tickets
+        </button>
+        <div className="rounded-2xl bg-surface-container p-8 text-center">
+          <p className="font-sans text-sm text-on-surface-variant">Ticket not found or no longer accessible.</p>
+        </div>
+      </div>
+    );
   }
 
   const handleSend = async () => {
@@ -217,9 +263,9 @@ function TicketDetailView({ ticketId, onBack }: { ticketId: string; onBack: () =
             <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-bold ${event.actor_id === ticket.creator_id ? 'bg-emerald-600' : 'bg-ink'}`}>
               {event.actor_id === ticket.creator_id ? 'U' : 'A'}
             </div>
-            <div className={`flex-1 rounded-2xl p-4 ${event.actor_id === ticket.creator_id ? 'rounded-tl-none bg-surface-container-high text-ink' : 'rounded-tr-none bg-ink text-surface'}`}>
+            <div className={`flex-1 rounded-2xl p-4 ${event.actor_id === ticket.creator_id ? 'rounded-tl-none bg-surface-container-high text-ink' : 'rounded-tr-none bg-ink text-chalk'}`}>
               <p className="whitespace-pre-wrap font-sans text-sm">{event.comment}</p>
-              <div className={`mt-2 text-[10px] ${event.actor_id === ticket.creator_id ? 'text-on-surface-variant' : 'text-surface-variant'}`}>
+              <div className={`mt-2 text-[10px] ${event.actor_id === ticket.creator_id ? 'text-on-surface-variant' : 'text-chalk/70'}`}>
                 {dateTimeStr(event.created_at)}
               </div>
             </div>
@@ -250,3 +296,4 @@ function TicketDetailView({ ticketId, onBack }: { ticketId: string; onBack: () =
     </div>
   );
 }
+

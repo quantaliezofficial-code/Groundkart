@@ -8,6 +8,7 @@ from datetime import datetime, time, timezone
 from decimal import Decimal
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, func, select
@@ -16,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import SessionLocal, get_db
-from app.models.core import Review, Venue
+from app.models.core import Notification, Review, Venue, User, PasswordResetRequest, OwnerVerification
 from app.modules.admin import service as admin_service
 from app.modules.auth import service as auth_service
 from app.modules.auth.dependencies import (
@@ -33,6 +34,14 @@ from app.modules.notifications import service as notifications_service
 from app.modules.owner_onboarding import service as onboarding_service
 from app.modules.payout import service as payout_service
 from app.modules.storage.base import UnsupportedFileError
+
+from app.modules.admin import passwords_service as admin_passwords_service
+from app.schemas.admin import (
+    AdminPasswordResetRequest,
+    AdminPasswordResetResponse,
+    AdminPasswordResetRequestView,
+    CancelPasswordResetRequest,
+)
 from app.schemas.admin import (
     AdminOwnerVerificationView,
     AdminPayoutView,
@@ -42,6 +51,7 @@ from app.schemas.admin import (
     AdminReviewView,
     AuditLogEntry,
     PlatformOverview,
+    DashboardOverview,
     SuspendRequest,
     AdminHealthResponse,
 )
@@ -62,6 +72,9 @@ from app.schemas.booking import (
     BookingCreateResponse,
     BookingDetail,
     BookingFlagRequest,
+    BookingActionRequestCreate,
+    BookingActionRequestResponse,
+    BookingRescheduleRequest,
 )
 from app.schemas.catalog import (
     InventoryUnitBatchCreateRequest,
@@ -77,7 +90,7 @@ from app.schemas.catalog import (
     BlockResponse,
 )
 from app.schemas.notifications import NotificationResponse, UnreadCountResponse
-from app.schemas.owner_verification import OwnerVerificationResponse, RejectVerificationRequest
+from app.schemas.owner_verification import ApproveOwnerVerificationRequest, OwnerVerificationResponse, RejectVerificationRequest
 from app.schemas.payout import PayoutDetail, PayoutRunRequest
 
 from app.schemas.homepage import (
@@ -90,9 +103,9 @@ from app.schemas.homepage import (
 from app.modules.homepage import service as homepage_service
 from app.schemas.catalog import VenueMediaResponse
 
-from app.storage_client import get_file_storage
+from app.storage_client import get_file_storage, get_private_file_storage
 
-logger = logging.getLogger("groundbooking.hold_sweep")
+logger = logging.getLogger("groundkart.hold_sweep")
 # Found during live verification: without this, the sweep's own log.info
 # calls go nowhere — Python's default logging level is WARNING and there's
 # no handler attached to this logger otherwise. Configured narrowly (this
@@ -147,20 +160,65 @@ async def _outbox_sweep_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    sweep_task = asyncio.create_task(_hold_sweep_loop())
-    outbox_task = asyncio.create_task(_outbox_sweep_loop())
+    import os
+    is_test = os.environ.get("TESTING", "0") == "1"
+    
+    sweep_task = None
+    outbox_task = None
+    
+    if not is_test:
+        sweep_task = asyncio.create_task(_hold_sweep_loop())
+        outbox_task = asyncio.create_task(_outbox_sweep_loop())
+        
     try:
         yield
     finally:
-        sweep_task.cancel()
-        outbox_task.cancel()
-        try:
-            await asyncio.gather(sweep_task, outbox_task, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
+        if sweep_task:
+            sweep_task.cancel()
+            try:
+                await sweep_task
+            except asyncio.CancelledError:
+                pass
+                
+        if outbox_task:
+            outbox_task.cancel()
+            try:
+                await outbox_task
+            except asyncio.CancelledError:
+                pass
 
 
-app = FastAPI(title="GroundBooking API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="GroundKart API", version="0.1.0", lifespan=lifespan)
+
+from app.modules.core.logging import setup_logging
+setup_logging()
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    from app.modules.core.logging import request_id_ctx
+    req_id = request_id_ctx.get() or request.headers.get("X-Request-ID") or "unknown"
+    logging.getLogger("groundkart.errors").exception(
+        f"Unhandled server error on {request.method} {request.url.path} [req_id={req_id}]: {exc}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": req_id},
+        headers={"X-Request-ID": req_id} if req_id != "unknown" else {},
+    )
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    from app.modules.core.logging import request_id_ctx
+    req_id = request.headers.get("X-Request-ID")
+    if not req_id:
+        req_id = str(uuid.uuid4())
+    token = request_id_ctx.set(req_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = req_id
+        return response
+    finally:
+        request_id_ctx.reset(token)
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -181,11 +239,16 @@ async def add_security_headers(request: Request, call_next):
 # httpOnly cookie (see _set_refresh_cookie below) — CORS forbids pairing
 # that with a wildcard origin, which is why cors_allowed_origins
 # (app/config.py) is an explicit list, not "*".
+cors_regex = settings.cors_origin_regex
+if not cors_regex and settings.environment.lower() not in ("prod", "production"):
+    cors_regex = r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()],
+    allow_origin_regex=cors_regex,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -197,9 +260,9 @@ app.add_middleware(
 # from the provider directly and would not need this mount at all.
 import os as _os
 
-_uploads_dir = "/tmp/groundbooking-uploads"
-_os.makedirs(_uploads_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
+if settings.storage_backend == "local":
+    _os.makedirs(settings.uploads_dir, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=settings.uploads_dir), name="uploads")
 
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days, matches REFRESH_TOKEN_TTL
@@ -210,7 +273,7 @@ def _set_refresh_cookie(response: Response, raw_token: str) -> None:
         key=REFRESH_COOKIE_NAME,
         value=raw_token,
         httponly=True,
-        secure=settings.environment != "dev",  # plain HTTP only tolerated in local dev
+        secure=settings.environment.lower() in ("prod", "production"),  # plain HTTP only tolerated in local dev
         samesite="lax",
         max_age=REFRESH_COOKIE_MAX_AGE,
         path="/api/v1/auth",
@@ -218,11 +281,154 @@ def _set_refresh_cookie(response: Response, raw_token: str) -> None:
 
 
 @app.get("/healthz")
+@app.get("/api/v1/health")
 async def healthz() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/robots.txt", response_class=Response)
+async def robots_txt_route() -> Response:
+    base_url = settings.public_app_url.rstrip("/")
+    content = f"""# GroundKart robots.txt — {base_url}/robots.txt
+User-agent: *
+Allow: /
+
+# Allow public API endpoints needed for search engine rendering & catalog discovery
+Allow: /api/v1/venues
+Allow: /api/v1/homepage
+Allow: /api/v1/categories
+Allow: /api/v1/venue-types
+Allow: /api/v1/use-cases
+
+# Disallow private administrative, owner, transactional, and authentication endpoints
+Disallow: /admin
+Disallow: /owner
+Disallow: /checkout
+Disallow: /my-bookings
+Disallow: /support
+Disallow: /reset-password
+Disallow: /api/v1/admin/
+Disallow: /api/v1/owner/
+Disallow: /api/v1/auth/
+Disallow: /api/v1/bookings/manage/
+
+# Canonical XML Sitemap
+Sitemap: {base_url}/sitemap.xml
+"""
+    return Response(content=content, media_type="text/plain")
+
+
+@app.get("/sitemap.xml", response_class=Response)
+async def dynamic_sitemap_xml_route(db: AsyncSession = Depends(get_db)) -> Response:
+    base_url = settings.public_app_url.rstrip("/")
+    # Query all active, non-deleted venues from authoritative PostgreSQL storage
+    stmt = (
+        select(Venue.slug, Venue.updated_at)
+        .where(Venue.status == "active", Venue.deleted_at.is_(None))
+        .order_by(Venue.updated_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # Determine latest modification date
+    latest_venue_dt = rows[0][1] if rows and rows[0][1] else datetime.now(timezone.utc)
+    latest_date_str = latest_venue_dt.strftime("%Y-%m-%d")
+
+    xml_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        '  <!-- Homepage -->',
+        '  <url>',
+        f'    <loc>{base_url}/</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>1.0</priority>',
+        '  </url>',
+        '  <!-- Search & Catalog Hub -->',
+        '  <url>',
+        f'    <loc>{base_url}/search</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.8</priority>',
+        '  </url>',
+        '  <!-- Categories -->',
+        '  <url>',
+        f'    <loc>{base_url}/categories/sports</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.8</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/categories/banquet-halls</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.8</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/categories/farmhouses</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.8</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/categories/corporate</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.8</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/categories/community-halls</loc>',
+        f'    <lastmod>{latest_date_str}</lastmod>',
+        '    <changefreq>weekly</changefreq>',
+        '    <priority>0.7</priority>',
+        '  </url>',
+        '  <!-- Informational Pages -->',
+        '  <url>',
+        f'    <loc>{base_url}/about</loc>',
+        '    <lastmod>2026-10-15</lastmod>',
+        '    <changefreq>monthly</changefreq>',
+        '    <priority>0.5</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/contact</loc>',
+        '    <lastmod>2026-10-15</lastmod>',
+        '    <changefreq>monthly</changefreq>',
+        '    <priority>0.5</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/terms</loc>',
+        '    <lastmod>2026-10-15</lastmod>',
+        '    <changefreq>monthly</changefreq>',
+        '    <priority>0.3</priority>',
+        '  </url>',
+        '  <url>',
+        f'    <loc>{base_url}/privacy</loc>',
+        '    <lastmod>2026-10-15</lastmod>',
+        '    <changefreq>monthly</changefreq>',
+        '    <priority>0.3</priority>',
+        '  </url>',
+        '  <!-- Active Published Venues from Database -->',
+    ]
+
+    for slug, updated_at in rows:
+        venue_date = updated_at.strftime("%Y-%m-%d") if updated_at else latest_date_str
+        xml_lines.extend([
+            '  <url>',
+            f'    <loc>{base_url}/venues/{slug}</loc>',
+            f'    <lastmod>{venue_date}</lastmod>',
+            '    <changefreq>weekly</changefreq>',
+            '    <priority>0.9</priority>',
+            '  </url>',
+        ])
+
+    xml_lines.append('</urlset>')
+    xml_content = "\n".join(xml_lines)
+    return Response(content=xml_content, media_type="application/xml")
+
+
+
 @app.post("/api/v1/auth/signup", status_code=201)
+@app.post("/auth/signup", status_code=201, include_in_schema=True, tags=["Auth"], deprecated=True)
 async def signup_route(body: SignupRequest, db: AsyncSession = Depends(get_db)) -> dict:
     await auth_service.check_login_rate_limit(db, f"ratelimit:signup:{body.phone}")
     user = await auth_service.signup(db, body.name, body.phone, body.password, body.email)
@@ -230,9 +436,11 @@ async def signup_route(body: SignupRequest, db: AsyncSession = Depends(get_db)) 
 
 
 @app.post("/api/v1/auth/forgot-password")
+@app.post("/auth/forgot-password", include_in_schema=True, tags=["Auth"], deprecated=True)
 async def forgot_password_route(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)) -> dict:
-    token = await auth_service.forgot_password(db, body.email)
-    return {"message": "If an account exists, a reset token was generated.", "token": token}
+    await auth_service.check_login_rate_limit(db, f"ratelimit:forgot:{body.login_id}")
+    await auth_service.forgot_password(db, body.login_id)
+    return {"message": "If an account exists, our support team will contact you to complete the reset."}
 
 
 @app.post("/api/v1/auth/reset-password")
@@ -286,7 +494,7 @@ async def create_booking_route(
     request: Request,
     body: BookingCreateRequest,
     db: AsyncSession = Depends(get_db),
-    idem_db: AsyncSession = Depends(get_idem_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> BookingCreateResponse:
     """07_design.md A 3.3/A 5.1. A valid Authorization header makes this an
@@ -437,6 +645,72 @@ async def cancel_booking_by_manage_token_route(
         refund_amount=refund_amount,
         refund_tier=refund_tier,
     )
+
+
+@app.post("/api/v1/bookings/{booking_id}/cancellation-requests", response_model=BookingActionRequestResponse, status_code=201)
+async def request_booking_cancellation_route(
+    booking_id: uuid.UUID,
+    body: BookingActionRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("customer")),
+) -> BookingActionRequestResponse:
+    req = await booking_service.request_booking_action(
+        session=db,
+        booking_id=booking_id,
+        actor_id=current_user.id,
+        actor_type="customer",
+        action_type="cancel",
+        reason_code=body.reason_code,
+        notes=body.notes,
+        metadata_json=body.metadata_json,
+    )
+    return BookingActionRequestResponse.model_validate(req)
+
+
+@app.post("/api/v1/bookings/{booking_id}/reschedule-requests", response_model=BookingActionRequestResponse, status_code=201)
+async def request_booking_reschedule_route(
+    booking_id: uuid.UUID,
+    body: BookingRescheduleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("customer")),
+) -> BookingActionRequestResponse:
+    req = await booking_service.request_booking_action(
+        session=db,
+        booking_id=booking_id,
+        actor_id=current_user.id,
+        actor_type="customer",
+        action_type="reschedule",
+        reason_code=body.reason_code,
+        notes=body.notes,
+        metadata_json={"new_inventory_unit_id": str(body.new_inventory_unit_id)},
+    )
+    return BookingActionRequestResponse.model_validate(req)
+
+
+@app.post("/api/v1/bookings/manage/{token}/cancellation-requests", response_model=BookingActionRequestResponse, status_code=201)
+async def request_booking_cancellation_by_manage_token_route(
+    token: str,
+    body: BookingActionRequestCreate,
+    db: AsyncSession = Depends(get_db),
+) -> BookingActionRequestResponse:
+    from app.modules.booking.service import hash_manage_token
+    token_hash = hash_manage_token(token)
+    result = await db.execute(select(Booking).where(Booking.manage_token_hash == token_hash))
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    req = await booking_service.request_booking_action(
+        session=db,
+        booking_id=booking.id,
+        actor_id=None,
+        actor_type="customer",
+        action_type="cancel",
+        reason_code=body.reason_code,
+        notes=body.notes,
+        metadata_json=body.metadata_json,
+    )
+    return BookingActionRequestResponse.model_validate(req)
+
 
 
 @app.get("/api/v1/admin/bookings", response_model=list[AdminBookingView])
@@ -606,7 +880,7 @@ async def submit_owner_verification_route(
     identification_number: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
-    storage=Depends(get_file_storage),
+    storage=Depends(get_private_file_storage),
 ) -> OwnerVerificationResponse:
     """05_App_Flow.md §3. Any logged-in user can submit one of these — it's
     what turns a customer account into a pending owner application.
@@ -614,7 +888,7 @@ async def submit_owner_verification_route(
     the role."""
     content = await document.read()
     try:
-        document_url = await storage.save(
+        _, storage_key = await storage.save(
             content, document.content_type, key_prefix=f"owner-verifications/{current_user.id}"
         )
     except UnsupportedFileError as exc:
@@ -623,7 +897,8 @@ async def submit_owner_verification_route(
     verification = await onboarding_service.submit_verification(
         session=db,
         user_id=current_user.id,
-        document_url=document_url,
+        document_url="",
+        storage_key=storage_key,
         business_name=business_name,
         identification_type=identification_type,
         identification_number=identification_number,
@@ -655,12 +930,24 @@ async def get_my_verification_route(
 )
 async def approve_owner_verification_route(
     verification_id: uuid.UUID,
+    body: ApproveOwnerVerificationRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> OwnerVerificationResponse:
     verification = await onboarding_service.approve_verification(
         session=db, verification_id=verification_id, admin_id=current_user.id
     )
+    
+    if body and body.password_action:
+        if body.password_action == "link":
+            await admin_passwords_service.admin_generate_reset_link(
+                db, current_user.id, verification.user_id, "Owner Approval Account Setup", "owner_verification", str(verification_id)
+            )
+        elif body.password_action == "force":
+            await admin_passwords_service.admin_force_password_reset(
+                db, current_user.id, verification.user_id, "Owner Approval Account Setup", "owner_verification", str(verification_id)
+            )
+
     return OwnerVerificationResponse.model_validate(verification)
 
 
@@ -700,6 +987,43 @@ async def list_owner_verifications_for_admin_route(
     return [AdminOwnerVerificationView.from_verification(v) for v in verifications]
 
 
+@app.get("/api/v1/admin/owner-verifications/{verification_id}/document")
+async def get_owner_verification_document_route(
+    verification_id: uuid.UUID,
+    presigned: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+    storage=Depends(get_private_file_storage),
+):
+    """Admin-only: stream verification document or return short-lived presigned URL (5 minutes)."""
+    verification = (
+        await db.execute(
+            select(OwnerVerification).where(OwnerVerification.id == verification_id)
+        )
+    ).scalar_one_or_none()
+    if not verification:
+        raise HTTPException(status_code=404, detail="Verification not found")
+
+    storage_key = verification.storage_key
+    if not storage_key:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if presigned and hasattr(storage, "get_presigned_url"):
+        url = await storage.get_presigned_url(storage_key, expires_in=300)
+        return {"url": url}
+
+    try:
+        content, content_type = await storage.get_object(storage_key)
+        filename = storage_key.split("/")[-1]
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+
 @app.post("/api/v1/venues", response_model=VenueResponse, status_code=201)
 async def create_venue_route(
     body: VenueCreateRequest,
@@ -718,11 +1042,19 @@ async def create_venue_route(
         city=body.city,
         unit_type=body.unit_type,
         base_price=body.base_price,
+        display_name=body.display_name,
+        tagline=body.tagline,
+        category_id=body.category_id,
+        venue_type_id=body.venue_type_id,
+        use_case_ids=body.use_case_ids,
         description=body.description,
         state=body.state,
         pincode=body.pincode,
         capacity=body.capacity,
         amenity_names=body.amenity_names,
+        content_blocks=[b.model_dump() for b in body.content_blocks] if body.content_blocks else None,
+        status=body.status or ("draft" if body.save_as_draft else "pending_review"),
+        save_as_draft=body.save_as_draft,
     )
     return VenueResponse.from_venue(venue)
 
@@ -758,7 +1090,7 @@ async def list_venues_route(
     venues, total = await catalog_service.list_venues(
         session=db,
         city=city,
-        category_id=category,
+        category=category,
         available_on=available_on,
         price_max=price_max,
         limit=limit,
@@ -809,7 +1141,7 @@ async def list_venues_for_admin_route(
 
 @app.get("/api/v1/venues/{venue_id}", response_model=VenueResponse)
 async def get_venue_route(
-    venue_id: uuid.UUID,
+    venue_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> VenueResponse:
@@ -841,7 +1173,7 @@ async def update_venue_route(
     return VenueResponse.from_venue(refreshed)
 
 
-@app.post("/api/v1/venues/{venue_id}/media", response_model=VenueResponse, status_code=201)
+@app.post("/api/v1/venues/{venue_id}/images", response_model=VenueResponse, status_code=201)
 async def upload_venue_media_route(
     venue_id: uuid.UUID,
     image: UploadFile = File(...),
@@ -886,7 +1218,7 @@ async def add_inventory_units_route(
 
 @app.get("/api/v1/venues/{venue_id}/inventory-units", response_model=list[InventoryUnitResponse])
 async def list_inventory_units_route(
-    venue_id: uuid.UUID,
+    venue_id: str,
     date_from: date_ | None = None,
     date_to: date_ | None = None,
     db: AsyncSession = Depends(get_db),
@@ -1040,6 +1372,27 @@ async def list_owner_bookings_route(
     return [BookingDetail.model_validate(b) for b in bookings]
 
 
+@app.post("/api/v1/owner/bookings/{booking_id}/cancellation-requests", response_model=BookingActionRequestResponse, status_code=201)
+async def request_owner_booking_cancellation_route(
+    booking_id: uuid.UUID,
+    body: BookingActionRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> BookingActionRequestResponse:
+    req = await booking_service.request_booking_action(
+        session=db,
+        booking_id=booking_id,
+        actor_id=current_user.id,
+        actor_type="owner",
+        action_type="cancel",
+        reason_code=body.reason_code,
+        notes=body.notes,
+        metadata_json=body.metadata_json,
+    )
+    return BookingActionRequestResponse.model_validate(req)
+
+
+
 @app.get("/api/v1/admin/audit-log", response_model=list[AuditLogEntry])
 async def get_audit_log_route(
     actor_id: uuid.UUID | None = None,
@@ -1106,6 +1459,7 @@ async def reactivate_venue_route(
 async def list_users_for_admin_route(
     role: str | None = Query(default=None),
     suspended: bool | None = Query(default=None),
+    search: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -1116,7 +1470,7 @@ async def list_users_for_admin_route(
     ID, but nothing let an admin discover which user IDs exist to act on —
     there was no user-listing route anywhere in this codebase."""
     users = await admin_service.list_users_for_admin(
-        db, role=role, suspended_only=suspended_only, search=search, limit=limit, offset=offset
+        db, role=role, suspended_only=suspended, search=search, limit=limit, offset=offset
     )
     return [AdminUserView.model_validate(u) for u in users]
 
@@ -1170,9 +1524,23 @@ async def create_review_route(
     if venue is None:
         raise HTTPException(status_code=404, detail="Venue not found.")
 
+    if body.booking_id:
+        from app.models.core import Booking
+        booking_res = await db.execute(select(Booking).where(Booking.id == body.booking_id))
+        booking = booking_res.scalar_one_or_none()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found.")
+        if booking.status != "completed":
+            raise HTTPException(status_code=400, detail="Only completed bookings can be reviewed")
+        
+        existing_review = await db.execute(select(Review).where(Review.booking_id == body.booking_id))
+        if existing_review.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Booking already reviewed.")
+
     review = Review(
         venue_id=venue_id,
         user_id=current_user.id,
+        booking_id=body.booking_id,
         rating=body.rating,
         content=body.content,
     )
@@ -1198,6 +1566,7 @@ async def create_review_route(
         id=review.id,
         venue_id=review.venue_id,
         user_id=review.user_id,
+        booking_id=review.booking_id,
         user_name=review.user.name,
         rating=review.rating,
         content=review.content,
@@ -1207,15 +1576,25 @@ async def create_review_route(
 
 @app.get("/api/v1/venues/{venue_id}/reviews", response_model=list[ReviewResponse])
 async def list_reviews_route(
-    venue_id: uuid.UUID,
+    venue_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[ReviewResponse]:
-    """Public endpoint — no auth required."""
+    """Public endpoint — no auth required. Supports lookup by UUID or slug."""
+    actual_id: uuid.UUID
+    try:
+        actual_id = uuid.UUID(venue_id)
+    except ValueError:
+        v_res = await db.execute(select(Venue.id).where(Venue.slug == venue_id, Venue.deleted_at.is_(None)))
+        resolved = v_res.scalar_one_or_none()
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        actual_id = resolved
+
     result = await db.execute(
         select(Review)
-        .where(Review.venue_id == venue_id)
+        .where(Review.venue_id == actual_id)
         .options(selectinload(Review.user))
         .order_by(Review.created_at.desc())
         .limit(limit)
@@ -1226,6 +1605,7 @@ async def list_reviews_route(
         ReviewResponse(
             id=r.id,
             venue_id=r.venue_id,
+            booking_id=r.booking_id,
             user_id=r.user_id,
             user_name=r.user.name,
             rating=r.rating,
@@ -1384,9 +1764,54 @@ async def set_cover_image_route(
         session=db,
         venue_id=venue_id,
         image_id=image_id,
+        viewer=current_user,
     )
     return VenueMediaResponse.model_validate(image)
 
+
+@app.delete("/api/v1/venues/{venue_id}", status_code=204)
+async def delete_venue_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    print(f"DELETE VENUE CALLED FOR {venue_id} BY {current_user.id}")
+    venue = await catalog_service.get_venue(db, venue_id, current_user)
+    if not venue:
+        print("VENUE IS NONE")
+        raise HTTPException(status_code=404, detail="Venue not found")
+    print(f"VENUE FOUND: {venue.id} OWNER {venue.owner_id}")
+    if venue.owner_id != current_user.id:
+        print("NOT AUTHORIZED")
+        raise HTTPException(status_code=403, detail="Not authorized")
+    venue.status = "archived"
+    await db.commit()
+    print("VENUE ARCHIVED")
+    return Response(status_code=204)
+
+@app.delete("/api/v1/users/me", status_code=204)
+async def delete_me_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_row),
+):
+    current_user.deleted_at = datetime.now(timezone.utc)
+    # Also archive their active venues
+    await db.execute(
+        select(Venue).where(Venue.owner_id == current_user.id)
+    ) # just to load? no need, just update
+    
+    await db.execute(
+        func.current_timestamp() # dummy
+    )
+    # Better:
+    from sqlalchemy import update
+    await db.execute(
+        update(Venue)
+        .where(Venue.owner_id == current_user.id)
+        .values(status="archived")
+    )
+    await db.commit()
+    return Response(status_code=204)
 
 @app.delete("/api/v1/venues/{venue_id}/images/{image_id}", status_code=204)
 async def delete_image_route(
@@ -1399,6 +1824,7 @@ async def delete_image_route(
         session=db,
         venue_id=venue_id,
         image_id=image_id,
+        viewer=current_user,
     )
     return Response(status_code=204)
 
@@ -1408,7 +1834,9 @@ async def custom_exception_handler(request, exc):
     import traceback
     traceback.print_exc()
     from fastapi.responses import JSONResponse
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    # Security: do NOT return str(exc) — that leaks internal details (SQL,
+    # ORM class names, column names) to untrusted clients. Log server-side only.
+    return JSONResponse(status_code=500, content={"detail": "An internal server error occurred."})
 
 
 # -----------------------------------------------------------------------------
@@ -1422,11 +1850,12 @@ from app.modules.support import service as support_service
 async def list_admin_tickets_route(
     status: str | None = None,
     category: str | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
-    tickets = await support_service.list_tickets_for_admin(db, status=status, category=category, limit=limit, offset=offset)
+    tickets = await support_service.list_tickets_for_admin(db, status=status, category=category, q=q, limit=limit, offset=offset)
     return [TicketResponse.from_ticket(t) for t in tickets]
 
 @app.post("/api/v1/support/tickets", response_model=TicketResponse, status_code=201)
@@ -1558,3 +1987,196 @@ async def list_all_notifications_route(
     result = await db.execute(query)
     notifications = list(result.scalars().all())
     return [NotificationResponse.model_validate(n) for n in notifications]
+
+
+@app.post("/api/v1/admin/users/{user_id}/reset-password", response_model=AdminPasswordResetResponse)
+async def admin_reset_password_route(
+    user_id: uuid.UUID,
+    body: AdminPasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+):
+    if body.method == "link":
+        reset_url = await admin_passwords_service.admin_generate_reset_link(
+            db, current_user.id, user_id, body.reason, body.source_type, body.source_id
+        )
+        # reset_url is the full frontend URL — e.g. http://localhost:3000/reset-password?token=…
+        # It is a one-time secret: it must not be logged or included in any
+        # audit record beyond this single authorized response delivery.
+        return AdminPasswordResetResponse(message="Reset link generated", reset_url=reset_url)
+    elif body.method == "temporary":
+        temp_pwd = await admin_passwords_service.admin_generate_temporary_password(
+            db, current_user.id, user_id, body.reason, body.source_type, body.source_id
+        )
+        return AdminPasswordResetResponse(message="Temporary password generated", temp_password=temp_pwd)
+    elif body.method == "force":
+        await admin_passwords_service.admin_force_password_reset(
+            db, current_user.id, user_id, body.reason, body.source_type, body.source_id
+        )
+        return AdminPasswordResetResponse(message="Forced password change on next login")
+    raise HTTPException(status_code=400, detail="Invalid reset method")
+
+
+def _mask_contact(phone: str | None, email: str | None) -> str:
+    if phone:
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        if len(digits) > 4:
+            return digits[:3] + "****" + digits[-2:]
+        return "****"
+    if email:
+        parts = email.split("@", 1)
+        if len(parts) == 2:
+            user_part, domain = parts
+            if len(user_part) <= 2:
+                masked_user = user_part[:1] + "***"
+            else:
+                masked_user = user_part[0] + "***" + user_part[-1]
+            return f"{masked_user}@{domain}"
+        return "***"
+    return "Unknown"
+
+
+@app.get("/api/v1/admin/password-reset-requests", response_model=list[AdminPasswordResetRequestView])
+async def list_password_reset_requests_for_admin_route(
+    status: str = Query(default="pending"),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[AdminPasswordResetRequestView]:
+    stmt = (
+        select(PasswordResetRequest, User)
+        .join(User, PasswordResetRequest.user_id == User.id)
+        .where(PasswordResetRequest.status == status)
+        .order_by(PasswordResetRequest.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    views = []
+    for req, user in rows:
+        contact = _mask_contact(user.phone, user.email)
+        views.append(
+            AdminPasswordResetRequestView(
+                id=req.id,
+                user_id=req.user_id,
+                name=user.name,
+                contact=contact,
+                created_at=req.created_at,
+                status=req.status,
+            )
+        )
+    return views
+
+
+@app.post("/api/v1/admin/password-reset-requests/{request_id}/cancel")
+@app.delete("/api/v1/admin/password-reset-requests/{request_id}")
+async def cancel_password_reset_request_route(
+    request_id: uuid.UUID,
+    body: CancelPasswordResetRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> dict:
+    reason = body.reason if body and body.reason else "Cancelled by administrator"
+    await admin_passwords_service.admin_cancel_password_reset_request(
+        db, current_user.id, request_id, reason=reason
+    )
+    return {"message": "Password reset request cancelled"}
+
+
+@app.get("/api/v1/admin/dashboard/overview", response_model=DashboardOverview)
+async def get_dashboard_overview_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> dict:
+    return await admin_service.get_dashboard_overview_v2(db)
+
+
+from app.schemas.catalog import PricingRuleCreate, PricingRuleResponse
+
+@app.post('/api/v1/venues/{venue_id}/pricing-rules', response_model=PricingRuleResponse, status_code=201)
+async def create_pricing_rule_route(
+    venue_id: uuid.UUID,
+    rule: PricingRuleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('owner', 'admin')),
+):
+    return await catalog_service.create_pricing_rule(db, venue_id, current_user, rule.model_dump())
+
+@app.get('/api/v1/venues/{venue_id}/pricing-rules', response_model=list[PricingRuleResponse])
+async def list_pricing_rules_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('owner', 'admin')),
+):
+    return await catalog_service.list_pricing_rules(db, venue_id, current_user)
+
+@app.delete('/api/v1/venues/{venue_id}/pricing-rules/{rule_id}', status_code=204)
+async def delete_pricing_rule_route(
+    venue_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('owner', 'admin')),
+):
+    await catalog_service.delete_pricing_rule(db, venue_id, rule_id, current_user)
+    return Response(status_code=204)
+
+
+
+from app.schemas.catalog import PricingRuleUpdate
+
+@app.patch('/api/v1/venues/{venue_id}/pricing-rules/{rule_id}', response_model=PricingRuleResponse)
+async def update_pricing_rule_route(
+    venue_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    rule_update: PricingRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('owner', 'admin')),
+):
+    return await catalog_service.update_pricing_rule(
+        db, venue_id, rule_id, current_user, rule_update.model_dump(exclude_unset=True)
+    )
+
+
+
+from app.schemas.analytics import AnalyticsFilter, AnalyticsMetrics
+from app.modules.analytics import service as analytics_service
+
+@app.get("/api/v1/admin/analytics", response_model=AnalyticsMetrics)
+async def get_admin_analytics_route(
+    start_date: date_,
+    end_date: date_,
+    venue_id: uuid.UUID | None = None,
+    category: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('admin'))
+):
+    if (end_date - start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Date range cannot exceed 1 year")
+    filter = AnalyticsFilter(
+        start_date=start_date,
+        end_date=end_date,
+        venue_id=venue_id,
+        category=category
+    )
+    return await analytics_service.get_analytics_metrics(db, filter)
+
+
+@app.get("/api/v1/owner/analytics", response_model=AnalyticsMetrics)
+async def get_owner_analytics_route(
+    start_date: date_,
+    end_date: date_,
+    venue_id: uuid.UUID | None = None,
+    category: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role('owner'))
+):
+    if (end_date - start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Date range cannot exceed 1 year")
+    
+    filter = AnalyticsFilter(
+        start_date=start_date,
+        end_date=end_date,
+        venue_id=venue_id,
+        category=category,
+        owner_id=current_user.id
+    )
+    return await analytics_service.get_analytics_metrics(db, filter)
