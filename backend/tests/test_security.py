@@ -66,3 +66,64 @@ def test_token_signed_with_wrong_secret_rejected():
     forged = jwt.encode(payload, "not-the-real-secret", algorithm="HS256")
     with pytest.raises(InvalidTokenError):
         decode_access_token(forged)
+
+
+def test_cors_validation_production_rejects_http():
+    from app.config import Settings
+    with pytest.raises(ValueError, match="must start with https://"):
+        Settings(
+            environment="production",
+            jwt_secret_key="a" * 32,
+            public_app_url="https://app.example.com",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/proddb",
+            cors_allowed_origins="http://frontend.example.com",
+        )
+
+
+def test_cors_validation_production_rejects_localhost():
+    from app.config import Settings
+    with pytest.raises(ValueError, match="must not contain localhost or 127.0.0.1"):
+        Settings(
+            environment="production",
+            jwt_secret_key="a" * 32,
+            public_app_url="https://app.example.com",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/proddb",
+            cors_allowed_origins="https://localhost:3000",
+        )
+
+
+def test_cors_validation_production_rejects_127_0_0_1():
+    from app.config import Settings
+    with pytest.raises(ValueError, match="must not contain localhost or 127.0.0.1"):
+        Settings(
+            environment="production",
+            jwt_secret_key="a" * 32,
+            public_app_url="https://app.example.com",
+            database_url="postgresql+asyncpg://user:pass@db.example.com:5432/proddb",
+            cors_allowed_origins="https://127.0.0.1:3000",
+        )
+
+
+def test_cors_validation_production_accepts_https_domains():
+    from app.config import Settings
+    s = Settings(
+        environment="production",
+        jwt_secret_key="a" * 32,
+        public_app_url="https://app.example.com",
+        database_url="postgresql+asyncpg://user:pass@db.example.com:5432/proddb",
+        cors_allowed_origins="https://app.example.com,https://admin.example.com",
+    )
+    assert "https://app.example.com" in s.cors_allowed_origins
+
+
+def test_production_database_url_validation():
+    from app.config import Settings
+    with pytest.raises(ValueError, match="DATABASE_URL must be explicitly set"):
+        Settings(
+            environment="production",
+            jwt_secret_key="a" * 32,
+            public_app_url="https://app.example.com",
+            database_url="postgresql+asyncpg://groundbooking:devpassword@localhost:5432/groundbooking",
+            cors_allowed_origins="https://app.example.com",
+        )
+
