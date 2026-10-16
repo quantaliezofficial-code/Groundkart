@@ -1,4 +1,4 @@
-# GroundBooking frontend — wired to the real backend
+# GroundKart frontend — wired to the real backend
 
 Built from the UI/UX/component reference you provided, with real backend
 integration layered in. React 19 + Vite + TypeScript + TanStack Query.
@@ -11,7 +11,7 @@ cp .env.example .env   # VITE_API_URL defaults to http://localhost:8000
 npm run dev             # serves on :3000
 ```
 
-Needs the GroundBooking backend running separately (`uvicorn app.main:app`,
+Needs the GroundKart backend running separately (`uvicorn app.main:app`,
 port 8000) — CORS is configured there for `localhost:3000`/`localhost:5173`.
 
 ## What's actually wired to real data (this pass)

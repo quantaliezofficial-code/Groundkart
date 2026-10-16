@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
 from app.db import get_db, get_idem_db
@@ -30,7 +31,7 @@ async def client(test_session_factory):
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def seeded_taxonomy(test_session_factory):
     """Seed sample categories, venue types, and use cases for onboarding tests."""
     async with test_session_factory() as session:

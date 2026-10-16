@@ -20,6 +20,23 @@ afterEach(() => {
 class MockIntersectionObserver { constructor() {} observe() {} unobserve() {} disconnect() {} }
 window.IntersectionObserver = MockIntersectionObserver as any;
 
+class MockResizeObserver { constructor() {} observe() {} unobserve() {} disconnect() {} }
+window.ResizeObserver = window.ResizeObserver || (MockResizeObserver as any);
+
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }),
+});
+
 afterEach(() => {
   localStorage.clear();
   sessionStorage.clear();

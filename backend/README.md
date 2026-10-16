@@ -1,4 +1,4 @@
-# GroundBooking backend (Phase C, continued)
+# GroundKart backend (Phase C, continued)
 
 FastAPI + SQLAlchemy 2.0 (async) + Alembic + Postgres 16 — **Postgres only,
 no other moving parts** (Redis was removed from this project entirely as
@@ -9,7 +9,7 @@ and tested against a live Postgres instance. See `HANDOFF.md` (one level
 up) for the full history and current priority list, or
 `PHASE_C9_SUMMARY.md` for what this specific revision added.
 
-Renamed from VenueSetu to GroundBooking as of `PHASE_C8_SUMMARY.md`, per
+Renamed from VenueSetu to GroundKart as of `PHASE_C8_SUMMARY.md`, per
 explicit client direction — database names, connection strings, and this
 README were all updated then and remain so; the nine original planning
 docs (`01_PRD.md` etc.), `CLAUDE.md`, and `MASTER_PROMPT.md` are untouched
@@ -154,7 +154,7 @@ POST /api/v1/admin/owner-verifications/{id}/approve            — admin only; f
 POST /api/v1/admin/owner-verifications/{id}/reject              — admin only; {reason}, role unchanged, resubmission allowed
 ```
 
-File storage is `LocalFileStorage` (writes to `/tmp/groundbooking-uploads`,
+File storage is `LocalFileStorage` (writes to `/tmp/groundkart-uploads`,
 served back out at `/uploads/...` via the `StaticFiles` mount in
 `app/main.py`) — **dev/test only**, not what TRD §2 asks for (S3/R2). This
 sandbox has no network access to either provider; see

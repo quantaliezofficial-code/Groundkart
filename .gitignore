@@ -2,8 +2,6 @@
 node_modules/
 npm-debug.log
 yarn-error.log
-yarn.lock
-package-lock.json
 
 # Python
 __pycache__/
@@ -78,3 +76,6 @@ Thumbs.db
 temp_reference/
 *.zip
 *.docx
+.agents/
+skills-lock.json
+design-assets/
