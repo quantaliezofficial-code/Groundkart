@@ -109,19 +109,77 @@ async def signup(session: AsyncSession, name: str, phone: str, password: str, em
     return user
 
 
-async def forgot_password(session: AsyncSession, email: str) -> str:
+async def forgot_password(session: AsyncSession, login_id: str) -> None:
+    from app.models.core import User, PasswordResetRequest
+
     async with session.begin():
-        result = await session.execute(select(User).where(User.email == email))
+        result = await session.execute(
+            select(User).where((User.email == login_id) | (User.phone == login_id))
+        )
         user = result.scalar_one_or_none()
-        if not user:
-            return "mock-token"
-    return "mock-token"
+        if not user or user.deleted_at is not None or user.suspended_at is not None:
+            return
+
+        existing = await session.execute(
+            select(PasswordResetRequest).where(
+                PasswordResetRequest.user_id == user.id,
+                PasswordResetRequest.status == "pending",
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return
+
+        req = PasswordResetRequest(
+            user_id=user.id,
+            source_type="user",
+            status="pending",
+            token_hash=None,
+            expires_at=None,
+            reason="User Forgot Password",
+        )
+        session.add(req)
+
 
 async def reset_password(session: AsyncSession, token: str, new_password: str) -> None:
-    if token != "mock-token":
-        raise HTTPException(status_code=400, detail="Invalid token")
-    # Normally we would find the user associated with this token and update their password
-    pass
+    from app.models.core import User, PasswordResetRequest, RefreshToken, AuditLog
+    from app.modules.auth.security import hash_password
+    from datetime import datetime, timezone
+
+    token_hash = _hash_token(token)
+    
+    async with session.begin():
+        result = await session.execute(
+            select(PasswordResetRequest).where(PasswordResetRequest.token_hash == token_hash)
+        )
+        req = result.scalar_one_or_none()
+        
+        if req is None or req.used_at is not None or req.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+            
+        user = await session.get(User, req.user_id)
+        if not user or user.deleted_at is not None or user.suspended_at is not None:
+            raise HTTPException(status_code=400, detail="Invalid account state")
+            
+        user.password_hash = hash_password(new_password)
+        user.must_change_password = False
+        user.password_changed_at = datetime.now(timezone.utc)
+        req.used_at = datetime.now(timezone.utc)
+        
+        # Invalidate all active sessions for this user on password reset
+        await session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc))
+        )
+        
+        # Log it
+        session.add(AuditLog(
+            actor_id=user.id,
+            action="user.password_reset",
+            entity_type="user",
+            entity_id=user.id,
+            extra_data={"source_type": req.source_type}
+        ))
 
 def _build_refresh_token(user_id: uuid.UUID) -> tuple[RefreshToken, str]:
     raw = secrets.token_urlsafe(32)

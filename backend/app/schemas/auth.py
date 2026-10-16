@@ -27,10 +27,11 @@ class UserMeResponse(BaseModel):
     phone: str
     role: str
     is_verified: bool
+    must_change_password: bool = False
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    login_id: str = Field(min_length=3, max_length=255)  # phone or email
 
 
 class ResetPasswordRequest(BaseModel):

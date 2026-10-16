@@ -2,6 +2,7 @@ import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Sparkles, Us
 import React, { useState, useEffect, useRef } from 'react';
 import { ApiError } from '../lib/api/client';
 import { useAuth } from '../lib/auth';
+import ForgotPassword from './ForgotPassword';
 
 interface AuthModalProps {
   mode: 'login' | 'signup';
@@ -21,6 +22,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +44,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
   // Clear error on mode switch
   useEffect(() => {
     setError(null);
+    setIsForgot(false);
   }, [mode]);
 
   function handleClose() {
@@ -55,7 +58,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
     setIsSubmitting(true);
     try {
       if (isSignup) {
-        await signup(name, email, password);
+        await signup(name, email, password, phone);
         onSuccess(accountType);
       } else {
         await login(email, password);
@@ -93,6 +96,7 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-modal-title"
+        data-lenis-prevent
       >
         {/* ── Top accent banner ── */}
         <div className="relative h-28 bg-gradient-to-br from-[#143828] via-pitch to-[#1a5438] overflow-hidden">
@@ -111,27 +115,30 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
           </div>
           <div className="absolute bottom-5 left-7">
             <div className="flex items-center gap-2 mb-1.5">
-              <img src="/logo-icon.png" alt="GroundKart Icon" className="w-8 h-8 object-contain drop-shadow-md" />
+              <img src="/logo-icon.webp" alt="GroundKart Icon" className="w-8 h-8 object-contain drop-shadow-md" />
               <span className="text-chalk/50 text-xs font-medium tracking-wider uppercase">GroundKart</span>
             </div>
             <h2 id="auth-modal-title" className="font-display text-[22px] font-semibold text-chalk leading-tight">
-              {isSignup ? 'Create your account' : 'Welcome back'}
+              {isForgot ? 'Reset password' : isSignup ? 'Create your account' : 'Welcome back'}
             </h2>
           </div>
         </div>
 
         {/* ── Form body ── */}
         <div className="px-7 pt-6 pb-7">
+          {isForgot ? (
+            <ForgotPassword inModal onBackToLogin={() => setIsForgot(false)} />
+          ) : (
+            <>
+              {/* Error message */}
+              {error && (
+                <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-clay/8 border border-clay/15 p-3.5 text-[13px] text-clay animate-in fade-in slide-in-from-top-1 duration-200">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <span className="leading-snug">{error}</span>
+                </div>
+              )}
 
-          {/* Error message */}
-          {error && (
-            <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-clay/8 border border-clay/15 p-3.5 text-[13px] text-clay animate-in fade-in slide-in-from-top-1 duration-200">
-              <AlertCircle size={16} className="mt-0.5 shrink-0" />
-              <span className="leading-snug">{error}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name field (signup only) */}
             {isSignup && (
               <div className="space-y-1.5">
@@ -284,6 +291,18 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
                   </span>
                 </div>
               )}
+              {/* Forgot password link under the password field */}
+              {!isSignup && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsForgot(true)}
+                    className="text-xs font-semibold text-pitch hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Submit button */}
@@ -324,6 +343,8 @@ export default function AuthModal({ mode, onClose, onSwitchMode, onSuccess }: Au
               {isSignup ? 'Log in instead' : 'Create one free'}
             </button>
           </p>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ from httpx import AsyncClient
 
 from app.db import get_db, get_idem_db
 from app.main import app
-from app.models.core import User, Venue, InventoryUnit, Booking, OwnerVerification, Notification
+from app.models.core import User, Venue, InventoryUnit, Booking, OwnerVerification, Notification, VenueMedia
 from app.modules.auth.security import create_access_token
 import pytest_asyncio
 import httpx
@@ -50,6 +50,12 @@ async def _create_test_venue(db, owner_id):
         city="Test City"
     )
     db.add(venue)
+    await db.flush()
+    db.add_all([
+        VenueMedia(venue_id=venue.id, url="http://example.com/p1.jpg", is_cover=True, sort_order=0),
+        VenueMedia(venue_id=venue.id, url="http://example.com/p2.jpg", is_cover=False, sort_order=1),
+        VenueMedia(venue_id=venue.id, url="http://example.com/p3.jpg", is_cover=False, sort_order=2),
+    ])
     await db.commit()
     return venue
 
@@ -73,7 +79,7 @@ async def _create_test_booking(db, venue_id, customer_id=None):
     return booking
 
 @pytest_asyncio.fixture
-async def users(test_session_factory):
+async def users(test_session_factory, clean_tables):
     async with test_session_factory() as db:
         return {
             "admin": await _create_test_user(db, "admin"),

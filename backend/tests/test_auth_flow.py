@@ -162,6 +162,50 @@ async def test_logout_revokes_only_that_session(client):
     assert after_logout.status_code == 401
 
 
+async def test_cors_preflight_for_forgot_password(client):
+    for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+        resp = await client.options(
+            "/api/v1/auth/forgot-password",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers.get("access-control-allow-origin") == origin
+        assert "POST" in resp.headers.get("access-control-allow-methods", "")
+
+
+async def test_forgot_password_flow(client):
+    phone = f"123{uuid.uuid4().hex[:7]}"
+    email = f"forgot_{uuid.uuid4().hex[:6]}@example.com"
+    await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Forgot User", "email": email, "password": "a-decent-password", "phone": phone},
+    )
+
+    # Existing user
+    resp = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"login_id": email},
+        headers={"Origin": "http://127.0.0.1:3000"},
+    )
+    assert resp.status_code == 200
+    assert "If an account exists" in resp.json()["message"]
+    assert resp.headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
+
+    # Non-existent user returns same message (enumeration protection)
+    non_existent = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"login_id": "nonexistent_user_999@example.com"},
+        headers={"Origin": "http://127.0.0.1:3000"},
+    )
+    assert non_existent.status_code == 200
+    assert "If an account exists" in non_existent.json()["message"]
+
+
+
 
 
 

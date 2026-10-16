@@ -129,4 +129,22 @@ describe('AuthModal component', () => {
     
     expect(mockOnSwitchMode).toHaveBeenCalledWith('signup');
   });
+
+  it('opens forgot password form when Forgot password? link is clicked', () => {
+    render(
+      <AuthModal 
+        mode="login" 
+        onClose={mockOnClose} 
+        onSwitchMode={mockOnSwitchMode} 
+        onSuccess={mockOnSuccess} 
+      />
+    );
+    
+    const forgotLink = screen.getByRole('button', { name: /Forgot password\?/i });
+    fireEvent.click(forgotLink);
+    
+    expect(screen.getByRole('heading', { name: /Reset password/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Phone or email/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Request password reset/i })).toBeInTheDocument();
+  });
 });

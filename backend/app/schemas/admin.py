@@ -65,7 +65,7 @@ class AdminOwnerVerificationView(BaseModel):
     applicant_name: str
     applicant_email: str
     applicant_phone: str | None = None
-    document_url: str
+    document_url: str | None = None
     identification_type: str | None = None
     identification_number: str | None = None
     business_name: str | None
@@ -286,4 +286,142 @@ class AdminReviewView(BaseModel):
             content=review.content,
             created_at=review.created_at,
         )
+
+
+
+class DashboardMetrics(BaseModel):
+    gmv: Decimal
+    total_bookings: int
+    active_venues: int
+    active_users: int
+    total_commission_collected: Decimal
+
+class AttentionItem(BaseModel):
+    type: str
+    count: int
+    label: str
+    action_label: str
+    action_link: str
+
+class LiveOperationBooking(BaseModel):
+    id: uuid.UUID
+    venue_name: str
+    category: str
+    start_time: datetime
+    end_time: datetime
+    customer_name: str
+    status: str
+
+class LiveOperations(BaseModel):
+    currently_booked: int
+    available: int
+    pending: int
+    cancelled_today: int
+    active_bookings: list[LiveOperationBooking]
+
+class BookingActivityStats(BaseModel):
+    total_today: int
+    confirmed_today: int
+    pending_today: int
+    cancelled_today: int
+    completed_today: int
+
+class RecentBooking(BaseModel):
+    id: uuid.UUID
+    time: datetime
+    venue_name: str
+    customer_name: str
+    status: str
+    amount: Decimal
+
+class BookingActivity(BaseModel):
+    stats: BookingActivityStats
+    recent: list[RecentBooking]
+
+class RevenueStats(BaseModel):
+    this_month: Decimal
+    this_week: Decimal
+    today: Decimal
+    chart_data: list[dict]
+
+class VenueHealthStats(BaseModel):
+    approved: int
+    pending_approval: int
+    incomplete: int
+    inactive: int
+    suspended: int
+
+class TopVenue(BaseModel):
+    id: uuid.UUID
+    name: str
+    bookings_count: int
+    gmv: Decimal
+
+class CategoryStats(BaseModel):
+    category: str
+    percentage: float
+    count: int
+
+class SupportStats(BaseModel):
+    open_tickets: int
+    high_priority: int
+    waiting_for_owner: int
+    waiting_for_customer: int
+
+class NotificationStats(BaseModel):
+    sent_today: int
+    failed: int
+    unread_alerts: int
+
+class RecentActivityItem(BaseModel):
+    id: uuid.UUID
+    event: str
+    entity_name: str
+    actor_name: str
+    timestamp: datetime
+    amount: Decimal | None
+
+class DashboardOverview(BaseModel):
+    metrics: DashboardMetrics
+    attention: list[AttentionItem]
+    live_operations: LiveOperations
+    booking_activity: BookingActivity
+    revenue: RevenueStats
+    venue_health: VenueHealthStats
+    top_venues: list[TopVenue]
+    category_performance: list[CategoryStats]
+    support: SupportStats
+    notifications: NotificationStats
+    recent_activity: list[RecentActivityItem]
+
+
+from typing import Literal
+
+class AdminPasswordResetRequest(BaseModel):
+    method: Literal["link", "temporary", "force"]
+    reason: str
+    notes: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+
+class AdminPasswordResetResponse(BaseModel):
+    message: str
+    # Full frontend reset URL (e.g. https://app.example.com/reset-password?token=…).
+    # Not a raw token — the complete link the admin copies and shares with the user.
+    # Treated as a one-time secret: must not be logged, stored, or re-exposed.
+    reset_url: str | None = None
+    temp_password: str | None = None
+
+
+class AdminPasswordResetRequestView(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    contact: str
+    created_at: datetime
+    status: str
+
+
+class CancelPasswordResetRequest(BaseModel):
+    reason: str | None = "Cancelled by administrator"
 
