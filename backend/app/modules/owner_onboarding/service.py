@@ -23,10 +23,11 @@ from app.modules.notifications.service import notify
 async def submit_verification(
     session: AsyncSession,
     user_id: uuid.UUID,
-    document_url: str,
+    document_url: str | None = None,
     business_name: str | None = None,
     identification_type: str | None = None,
     identification_number: str | None = None,
+    storage_key: str | None = None,
 ) -> OwnerVerification:
     async with session.begin():
         existing = await session.execute(
@@ -42,7 +43,8 @@ async def submit_verification(
 
         verification = OwnerVerification(
             user_id=user_id, 
-            document_url=document_url, 
+            document_url=document_url or "", 
+            storage_key=storage_key,
             business_name=business_name,
             identification_type=identification_type,
             identification_number=identification_number,
@@ -140,7 +142,7 @@ async def approve_verification(
                 extra_data={"user_id": str(user.id)},
             )
         )
-        session.add(
+        session.add_all(
             notify(
                 user.id,
                 "verification_approved",
@@ -173,7 +175,7 @@ async def reject_verification(
                 extra_data={"user_id": str(verification.user_id), "reason": reason},
             )
         )
-        session.add(
+        session.add_all(
             notify(
                 verification.user_id,
                 "verification_rejected",

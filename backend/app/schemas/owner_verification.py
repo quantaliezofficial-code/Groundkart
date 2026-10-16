@@ -19,3 +19,12 @@ class OwnerVerificationResponse(BaseModel):
 
 class RejectVerificationRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
+
+
+class ApproveOwnerVerificationRequest(BaseModel):
+    """Optional body for the owner verification approval endpoint.
+    When provided, the admin can trigger a password action alongside
+    approval (e.g. send a reset link or force a password change so the
+    newly approved owner sets a strong password on first login)."""
+    password_action: str | None = None  # "link" | "force" | None
+

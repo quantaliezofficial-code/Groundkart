@@ -232,3 +232,79 @@ async def test_approving_an_already_decided_request_returns_409(
     )
     assert first_approve.status_code == 200
     assert second_approve.status_code == 409
+
+
+async def test_admin_can_view_verification_document(
+    client, seeded_customer, seeded_admin
+):
+    customer_token = create_access_token(seeded_customer, "customer")
+    submit_resp = await client.post(
+        "/api/v1/owner/verification",
+        files={"document": ("id_proof.pdf", _fake_pdf_bytes(), "application/pdf")},
+        headers={"Authorization": f"Bearer {customer_token}"},
+    )
+    verification_id = submit_resp.json()["id"]
+
+    admin_token = create_access_token(seeded_admin, "admin")
+    resp = await client.get(
+        f"/api/v1/admin/owner-verifications/{verification_id}/document",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.content == _fake_pdf_bytes()
+
+
+async def test_owner_cannot_view_verification_document(
+    client, seeded_customer, seeded_owner_with_unit
+):
+    owner_id, _, _ = seeded_owner_with_unit
+    customer_token = create_access_token(seeded_customer, "customer")
+    submit_resp = await client.post(
+        "/api/v1/owner/verification",
+        files={"document": ("id_proof.pdf", _fake_pdf_bytes(), "application/pdf")},
+        headers={"Authorization": f"Bearer {customer_token}"},
+    )
+    verification_id = submit_resp.json()["id"]
+
+    owner_token = create_access_token(owner_id, "owner")
+    resp = await client.get(
+        f"/api/v1/admin/owner-verifications/{verification_id}/document",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_customer_cannot_view_verification_document(
+    client, seeded_customer
+):
+    customer_token = create_access_token(seeded_customer, "customer")
+    submit_resp = await client.post(
+        "/api/v1/owner/verification",
+        files={"document": ("id_proof.pdf", _fake_pdf_bytes(), "application/pdf")},
+        headers={"Authorization": f"Bearer {customer_token}"},
+    )
+    verification_id = submit_resp.json()["id"]
+
+    resp = await client.get(
+        f"/api/v1/admin/owner-verifications/{verification_id}/document",
+        headers={"Authorization": f"Bearer {customer_token}"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_anonymous_cannot_view_verification_document(
+    client, seeded_customer
+):
+    customer_token = create_access_token(seeded_customer, "customer")
+    submit_resp = await client.post(
+        "/api/v1/owner/verification",
+        files={"document": ("id_proof.pdf", _fake_pdf_bytes(), "application/pdf")},
+        headers={"Authorization": f"Bearer {customer_token}"},
+    )
+    verification_id = submit_resp.json()["id"]
+
+    resp = await client.get(
+        f"/api/v1/admin/owner-verifications/{verification_id}/document"
+    )
+    assert resp.status_code == 401
+

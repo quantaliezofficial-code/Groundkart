@@ -50,9 +50,13 @@ def _validate(content: bytes, content_type: str) -> None:
 class LocalFileStorage:
     """Dev/test only — see module docstring. Not what ships to production."""
 
-    def __init__(self, base_dir: str = "/tmp/groundkart-uploads"):
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | None = None, is_private: bool = False):
+        if base_dir is not None:
+            self.base_dir = Path(base_dir)
+        else:
+            self.base_dir = Path(settings.private_uploads_dir if is_private else settings.uploads_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.is_private = is_private
 
     async def save(self, content: bytes, content_type: str, key_prefix: str) -> tuple[str, str]:
         _validate(content, content_type)
@@ -61,26 +65,47 @@ class LocalFileStorage:
         path = self.base_dir / key
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
-        # A real gap found while wiring the owner dashboard's image upload
-        # to real data: this used to return f"local://{key}" — not a URL
-        # scheme any browser understands, so an uploaded photo saved
-        # correctly on disk but could never actually be displayed anywhere
-        # it was used (a venue card, the gallery, the verification-doc
-        # preview). app/main.py mounts /uploads as a static file server
-        # against this same base_dir; this now returns a URL that
-        # resolves through that mount, so what save() returns is actually
-        # fetchable, not just a path meaningful to this one process.
-        url = f"{settings.app_base_url}/uploads/{key}"
+        if self.is_private:
+            url = ""
+        else:
+            url = f"{settings.app_base_url}/uploads/{key}"
         return url, key
+
+    async def get_object(self, key: str) -> tuple[bytes, str]:
+        path = self.base_dir / key
+        if not path.is_file():
+            raise FileNotFoundError(f"File not found: {key}")
+        content = path.read_bytes()
+        ext = path.suffix.lower()
+        content_type_map = {
+            ".pdf": "application/pdf",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+        }
+        content_type = content_type_map.get(ext, "application/octet-stream")
+        return content, content_type
+
 
 class S3FileStorage:
     """S3/R2-compatible storage backend."""
 
-    def __init__(self, bucket_name: str, endpoint_url: str | None = None, region: str = "us-east-1"):
+    def __init__(
+        self,
+        bucket_name: str,
+        endpoint_url: str | None = None,
+        region: str = "us-east-1",
+        public_base_url: str | None = None,
+        is_private: bool = False,
+    ):
         import aioboto3
         self.bucket_name = bucket_name
         self.endpoint_url = endpoint_url
         self.region = region
+        self.public_base_url = public_base_url if public_base_url is not None else settings.s3_public_base_url
+        self.is_private = is_private
         self.session = aioboto3.Session()
 
     async def save(self, content: bytes, content_type: str, key_prefix: str) -> tuple[str, str]:
@@ -101,13 +126,42 @@ class S3FileStorage:
                 Body=content,
                 ContentType=content_type,
             )
-            # Standard S3 URL or custom endpoint if provided
-            if self.endpoint_url:
-                # E.g. Cloudflare R2 public URL might be different from endpoint URL, but for now we format it
+            if self.is_private:
+                url = ""
+            elif self.public_base_url:
+                url = f"{self.public_base_url.rstrip('/')}/{key}"
+            elif self.endpoint_url:
                 url = f"{self.endpoint_url}/{self.bucket_name}/{key}"
             else:
                 url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{key}"
             return url, key
+
+    async def get_presigned_url(self, key: str, expires_in: int = 300) -> str:
+        async with self.session.client(
+            "s3",
+            endpoint_url=self.endpoint_url,
+            region_name=self.region,
+            aws_access_key_id=settings.s3_access_key_id,
+            aws_secret_access_key=settings.s3_secret_access_key,
+        ) as client:
+            return await client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": key},
+                ExpiresIn=expires_in,
+            )
+
+    async def get_object(self, key: str) -> tuple[bytes, str]:
+        async with self.session.client(
+            "s3",
+            endpoint_url=self.endpoint_url,
+            region_name=self.region,
+            aws_access_key_id=settings.s3_access_key_id,
+            aws_secret_access_key=settings.s3_secret_access_key,
+        ) as client:
+            resp = await client.get_object(Bucket=self.bucket_name, Key=key)
+            content_type = resp.get("ContentType", "application/octet-stream")
+            data = await resp["Body"].read()
+            return data, content_type
 
 
 def get_storage() -> FileStorage:
@@ -118,5 +172,20 @@ def get_storage() -> FileStorage:
             bucket_name=settings.s3_bucket_name,
             endpoint_url=settings.s3_endpoint_url,
             region=settings.s3_region,
+            public_base_url=settings.s3_public_base_url,
         )
     return LocalFileStorage()
+
+
+def get_private_storage() -> FileStorage:
+    if settings.storage_backend == "s3":
+        bucket = settings.private_s3_bucket_name or settings.s3_bucket_name
+        if not bucket:
+            raise ValueError("S3 bucket name must be configured when using S3 storage backend")
+        return S3FileStorage(
+            bucket_name=bucket,
+            endpoint_url=settings.s3_endpoint_url,
+            region=settings.s3_region,
+            is_private=True,
+        )
+    return LocalFileStorage(is_private=True)

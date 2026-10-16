@@ -1,6 +1,6 @@
 import GroundSelect from './ui/GroundSelect';
 import { DashboardShell, MetricCard, SafeImage, EmptyState, StatusBadge as DashboardStatusBadge } from './dashboard';
-import { Home, CalendarDays, Wallet, LayoutGrid, Plus, ShieldCheck, Activity, Building2 } from 'lucide-react';
+import { Home, CalendarDays, Wallet, LayoutGrid, Plus, ShieldCheck, Activity, Building2, LifeBuoy } from 'lucide-react';
 import {
   AlertCircle,
     ChevronLeft,
@@ -167,7 +167,7 @@ function OwnerOnboardingGate() {
           <span className="text-xs font-semibold text-on-surface-variant">Identification Type</span>
           <GroundSelect
             value={identificationType}
-            onValueChange={() => {}}
+            onValueChange={setIdentificationType}
             options={[
               { value: "National ID", label: "National ID" },
               { value: "Passport", label: "Passport" },
@@ -251,6 +251,7 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     { id: 'Listings', label: 'Listings', icon: LayoutGrid, onClick: () => setActiveTab('Listings') },
     { id: 'Calendars', label: 'Bookings', icon: CalendarDays, onClick: () => setActiveTab('Calendars') },
     { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => setActiveTab('Payouts') },
+    { id: 'Support', label: 'Support Tickets', icon: LifeBuoy, onClick: () => setActiveTab('Support') },
     { id: 'Account', label: 'Account', icon: ShieldCheck, onClick: () => setActiveTab('Account') },
   ];
 
@@ -268,6 +269,7 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     Listings: { title: 'Venues', desc: 'Manage your property listings' },
     Calendars: { title: 'Bookings', desc: 'View and manage venue reservations' },
     Payouts: { title: 'Payouts', desc: 'Track your earnings and transfers' },
+    Support: { title: 'Support Tickets', desc: 'Manage your support requests' },
     Account: { title: 'Account Settings', desc: 'Manage your owner profile and verification' },
   };
 
@@ -328,6 +330,7 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
         <OwnerCalendar venues={venues} bookings={bookings} isLoading={bookingsLoading} />
       )}
       {activeTab === 'Payouts' && <PayoutsTab payouts={payouts} isLoading={payoutsLoading} />}
+      {activeTab === 'Support' && <SupportTickets defaultContext={null} />}
       {activeTab === 'Account' && <AccountTab verification={verification} />}
 
       {modalVenue !== null && (
@@ -384,7 +387,8 @@ function ListingsTab({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {venues.map((v) => {
-        const cover = v.images.find((i) => i.is_cover) ?? v.images[0];
+        const media = v.media || [];
+        const cover = media.find((i) => i.is_cover) ?? media[0];
         return (
           <div key={v.id} className="bg-surface-container-lowest border border-surface-container rounded-2xl overflow-hidden soft-lift transition ease-out flex flex-col">
             <div className="aspect-[4/3] bg-mist relative">

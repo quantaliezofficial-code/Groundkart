@@ -56,12 +56,13 @@ export default function OwnerCalendar({ venues, bookings, isLoading }: OwnerCale
         data[unit.date].available++;
       }
     }
-    // Simplistic block rendering (in a real app, map start_date to end_date range)
+    // Map maintenance blocks to calendar days using start_time (not start_date —
+    // the backend BlockResponse schema uses start_time: datetime, not start_date: date).
     for (const block of blocks) {
-      // Assuming block.start_date is YYYY-MM-DD for simplicity here
-      if (block.status === 'active' && block.start_date) {
-        if (!data[block.start_date]) data[block.start_date] = { bookings: 0, available: 0, blocked: false };
-        data[block.start_date].blocked = true;
+      if (block.status === 'active' && block.start_time) {
+        const blockDate = block.start_time.slice(0, 10); // Extract YYYY-MM-DD
+        if (!data[blockDate]) data[blockDate] = { bookings: 0, available: 0, blocked: false };
+        data[blockDate].blocked = true;
       }
     }
     return data;
@@ -111,7 +112,7 @@ export default function OwnerCalendar({ venues, bookings, isLoading }: OwnerCale
               let bgColor = 'hover:bg-mist text-on-surface-variant';
               if (isSelected) bgColor = 'bg-pitch text-chalk shadow-md';
               else if (data.blocked) bgColor = 'bg-surface-container-highest opacity-50 cursor-not-allowed';
-              else if (data.bookings > 0) bgColor = 'bg-marigold/15 text-ink font-semibold border-b-2 border-marigold';
+              else if (data.bookings > 0) bgColor = 'bg-emerald-100 text-emerald-900 font-semibold border-b-2 border-emerald-500';
               else if (data.available > 0) bgColor = 'bg-primary-container/10 text-ink hover:bg-primary-container/20';
 
               return (
@@ -122,7 +123,7 @@ export default function OwnerCalendar({ venues, bookings, isLoading }: OwnerCale
                 >
                   <span>{day}</span>
                   <div className="flex gap-0.5">
-                    {data.bookings > 0 && <span className="w-1.5 h-1.5 rounded-full bg-marigold" title={`${data.bookings} Bookings`} />}
+                    {data.bookings > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title={`${data.bookings} Bookings`} />}
                     {data.available > 0 && <span className="w-1.5 h-1.5 rounded-full bg-pitch" title={`${data.available} Available`} />}
                   </div>
                 </button>

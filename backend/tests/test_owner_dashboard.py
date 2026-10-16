@@ -23,6 +23,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from app.db import get_db, get_idem_db
 from app.main import app
@@ -31,7 +32,7 @@ from app.modules.auth.security import create_access_token, hash_password
 from app.modules.booking.service import confirm_booking_from_webhook, create_booking
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
@@ -378,7 +379,7 @@ async def test_uploaded_venue_image_url_is_actually_fetchable(client, test_sessi
         headers={"Authorization": f"Bearer {token}"},
     )
     assert upload_resp.status_code == 201
-    image_url = upload_resp.json()["images"][0]["url"]
+    image_url = upload_resp.json()["media"][0]["url"]
 
     # A real gap this fixes: this used to be "local://venues/{id}/xxx.jpg",
     # a scheme no HTTP client (browser or otherwise) can fetch at all.
