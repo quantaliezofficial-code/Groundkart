@@ -25,6 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
     Text,
+    String,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -83,6 +84,8 @@ class User(Base):
     # which emails belong to suspended accounts.
     suspended_at: Mapped[datetime | None]
     suspension_reason: Mapped[str | None]
+    must_change_password: Mapped[bool] = mapped_column(default=False)
+    password_changed_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     deleted_at: Mapped[datetime | None]
@@ -124,6 +127,8 @@ class Venue(Base):
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     name: Mapped[str]
+    display_name: Mapped[str | None]
+    tagline: Mapped[str | None]
     slug: Mapped[str] = mapped_column(unique=True)
     category: Mapped[str] = mapped_column(Text)
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
@@ -182,6 +187,9 @@ class Venue(Base):
     use_cases: Mapped[list["UseCase"]] = relationship(secondary="venue_use_cases", back_populates="venues")
     media: Mapped[list["VenueMedia"]] = relationship(
         back_populates="venue", order_by="VenueMedia.sort_order", cascade="all, delete-orphan"
+    )
+    content_blocks: Mapped[list["VenueContentBlock"]] = relationship(
+        back_populates="venue", order_by="VenueContentBlock.sort_order", cascade="all, delete-orphan"
     )
     amenities: Mapped[list["Amenity"]] = relationship(
         secondary="venue_amenities", back_populates="venues"
@@ -462,6 +470,25 @@ class Payment(Base):
     payout: Mapped["Payout | None"] = relationship(back_populates="payments")
 
 
+
+class PasswordResetRequest(Base):
+    __tablename__ = "password_reset_requests"
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    token_hash: Mapped[str | None] = mapped_column(unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), server_default="pending", default="pending")
+    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    used_at: Mapped[datetime | None]
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reason: Mapped[str | None]
+    source_type: Mapped[str | None]
+    source_id: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    requester: Mapped["User | None"] = relationship(foreign_keys=[requested_by])
+
 class RefreshToken(Base):
     """
     Decision Point C-1 (flag for sign-off — see PHASE_C2_SUMMARY.md):
@@ -549,7 +576,7 @@ class OwnerVerification(Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    document_url: Mapped[str]
+    document_url: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     identification_type: Mapped[str | None]
     identification_number: Mapped[str | None]
@@ -700,6 +727,34 @@ class VenueMedia(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     venue: Mapped["Venue"] = relationship(back_populates="media")
+
+
+class VenueContentBlock(Base):
+    """
+    Phase 14: Custom block model for presentation layer.
+    Allows owners to build rich presentation pages without rigid schema columns for every possible field.
+    """
+    __tablename__ = "venue_content_blocks"
+    __table_args__ = (
+        Index("idx_venue_content_blocks_venue_id_sort", "venue_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
+    type: Mapped[str]
+    title: Mapped[str | None]
+    subtitle: Mapped[str | None]
+    body: Mapped[str | None]
+    media_reference: Mapped[str | None]
+    settings: Mapped[dict | None] = mapped_column(JSONB)
+    sort_order: Mapped[int] = mapped_column(default=0)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship(back_populates="content_blocks")
 
 
 class LoginRateLimit(Base):

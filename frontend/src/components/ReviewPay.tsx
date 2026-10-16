@@ -1,7 +1,6 @@
 import { AlertCircle, Calendar, Check, Clock, Copy, Info, Lock, ShieldCheck, User, Mail, ChevronDown, ChevronUp } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import gsap from 'gsap';
 import { ApiError } from '../lib/api/client';
 import type { BookingCreateResponse } from '../lib/api/types';
 import type { UserMe } from '../lib/api/types';
@@ -38,36 +37,6 @@ export default function ReviewPay({
   const estimatedPrice = venue.basePrice;
   const canSubmit = Boolean(selectedSlotId) && (currentUser || (guestName.trim() && guestEmail.trim()));
 
-  const lineRef = useRef<HTMLDivElement>(null);
-  const successCircleRef = useRef<HTMLDivElement>(null);
-  const checkIconRef = useRef<SVGSVGElement>(null);
-  const successTitleRef = useRef<HTMLHeadingElement>(null);
-  const successCardsRef = useRef<HTMLDivElement[]>([]);
-
-  useEffect(() => {
-    if (!result && lineRef.current) {
-      gsap.fromTo(lineRef.current, { width: '0%' }, { width: '50%', duration: 1, ease: 'power2.out' });
-    }
-  }, [result]);
-
-  useEffect(() => {
-    if (result) {
-      const tl = gsap.timeline();
-      if (successCircleRef.current) {
-        tl.from(successCircleRef.current, { scale: 0.95, opacity: 0, ease: 'elastic.out(1, 0.5)', duration: 0.8 }, 0);
-      }
-      if (checkIconRef.current) {
-        tl.fromTo(checkIconRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.3);
-      }
-      if (successTitleRef.current) {
-        tl.from(successTitleRef.current, { y: 20, opacity: 0, duration: 0.5 }, 0.5);
-      }
-      if (successCardsRef.current.length > 0) {
-        tl.from(successCardsRef.current, { y: 20, opacity: 0, duration: 0.5, stagger: 0.1 }, 0.7);
-      }
-    }
-  }, [result]);
-
   const handleConfirm = async () => {
     if (!canSubmit) return;
     setError(null);
@@ -90,22 +59,50 @@ export default function ReviewPay({
     const minutesHeld = Math.round(result.expires_in / 60);
     return (
       <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
         className="max-w-md mx-auto bg-chalk border border-ink/5 rounded-2xl p-8 text-center shadow-2xl my-12 transition ease-out"
       >
-        <div ref={successCircleRef} className="w-20 h-20 rounded-full bg-pitch text-chalk flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch/20">
-          <Check ref={checkIconRef} size={40} className="stroke-[3]" />
-        </div>
-        <h2 ref={successTitleRef} className="font-display text-3xl sm:text-4xl text-ink font-bold mb-3">Booking Requested!</h2>
-        <div ref={(el) => { if(el) successCardsRef.current[0] = el; }}>
+        <motion.div
+          initial={{ scale: 0.85, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', damping: 14, stiffness: 120 }}
+          className="w-20 h-20 rounded-full bg-pitch text-chalk flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch/20"
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.3 }}
+          >
+            <Check size={40} className="stroke-[3]" />
+          </motion.div>
+        </motion.div>
+        <motion.h2
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25, duration: 0.4 }}
+          className="font-display text-3xl sm:text-4xl text-ink font-bold mb-3"
+        >
+          Booking Requested!
+        </motion.h2>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35, duration: 0.4 }}
+        >
           <p className="font-sans text-sm text-on-surface-variant mb-6 leading-relaxed">
             Your slot at <span className="font-semibold text-pitch">{venue.name}</span> is held for you. Payment for
             this booking is confirmed by our team once it's received.
           </p>
-        </div>
+        </motion.div>
 
-        <div ref={(el) => { if(el) successCardsRef.current[1] = el; }} className="bg-mist rounded-xl p-5 mb-6 text-left space-y-3">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45, duration: 0.4 }}
+          className="bg-mist rounded-xl p-5 mb-6 text-left space-y-3"
+        >
           <div className="flex justify-between items-center font-sans text-sm">
             <span className="text-on-surface-variant">Booking ID</span>
             <span className="font-mono text-ink font-semibold bg-chalk px-2 py-1 rounded-md border border-ink/5">{result.booking_id.slice(0, 8)}</span>
@@ -122,10 +119,15 @@ export default function ReviewPay({
             <span className="text-on-surface-variant font-medium">Amount</span>
             <span className="font-display text-xl text-ink font-bold">₹{result.amount}</span>
           </div>
-        </div>
+        </motion.div>
 
         {result.manage_token && (
-          <div ref={(el) => { if(el) successCardsRef.current[2] = el; }} className="bg-pitch/5 rounded-xl p-5 mb-6 border border-pitch/10 text-left">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.55, duration: 0.4 }}
+            className="bg-pitch/5 rounded-xl p-5 mb-6 border border-pitch/10 text-left"
+          >
             <p className="font-sans text-sm font-semibold text-pitch mb-2 flex items-center gap-1.5">
               <Info size={16} /> Guest Booking Link
             </p>
@@ -150,17 +152,21 @@ export default function ReviewPay({
                 <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
 
-        <div ref={(el) => { if(el) successCardsRef.current[3] = el; }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65, duration: 0.4 }}
+        >
           <button
             onClick={onNavigateHome}
             className="w-full bg-transparent hover:bg-mist text-pitch border border-pitch/20 font-sans text-sm font-semibold py-3.5 rounded-xl transition cursor-pointer ease-out"
           >
             Back to Home
           </button>
-        </div>
+        </motion.div>
       </motion.div>
     );
   }
@@ -177,7 +183,12 @@ export default function ReviewPay({
         <div className="flex justify-between items-center relative">
           
           <div className="absolute inset-x-0 top-3 -z-10 flex px-8">
-            <div ref={lineRef} className="h-0.5 bg-pitch w-0" />
+            <motion.div
+              initial={{ width: '0%' }}
+              animate={{ width: '50%' }}
+              transition={{ duration: 0.7, ease: 'easeOut' }}
+              className="h-0.5 bg-pitch"
+            />
             <div className="h-0.5 bg-ink/10 flex-1" />
           </div>
 
@@ -391,7 +402,7 @@ export default function ReviewPay({
                     </p>
                     <p className="font-sans text-xs text-chalk/80 flex items-center gap-1.5 font-medium">
                       <Clock size={14} className="text-marigold" />
-                      <span>{selectedSlot}</span>
+                      <span>{selectedSlot || '—'}</span>
                     </p>
                   </div>
                 </div>

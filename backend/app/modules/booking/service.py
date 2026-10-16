@@ -53,8 +53,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.config import settings
-from app.models.core import AuditLog, Booking, InventoryUnit, Payment, Venue
+from app.models.core import Review, AuditLog, Booking, BookingEvent, InventoryUnit, Payment, Venue
 from app.modules.core.outbox import create_outbox_event
+from app.modules.notifications.service import notify
+from app.modules.booking.domain import transition_booking_status
 # Decision Point B-3 (flag this for explicit sign-off — see
 # PHASE_B_SUMMARY.md): inventory_units.date/start_time are
 # DATE/TIME WITHOUT TIME ZONE columns (06_Backend_Schema.md §3) — naive
@@ -128,6 +130,32 @@ async def create_booking(
         if unit is None or unit.status != "available":
             raise HTTPException(status_code=409, detail="This slot is no longer available")
 
+        # FIX: Check for active maintenance blocks that overlap this slot.
+        # Previously create_booking ignored the Block table entirely, allowing
+        # customers to book slots the owner had explicitly blocked.
+        from app.models.core import Block
+        unit_start = datetime.combine(unit.date, unit.start_time) if unit.start_time else datetime.combine(unit.date, time.min)
+        unit_end = datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date, time.max)
+        # Make tz-aware for comparison with potentially tz-aware block datetimes
+        unit_start_aware = unit_start.replace(tzinfo=VENUE_LOCAL_TZ)
+        unit_end_aware = unit_end.replace(tzinfo=VENUE_LOCAL_TZ)
+
+        block_result = await session.execute(
+            select(Block).where(
+                Block.venue_id == unit.venue_id,
+                Block.status == "active",
+            )
+        )
+        active_blocks = block_result.scalars().all()
+        for block in active_blocks:
+            b_start = block.start_time if block.start_time.tzinfo else block.start_time.replace(tzinfo=VENUE_LOCAL_TZ)
+            b_end = block.end_time if block.end_time.tzinfo else block.end_time.replace(tzinfo=VENUE_LOCAL_TZ)
+            if max(unit_start_aware, b_start) < min(unit_end_aware, b_end):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This slot is blocked for maintenance. Please choose another slot."
+                )
+
         unit.status = "held"
         unit.hold_expires_at = datetime.now(timezone.utc) + hold_duration
 
@@ -138,7 +166,7 @@ async def create_booking(
             manage_token_hash = hash_manage_token(raw_manage_token)
 
         from app.modules.booking.pricing_service import calculate_booking_price
-        price_snapshot = calculate_booking_price(unit)
+        price_snapshot = await calculate_booking_price(session, unit)
 
         booking = Booking(
             customer_id=customer_id,
@@ -159,16 +187,17 @@ async def create_booking(
         session.add(booking)
         await session.flush()
         
+        session.add(BookingEvent(booking_id=booking.id, event_type="created", actor_type="customer" if customer_id else "guest", actor_id=customer_id))
+        
         # Notify owner
-        from app.modules.notifications.service import notify
-        notification = notify(
+        notification_records = notify(
             user_id=unit.venue.owner_id,
             type="booking_requested",
             message=f"New booking request for '{unit.venue.name}' on {unit.date}. Please check your dashboard.",
             entity_type="booking",
             entity_id=booking.id,
         )
-        session.add(notification)
+        session.add_all(notification_records)
         
         await create_outbox_event(
             session,
@@ -260,7 +289,7 @@ def compute_refund_fraction(now: datetime, unit: InventoryUnit, config) -> tuple
     return Decimal("0.00"), "no_refund"
 
 
-def _apply_payment_confirmation(booking: Booking, config) -> Booking:
+def _apply_payment_confirmation(session: AsyncSession, booking: Booking, config, actor_id: uuid.UUID | None, actor_type: str | None) -> Booking:
     """Shared by confirm_booking_from_webhook (Razorpay path, currently
     dormant — see module docstring) and confirm_booking_by_admin (the
     offline path actually in use today). Both need identical
@@ -275,7 +304,7 @@ def _apply_payment_confirmation(booking: Booking, config) -> Booking:
     quietly no-op, an admin double-click should 409 — see each caller).
     """
     now = datetime.now(timezone.utc)
-    booking.status = "confirmed"
+    transition_booking_status(session, booking, "confirmed", actor_id, actor_type)
     booking.confirmed_at = now
     booking.grace_period_ends_at = compute_grace_period_ends_at(
         now, booking.inventory_unit, config.booking_grace_period_hours
@@ -304,7 +333,7 @@ async def confirm_booking_from_webhook(session: AsyncSession, booking_id: uuid.U
         config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
-            .options(joinedload(Booking.inventory_unit))
+            .options(joinedload(Booking.inventory_unit), selectinload(Booking.review))
             .where(Booking.id == booking_id)
             .with_for_update(of=Booking)
         )
@@ -317,7 +346,7 @@ async def confirm_booking_from_webhook(session: AsyncSession, booking_id: uuid.U
         if booking.status == "confirmed":
             return booking
 
-        _apply_payment_confirmation(booking, config)
+        _apply_payment_confirmation(session, booking, config, None, "system")
 
     return booking
 
@@ -352,7 +381,7 @@ async def confirm_booking_by_admin(
         config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
-            .options(joinedload(Booking.inventory_unit))
+            .options(joinedload(Booking.inventory_unit), selectinload(Booking.review))
             .where(Booking.id == booking_id)
             .with_for_update(of=Booking)
         )
@@ -385,7 +414,7 @@ async def confirm_booking_by_admin(
         )
         session.add(payment)
 
-        _apply_payment_confirmation(booking, config)
+        _apply_payment_confirmation(session, booking, config, admin_id, "admin")
 
         session.add(
             AuditLog(
@@ -436,7 +465,7 @@ async def cancel_pending_booking(
     async with session.begin():
         result = await session.execute(
             select(Booking)
-            .options(joinedload(Booking.inventory_unit))
+            .options(joinedload(Booking.inventory_unit), selectinload(Booking.review))
             .where(Booking.id == booking_id)
             .with_for_update(of=Booking)
         )
@@ -450,7 +479,7 @@ async def cancel_pending_booking(
             )
 
         now = datetime.now(timezone.utc)
-        booking.status = "cancelled"
+        transition_booking_status(session, booking, "cancelled", actor_id, "system" if actor_id is None else "admin")
         booking.cancellation_reason = reason
         booking.cancelled_at = now
         booking.inventory_unit.status = "available"
@@ -544,7 +573,7 @@ async def flag_booking(
         result = await session.execute(
             select(Booking)
             .options(
-                joinedload(Booking.inventory_unit),
+                joinedload(Booking.inventory_unit), selectinload(Booking.review),
                 selectinload(Booking.payments),
                 joinedload(Booking.venue),
             )
@@ -565,7 +594,7 @@ async def flag_booking(
                 headers={"code": "grace_period_expired"},
             )
 
-        booking.status = "cancelled"
+        transition_booking_status(session, booking, "cancelled", owner_id, "owner")
         booking.owner_flagged_at = now
         booking.cancellation_reason = reason
         booking.cancelled_at = now
@@ -587,13 +616,13 @@ async def flag_booking(
                 payment.status = "refunded"
                 payment.refund_amount = payment.amount
 
-        booking.status = "refunded"  # completes the transition — see docstring
+        transition_booking_status(session, booking, "refunded", owner_id, "owner")
 
     return booking
 
 
 def _apply_customer_cancellation(
-    booking: Booking, reason: str | None, now: datetime, config
+    session: AsyncSession, booking: Booking, reason: str | None, now: datetime, config, actor_id: uuid.UUID | None, actor_type: str | None
 ) -> tuple[Booking, Decimal, str]:
     """Shared by cancel_booking_as_customer and cancel_booking_by_manage_token
     — same shape as _apply_payment_confirmation being shared by the admin
@@ -629,7 +658,7 @@ def _apply_customer_cancellation(
     """
     fraction, tier = compute_refund_fraction(now, booking.inventory_unit, config)
 
-    booking.status = "cancelled"
+    transition_booking_status(session, booking, "cancelled", actor_id, actor_type)
     booking.cancellation_reason = reason
     booking.cancelled_at = now
     booking.inventory_unit.status = "available"
@@ -643,7 +672,7 @@ def _apply_customer_cancellation(
             payment.refund_amount = refund
             total_refund += refund
 
-    booking.status = "refunded"  # always — see docstring
+    transition_booking_status(session, booking, "refunded", actor_id, actor_type)
 
     return booking, total_refund, tier
 
@@ -686,7 +715,7 @@ async def cancel_booking_as_customer(
         config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
-            .options(joinedload(Booking.inventory_unit), selectinload(Booking.payments))
+            .options(joinedload(Booking.inventory_unit), selectinload(Booking.review), selectinload(Booking.payments))
             .where(Booking.id == booking_id)
             .with_for_update(of=Booking)
         )
@@ -704,7 +733,10 @@ async def cancel_booking_as_customer(
             )
 
         now = datetime.now(timezone.utc)
-        return _apply_customer_cancellation(booking, reason, now, config)
+        booking, refund, tier = _apply_customer_cancellation(session, booking, reason, now, config, customer_id, "customer")
+        if refund > 0:
+            session.add(BookingEvent(booking_id=booking.id, event_type="refund_created", actor_type="customer", actor_id=customer_id))
+        return booking, refund, tier
 
 
 async def cancel_booking_by_manage_token(
@@ -724,7 +756,7 @@ async def cancel_booking_by_manage_token(
         config = await get_system_config(session)
         result = await session.execute(
             select(Booking)
-            .options(joinedload(Booking.inventory_unit), selectinload(Booking.payments))
+            .options(joinedload(Booking.inventory_unit), selectinload(Booking.review), selectinload(Booking.payments))
             .where(Booking.manage_token_hash == token_hash)
             .with_for_update(of=Booking)
         )
@@ -738,7 +770,10 @@ async def cancel_booking_by_manage_token(
             )
 
         now = datetime.now(timezone.utc)
-        return _apply_customer_cancellation(booking, reason, now, config)
+        booking, refund, tier = _apply_customer_cancellation(session, booking, reason, now, config, None, "guest")
+        if refund > 0:
+            session.add(BookingEvent(booking_id=booking.id, event_type="refund_created", actor_type="guest", actor_id=None))
+        return booking, refund, tier
 
 
 async def get_booking_for_viewer(
@@ -768,7 +803,7 @@ async def get_booking_for_viewer(
     confirming a stranger's booking even exists.
     """
     result = await session.execute(
-        select(Booking).options(joinedload(Booking.inventory_unit)).where(Booking.id == booking_id)
+        select(Booking).options(joinedload(Booking.inventory_unit), selectinload(Booking.review)).where(Booking.id == booking_id)
     )
     booking = result.scalar_one_or_none()
 
@@ -820,7 +855,7 @@ async def list_bookings_for_owner(
     query = (
         select(Booking)
         .join(Venue, Booking.venue_id == Venue.id)
-        .options(joinedload(Booking.inventory_unit))
+        .options(joinedload(Booking.inventory_unit), selectinload(Booking.review))
         .where(Venue.owner_id == owner_id)
     )
     if venue_id is not None:
@@ -867,7 +902,7 @@ async def list_bookings_for_admin(
     exposes, nothing that would leak who booked. limit/offset added later,
     same convention as get_audit_log."""
     query = select(Booking).options(
-        joinedload(Booking.inventory_unit),
+        joinedload(Booking.inventory_unit), selectinload(Booking.review),
         joinedload(Booking.customer),
         joinedload(Booking.venue).joinedload(Venue.owner)
     ).limit(limit).offset(offset)
@@ -892,7 +927,7 @@ async def list_bookings_for_admin(
 async def get_booking_for_admin(session: AsyncSession, booking_id: uuid.UUID) -> Booking:
     result = await session.execute(
         select(Booking).options(
-            joinedload(Booking.inventory_unit),
+            joinedload(Booking.inventory_unit), selectinload(Booking.review),
             joinedload(Booking.customer),
             joinedload(Booking.venue).joinedload(Venue.owner)
         ).where(Booking.id == booking_id)
@@ -912,7 +947,7 @@ async def list_bookings_for_customer(session: AsyncSession, customer_id: uuid.UU
     separate, no-login path (01_PRD.md §5)."""
     result = await session.execute(
         select(Booking)
-        .options(joinedload(Booking.inventory_unit))
+        .options(joinedload(Booking.inventory_unit), selectinload(Booking.review))
         .where(Booking.customer_id == customer_id)
         .order_by(Booking.created_at.desc())
     )
@@ -927,9 +962,148 @@ async def get_booking_by_manage_token(session: AsyncSession, raw_token: str) -> 
     needed or possible for a guest."""
     token_hash = hash_manage_token(raw_token)
     result = await session.execute(
-        select(Booking).options(joinedload(Booking.inventory_unit)).where(Booking.manage_token_hash == token_hash)
+        select(Booking).options(joinedload(Booking.inventory_unit), selectinload(Booking.review)).where(Booking.manage_token_hash == token_hash)
     )
     booking = result.scalar_one_or_none()
     if booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
+
+
+from app.models.core import BookingActionRequest
+
+async def request_booking_action(
+    session: AsyncSession,
+    booking_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    actor_type: str,
+    action_type: str,
+    reason_code: str,
+    notes: str | None = None,
+    metadata_json: dict | None = None,
+) -> BookingActionRequest:
+    async with session.begin():
+        result = await session.execute(
+            select(Booking).where(Booking.id == booking_id)
+        )
+        booking = result.scalar_one_or_none()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+
+        # Basic state check
+        if booking.status not in ["confirmed", "upcoming"]:
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Cannot request {action_type} for a booking in {booking.status} state"
+            )
+
+        req = BookingActionRequest(
+            booking_id=booking.id,
+            action_type=action_type,
+            requested_by_type=actor_type,
+            requested_by_user_id=actor_id,
+            reason=reason_code,
+            notes=notes,
+            metadata_json=metadata_json,
+            status="pending"
+        )
+        session.add(req)
+        
+        # We also create an event for traceability
+        session.add(BookingEvent(
+            booking_id=booking.id,
+            event_type=f"action_requested_{action_type}",
+            actor_type=actor_type,
+            actor_id=actor_id,
+            extra_data={"reason_code": reason_code, "notes": notes, "metadata": metadata_json}
+        ))
+
+    return req
+
+async def process_booking_action_request(
+    session: AsyncSession,
+    action_request_id: uuid.UUID,
+    admin_id: uuid.UUID,
+    decision: str,
+    decision_reason: str | None,
+    config,
+) -> BookingActionRequest:
+    async with session.begin():
+        result = await session.execute(
+            select(BookingActionRequest).options(
+                joinedload(BookingActionRequest.booking).joinedload(Booking.inventory_unit), 
+                joinedload(BookingActionRequest.booking).selectinload(Booking.payments)
+            ).where(BookingActionRequest.id == action_request_id)
+        )
+        req = result.scalar_one_or_none()
+        if not req:
+            raise HTTPException(status_code=404, detail="Action request not found")
+
+        if req.status != "pending":
+            raise HTTPException(status_code=409, detail=f"Request is already {req.status}")
+
+        now = datetime.now(timezone.utc)
+        req.status = decision
+        req.reviewed_at = now
+        req.admin_decision = decision
+        req.decision_reason = decision_reason
+        
+        session.add(BookingEvent(
+            booking_id=req.booking_id,
+            event_type=f"action_request_{decision}",
+            actor_type="admin",
+            actor_id=admin_id,
+            extra_data={"request_id": str(req.id), "reason": decision_reason}
+        ))
+
+        if decision == "approved" and req.action_type == "cancel":
+            booking = req.booking
+            if booking.status in ["confirmed", "upcoming"]:
+                if req.requested_by_type in ["customer", "guest"]:
+                    _apply_customer_cancellation(session, booking, req.reason, now, config, admin_id, "admin")
+                elif req.requested_by_type == "owner":
+                    transition_booking_status(session, booking, "cancelled", admin_id, "admin")
+                    booking.cancellation_reason = req.reason
+                    booking.cancelled_at = now
+                    booking.inventory_unit.status = "available"
+                    booking.inventory_unit.hold_expires_at = None
+                    for payment in booking.payments:
+                        if payment.status == "success":
+                            payment.status = "refunded"
+                            payment.refund_amount = payment.amount
+                    transition_booking_status(session, booking, "refunded", admin_id, "admin")
+
+        elif decision == "approved" and req.action_type == "reschedule":
+            booking = req.booking
+            if booking.status in ["confirmed", "upcoming"]:
+                new_inventory_unit_id = req.metadata_json.get("new_inventory_unit_id") if req.metadata_json else None
+                if not new_inventory_unit_id:
+                    raise HTTPException(status_code=400, detail="Missing new_inventory_unit_id in metadata")
+                
+                from app.models.core import InventoryUnit
+                result_new_unit = await session.execute(
+                    select(InventoryUnit).where(InventoryUnit.id == new_inventory_unit_id).with_for_update()
+                )
+                new_unit = result_new_unit.scalar_one_or_none()
+                if not new_unit:
+                    raise HTTPException(status_code=404, detail="New inventory unit not found")
+                
+                if new_unit.status != "available":
+                    raise HTTPException(status_code=409, detail=f"New inventory unit is {new_unit.status}, not available")
+                
+                old_unit = booking.inventory_unit
+                old_unit.status = "available"
+                old_unit.hold_expires_at = None
+                
+                new_unit.status = "booked"
+                booking.inventory_unit_id = new_inventory_unit_id
+                
+                session.add(BookingEvent(
+                    booking_id=booking.id,
+                    event_type="booking_rescheduled",
+                    actor_type="admin",
+                    actor_id=admin_id,
+                    extra_data={"old_unit_id": str(old_unit.id), "new_unit_id": str(new_unit.id)}
+                ))
+
+    return req

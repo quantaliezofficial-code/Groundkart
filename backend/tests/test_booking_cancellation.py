@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
@@ -39,8 +40,8 @@ from app.modules.auth.security import create_access_token
 from app.modules.booking.service import VENUE_LOCAL_TZ, confirm_booking_from_webhook, create_booking
 
 
-@pytest.fixture
-async def client(test_session_factory):
+@pytest_asyncio.fixture
+async def client(test_session_factory, clean_tables):
     async def _override_get_db():
         async with test_session_factory() as session:
             yield session

@@ -220,7 +220,7 @@ async def mark_payout_paid(session: AsyncSession, payout_id: uuid.UUID, admin_id
                 extra_data={"net_amount": str(payout.net_amount)},
             )
         )
-        session.add(
+        session.add_all(
             notify(
                 payout.owner_id,
                 "payout_paid",

@@ -297,3 +297,14 @@ async def test_payout_mark_paid_notifies_the_owner_but_run_does_not(
     notifications = await _notifications_for(client, owner_id)
     assert len(notifications) == 1
     assert notifications[0]["type"] == "payout_paid"
+
+async def test_in_app_notifications_still_appear_exactly_as_before(client, test_session_factory, seeded_admin):
+    owner_id = await _owner(test_session_factory)
+    venue_id = await _venue(test_session_factory, owner_id)
+    await client.post(f"/api/v1/admin/venues/{venue_id}/approve", headers=_admin_headers(seeded_admin))
+
+    notifications = await _notifications_for(client, owner_id)
+    assert len(notifications) == 1
+    assert notifications[0]["type"] == "venue_approved"
+    assert "Test Venue" in notifications[0]["message"]
+    assert notifications[0]["read_at"] is None

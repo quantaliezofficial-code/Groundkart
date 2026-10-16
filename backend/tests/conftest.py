@@ -1,4 +1,5 @@
 import os
+os.environ["TESTING"] = "1"
 import uuid
 from datetime import date, time
 
@@ -54,7 +55,6 @@ async def clean_tables(test_engine):
 
     await _truncate()
     yield
-    await _truncate()
 
 
 @pytest_asyncio.fixture

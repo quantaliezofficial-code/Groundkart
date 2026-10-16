@@ -49,7 +49,7 @@ export default function FiltersSidebar({
   return (
     <>
       {/* ================= DESKTOP FILTER SIDEBAR ================= */}
-      <aside className="hidden lg:block w-[280px] shrink-0 sticky top-[95px] h-[calc(100vh-125px)] overflow-y-auto no-scrollbar pb-6">
+      <aside className="hidden lg:block w-[280px] shrink-0 sticky top-[95px] h-[calc(100vh-125px)] overflow-y-auto no-scrollbar pb-6" data-lenis-prevent>
         <div className="bg-chalk rounded-2xl ring-1 ring-ink/5 p-6 shadow-lg shadow-pitch/5 flex flex-col">
           
           {/* Header */}
@@ -235,7 +235,7 @@ export default function FiltersSidebar({
               </div>
 
               {/* Scrollable Filtering Options list */}
-              <div className="px-5 py-6 overflow-y-auto flex-1 flex flex-col">
+              <div className="px-5 py-6 overflow-y-auto flex-1 flex flex-col" data-lenis-prevent>
                 
                 {/* Price section */}
                 <motion.section 

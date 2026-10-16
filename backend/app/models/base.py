@@ -35,13 +35,9 @@ UserRole = PGEnum(
     name="user_role", create_type=False,
 )
 
-VenueCategory = PGEnum(
-    "sports", "banquet_hall", "farmhouse", "corporate", "community_hall",
-    name="venue_category", create_type=False,
-)
 
 VenueStatus = PGEnum(
-    "draft", "pending_review", "active", "suspended",
+    "draft", "pending_review", "active", "suspended", "archived",
     name="venue_status", create_type=False,
 )
 
@@ -56,7 +52,9 @@ InventoryStatus = PGEnum(
 )
 
 BookingStatus = PGEnum(
-    "pending_payment", "confirmed", "cancelled", "completed", "expired", "refunded",
+    "draft", "requested", "under_admin_review", "pending_payment", "confirmed",
+    "upcoming", "in_progress", "completed", "cancelled", "expired", "refunded",
+    "disputed", "suspended", "rejected",
     name="booking_status", create_type=False,
 )
 
@@ -99,4 +97,68 @@ BlockStatus = PGEnum(
 OutboxEventStatus = PGEnum(
     "pending", "processed", "failed",
     name="outbox_event_status", create_type=False,
+)
+
+
+PricingRuleType = PGEnum(
+    "weekday", "weekend", "peak_time", "seasonal", "special_event",
+    name="pricing_rule_type", create_type=False,
+)
+
+PricingAdjustmentType = PGEnum(
+    "percentage", "fixed",
+    name="pricing_adjustment_type", create_type=False,
+)
+
+JobStatus = PGEnum(
+    "pending", "running", "completed", "failed",
+    name="job_status", create_type=False,
+)
+
+NotificationChannel = PGEnum(
+    "in_app", "email", "sms",
+    name="notification_channel", create_type=False,
+)
+
+DeliveryStatus = PGEnum(
+    "queued", "sent", "delivered", "failed", "retrying",
+    name="delivery_status", create_type=False,
+)
+
+TicketStatus = PGEnum(
+    "open", "in_review", "waiting_customer", "resolved", "closed",
+    name="ticket_status", create_type=False,
+)
+
+TicketCategory = PGEnum(
+    "general", "billing", "venue_issue", "dispute",
+    name="ticket_category", create_type=False,
+)
+
+TicketPriority = PGEnum(
+    "low", "medium", "high", "urgent",
+    name="ticket_priority", create_type=False,
+)
+
+ActionType = PGEnum(
+    "cancel", "modify", "reschedule", "payment_confirmation", 
+    "payment_release", "refund_request", "refund_override", 
+    "dispute", "owner_cancellation", "admin_cancellation",
+    name="action_type", create_type=False,
+)
+
+RequestStatus = PGEnum(
+    "pending", "approved", "rejected", "withdrawn", 
+    "expired", "completed",
+    name="request_status", create_type=False,
+)
+
+ActionReasonCode = PGEnum(
+    "customer_changed_plans", "incorrect_booking", "unavailable", 
+    "price_issue", "venue_issue", "payment_issue", "personal_reason", 
+    "maintenance", "venue_emergency", "schedule_conflict", "duplicate", 
+    "operational_issue", "weather", "policy_violation", "payment_failure", 
+    "venue_suspended", "fraud_risk", "duplicate_booking", "customer_request", 
+    "owner_request", "system_error", "force_majeure", "other",
+    name="action_reason_code", create_type=False,
 )

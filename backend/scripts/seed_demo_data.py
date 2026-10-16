@@ -7,6 +7,7 @@ matters. Idempotent-ish: safe to re-run, just creates more data each time
 distinct slugs via a random suffix).
 """
 import asyncio
+import sys
 import uuid
 from datetime import date, time, timedelta
 from decimal import Decimal
@@ -16,6 +17,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.config import settings
 from app.models.core import InventoryUnit, User, Venue
 from app.modules.auth.security import hash_password
+
+if settings.environment.lower() in ("prod", "production"):
+    sys.exit("ERROR: Refusing to run seed script in production environment.")
 
 VENUES = [
     dict(
@@ -60,7 +64,7 @@ async def main() -> None:
             for v in VENUES:
                 owner = User(
                     name=f"{v['name']} Team",
-                    email=f"owner-{uuid.uuid4().hex[:8]}@groundbooking.demo",
+                    email=f"owner-{uuid.uuid4().hex[:8]}@groundkart.demo",
                     password_hash=hash_password("demo-password-not-real"),
                     role="owner",
                     is_verified=True,

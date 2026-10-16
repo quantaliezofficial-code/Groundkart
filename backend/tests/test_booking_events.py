@@ -60,7 +60,7 @@ async def test_booking_event_lifecycle(db_session, seeded_owner_with_unit, seede
     assert events[0].actor_type == "customer"
     assert events[0].actor_id == customer_id
 
-    assert events[1].event_type == "payment_confirmed"
+    assert events[1].event_type == "booking_confirmed"
     assert events[1].actor_type == "admin"
     assert events[1].actor_id == admin_id
 
@@ -91,7 +91,7 @@ async def test_booking_event_transactional_consistency(db_session, seeded_owner_
             method="cash",
         )
     
-    # Ensure no 'payment_confirmed' event was left behind
+    # Ensure no 'booking_confirmed' event was left behind
     result = await db_session.execute(
         select(BookingEvent).where(BookingEvent.booking_id == booking_id)
     )
@@ -136,10 +136,11 @@ async def test_cancellation_events(db_session, seeded_owner_with_unit, seeded_cu
     )
     events = list(result.scalars().all())
     
-    assert len(events) == 4
+    assert len(events) == 5
     
     types = [e.event_type for e in events]
     assert "created" in types
-    assert "payment_confirmed" in types
-    assert "cancelled" in types
+    assert "booking_confirmed" in types
+    assert "booking_cancelled" in types
     assert "refund_created" in types
+    assert "booking_refunded" in types

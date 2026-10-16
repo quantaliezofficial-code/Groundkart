@@ -32,10 +32,26 @@ def notify(
     message: str,
     entity_type: str | None = None,
     entity_id: uuid.UUID | None = None,
-) -> Notification:
-    return Notification(
+) -> list:
+    event = Notification(
+        id=uuid.uuid4(),
         user_id=user_id, type=type, message=message, entity_type=entity_type, entity_id=entity_id
     )
+    
+    from app.models.core import NotificationDelivery, OutboxEvent
+    event.deliveries = [
+        NotificationDelivery(id=uuid.uuid4(), channel="in_app", status="delivered"),
+        NotificationDelivery(id=uuid.uuid4(), channel="email", status="queued"),
+        NotificationDelivery(id=uuid.uuid4(), channel="sms", status="queued"),
+    ]
+    
+    outbox = OutboxEvent(
+        event_type="notification.created",
+        aggregate_type="notification",
+        aggregate_id=event.id,
+        payload={}
+    )
+    return [event, outbox]
 
 
 async def list_notifications_for_user(
@@ -64,7 +80,7 @@ async def count_unread_notifications(session: AsyncSession, user_id: uuid.UUID) 
     return result.scalar_one()
 
 
-async def mark_notification_read(session: AsyncSession, viewer: CurrentUser, notification_id: uuid.UUID) -> Notification:
+async def mark_notification_read(session: AsyncSession, viewer: CurrentUser, notification_id: uuid.UUID) -> list:
     """A user can only ever mark their OWN notification read."""
     async with session.begin():
         result = await session.execute(

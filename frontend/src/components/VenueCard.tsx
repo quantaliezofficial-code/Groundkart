@@ -29,7 +29,7 @@ export default function VenueCard({
     >
       {/* Venue Media Crop (4:3) */}
       <div className="relative aspect-[4/3] w-full bg-surface-container-high overflow-hidden rounded-t-2xl">
-        <SafeImage src={venue.image} alt={venue.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
+        <SafeImage src={venue.image} alt={`${venue.name} — ${venue.category} in ${venue.city}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
 
         {/* Gradient Overlay at Bottom */}
         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ink/60 to-transparent pointer-events-none" />

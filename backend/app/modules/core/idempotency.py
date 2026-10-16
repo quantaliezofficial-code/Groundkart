@@ -99,8 +99,8 @@ class IdempotencyManager:
         await self.db.commit()
 
 @asynccontextmanager
-async def idempotency(db: AsyncSession, key: str | None, actor_id: uuid.UUID | None, operation: str, payload: BaseModel | dict):
-    if not key:
+async def idempotency(db: AsyncSession | None, key: str | None, actor_id: uuid.UUID | None, operation: str, payload: BaseModel | dict):
+    if not key or db is None:
         class DummyManager:
             is_replaying = False
             async def complete(self, *args, **kwargs): pass
@@ -117,4 +117,16 @@ async def idempotency(db: AsyncSession, key: str | None, actor_id: uuid.UUID | N
     manager = IdempotencyManager(db, key, actor_id, operation, payload_hash)
     await manager._claim()
     
-    yield manager
+    try:
+        yield manager
+    except Exception:
+        if manager.record_id and not manager.is_replaying:
+            try:
+                stmt = select(IdempotencyKey).where(IdempotencyKey.id == manager.record_id)
+                record = (await db.execute(stmt)).scalar_one_or_none()
+                if record and record.status == "in_progress":
+                    record.status = "error"
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to mark idempotency key as error: {e}")
+        raise

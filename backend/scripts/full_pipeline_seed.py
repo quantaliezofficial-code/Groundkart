@@ -1,15 +1,22 @@
 import asyncio
+import os
+import sys
 import uuid
 from datetime import date, timedelta
 
 import httpx
 
-BASE_URL = "http://localhost:8000"
+from app.config import settings
+
+if settings.environment.lower() in ("prod", "production"):
+    sys.exit("ERROR: Refusing to run seed script in production environment.")
+
+BASE_URL = settings.app_base_url
 
 OWNERS_DATA = [
     {
         "name": "Ravi Sharma",
-        "email": "owner-ravi-" + uuid.uuid4().hex[:6] + "@groundbooking.demo",
+        "email": "owner-ravi-" + uuid.uuid4().hex[:6] + "@groundkart.demo",
         "password": "Owner@Ravi2026!",
         "venues": [
             {"name": "Elite Cricket Ground Lucknow", "category": "sports", "unit_type": "hour", "city": "Lucknow", "state": "Uttar Pradesh", "address": "Vibhuti Khand, Gomti Nagar", "pincode": "226010", "base_price": "1500", "capacity": 22, "description": "Professional cricket ground with floodlights. Ideal for matches and practice.", "amenity_names": ["Floodlights", "Free Parking", "Changing Rooms"]},
@@ -19,7 +26,7 @@ OWNERS_DATA = [
     },
     {
         "name": "Priya Mehta",
-        "email": "owner-priya-" + uuid.uuid4().hex[:6] + "@groundbooking.demo",
+        "email": "owner-priya-" + uuid.uuid4().hex[:6] + "@groundkart.demo",
         "password": "Owner@Priya2026!",
         "venues": [
             {"name": "Royal Banquet Palace", "category": "banquet_hall", "unit_type": "full_day", "city": "Lucknow", "state": "Uttar Pradesh", "address": "Vibhuti Khand, Gomti Nagar", "pincode": "226010", "base_price": "85000", "capacity": 500, "description": "Grand 500-guest banquet hall with marble flooring and in-house catering.", "amenity_names": ["Catering", "Free Parking", "Air Conditioning", "Music System", "Generator"]},
@@ -28,7 +35,7 @@ OWNERS_DATA = [
     },
     {
         "name": "Arun Patel",
-        "email": "owner-arun-" + uuid.uuid4().hex[:6] + "@groundbooking.demo",
+        "email": "owner-arun-" + uuid.uuid4().hex[:6] + "@groundkart.demo",
         "password": "Owner@Arun2026!",
         "venues": [
             {"name": "Riverside Farmhouse Retreat", "category": "farmhouse", "unit_type": "full_day", "city": "Lucknow", "state": "Uttar Pradesh", "address": "Kursi Road, Near Gomti Barrage", "pincode": "226026", "base_price": "45000", "capacity": 250, "description": "Sprawling green farmhouse along the Gomti. Perfect for weddings and offsites.", "amenity_names": ["Garden", "Swimming Pool", "Free Parking", "Catering", "Generator"]},
@@ -37,7 +44,7 @@ OWNERS_DATA = [
     },
     {
         "name": "Sneha Gupta",
-        "email": "owner-sneha-" + uuid.uuid4().hex[:6] + "@groundbooking.demo",
+        "email": "owner-sneha-" + uuid.uuid4().hex[:6] + "@groundkart.demo",
         "password": "Owner@Sneha2026!",
         "venues": [
             {"name": "Metropolis Conference Hub", "category": "corporate", "unit_type": "half_day", "city": "Lucknow", "state": "Uttar Pradesh", "address": "Vipin Khand, Gomti Nagar", "pincode": "226010", "base_price": "12000", "capacity": 60, "description": "Fully wired corporate space with boardroom and breakout rooms.", "amenity_names": ["High-Speed WiFi", "Projector", "Air Conditioning", "Catering"]},
@@ -47,7 +54,7 @@ OWNERS_DATA = [
     },
 ]
 
-CUSTOMER_EMAIL = "customer-arjun-" + uuid.uuid4().hex[:6] + "@groundbooking.demo"
+CUSTOMER_EMAIL = "customer-arjun-" + uuid.uuid4().hex[:6] + "@groundkart.demo"
 CUSTOMER_PASSWORD = "Customer@2026!"
 
 DUMMY_PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
@@ -75,7 +82,7 @@ async def signup_and_login(client, name, email, password):
 
 async def main():
     log("\n" + "=" * 60)
-    log("  GROUNDBOOKING - FULL PIPELINE SEED")
+    log("  GROUNDKART - FULL PIPELINE SEED")
     log("=" * 60)
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -89,11 +96,13 @@ async def main():
 
         log("Step 1 - Admin login ...")
         admin_token = None
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "changeme123")
         try:
             resp = await api_call(client, "POST", "/api/v1/auth/login",
-                                  json={"email": "admin@example.com", "password": "changeme123"})
+                                  json={"email": admin_email, "password": admin_password})
             admin_token = resp["access_token"]
-            log("  Admin logged in: admin@example.com")
+            log(f"  Admin logged in: {admin_email}")
         except Exception as e:
             log(f"  [ERROR] No admin: {e}\n  Run: python admin_setup.py")
             return

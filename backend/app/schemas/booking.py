@@ -173,3 +173,38 @@ class AdminCancelPendingBookingRequest(BaseModel):
     manual counterweight to that)."""
 
     reason: str = Field(min_length=1, max_length=1000)
+class BookingActionRequestCreate(BaseModel):
+    action_type: str = Field(default="cancel", pattern="^(cancel|modify|reschedule)$")
+    reason_code: str
+    notes: str | None = Field(default=None, max_length=1000)
+    metadata_json: dict | None = Field(default=None)
+
+class BookingActionRequestResponse(BaseModel):
+    id: uuid.UUID
+    booking_id: uuid.UUID
+    action_type: str
+    status: str
+    reason: str | None
+    notes: str | None
+    requested_at: datetime
+    reviewed_at: datetime | None
+    admin_decision: str | None
+    decision_reason: str | None
+    reason_code: str | None
+    requested_by_type: str | None
+    requested_by_user_id: uuid.UUID | None
+    metadata_json: dict | None = None
+
+    model_config = {"from_attributes": True}
+
+class AdminBookingActionProcessRequest(BaseModel):
+    admin_decision: str = Field(pattern="^(approved|rejected)$")
+    decision_reason: str | None = Field(default=None, max_length=1000)
+from pydantic import BaseModel, Field
+import uuid
+from typing import Optional
+
+class BookingRescheduleRequest(BaseModel):
+    new_inventory_unit_id: uuid.UUID
+    reason_code: str
+    notes: str | None = Field(default=None, max_length=1000)

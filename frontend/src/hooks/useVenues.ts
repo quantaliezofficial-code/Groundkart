@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adaptInventoryUnit, adaptVenue } from '../lib/adapters';
 import { venuesApi, type VenueSearchParams } from '../lib/api/venues';
+import { ApiError } from '../lib/api/client';
 import type { ReviewCreateRequest } from '../lib/api/types';
 import type { Venue, VenueSlot } from '../types';
 
@@ -19,10 +20,11 @@ export function useVenue(venueId: string | undefined) {
     queryKey: ['venue', venueId],
     queryFn: () => venuesApi.get(venueId!),
     enabled: Boolean(venueId),
+    retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 2,
   });
-
-  const venue: Venue | undefined = query.data ? adaptVenue(query.data) : undefined;
-  return { venue, isLoading: query.isLoading, error: query.error };
+  const venue = query.data ? adaptVenue(query.data) : undefined;
+  const notFound = query.error instanceof ApiError && query.error.status === 404;
+  return { venue, isLoading: query.isLoading, isError: query.isError, notFound, refetch: query.refetch, error: query.error };
 }
 
 export function useVenueSlots(venueId: string | undefined) {

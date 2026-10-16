@@ -20,6 +20,7 @@ interface GroundSelectProps {
   icon?: React.ReactNode;
   label?: string;
   labelIcon?: React.ReactNode;
+  align?: 'left' | 'right';
 }
 
 export default function GroundSelect({
@@ -33,7 +34,8 @@ export default function GroundSelect({
   dropdownClassName = "",
   icon,
   label,
-  labelIcon
+  labelIcon,
+  align = 'left'
 }: GroundSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -197,7 +199,7 @@ export default function GroundSelect({
             animate="visible"
             exit="exit"
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className={`absolute z-[100] w-full min-w-[max-content] left-0 ${dropdownPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}`}
+            className={`absolute z-[100] w-full min-w-[max-content] ${align === 'right' ? 'right-0' : 'left-0'} ${dropdownPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}`}
           >
             <div className={`bg-chalk/98 backdrop-blur-xl border border-ink/5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-hidden ${dropdownClassName}`}>
               <ul
@@ -206,6 +208,7 @@ export default function GroundSelect({
                 aria-activedescendant={focusedIndex >= 0 ? `option-${focusedIndex}` : undefined}
                 className="max-h-[300px] overflow-y-auto p-1.5 focus:outline-none no-scrollbar"
                 tabIndex={-1}
+                data-lenis-prevent
               >
                 {options.length === 0 ? (
                    <li className="px-3.5 py-3 text-sm text-ink/50 text-center font-sans">No options</li>

@@ -39,6 +39,7 @@ export type UnitType = 'hour' | 'half_day' | 'full_day';
 
 export interface Venue {
   id: string;
+  slug?: string;
   name: string;
   city: string;
   district: string;
@@ -54,7 +55,11 @@ export interface Venue {
   category: string;
   venueType: string;
   description: string;
+  tagline?: string;
+  capacity?: number;
+  environment?: string;
   rules?: string[];
+  cancellationPolicy?: string;
   amenities: string[];
   capacityGroup: '1-5' | '6-10' | '11-20' | '20+';
   isFullyBookedToday?: boolean;
