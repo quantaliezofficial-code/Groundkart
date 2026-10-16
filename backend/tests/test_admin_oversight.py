@@ -13,6 +13,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+import pytest_asyncio
 from sqlalchemy import select, update
 
 from app.db import get_db, get_idem_db
@@ -29,7 +30,7 @@ from app.modules.auth.security import create_access_token, hash_password
 from app.modules.booking.service import confirm_booking_from_webhook, create_booking
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
@@ -162,6 +163,7 @@ async def test_audit_log_filters_by_actor_id(client, test_session_factory, seede
 
     _, venue_a = await _seeded_owner_and_venue(test_session_factory, venue_status="active")
     _, venue_b = await _seeded_owner_and_venue(test_session_factory, venue_status="active")
+
     await client.post(
         f"/api/v1/admin/venues/{venue_a}/suspend", json={"reason": "A"}, headers=_admin_headers(seeded_admin)
     )
@@ -279,10 +281,6 @@ async def test_overview_active_venues_count(client, test_session_factory, seeded
 
 async def test_suspend_active_venue_succeeds(client, test_session_factory, seeded_admin):
     owner_id, venue_id = await _seeded_owner_and_venue(test_session_factory, venue_status="active")
-    
-    async with test_session_factory() as session:
-        result = await session.execute(select(User).where(User.id == seeded_admin))
-        print("ADMIN IN DB BEFORE POST:", result.scalar_one_or_none() is not None)
 
     resp = await client.post(
         f"/api/v1/admin/venues/{venue_id}/suspend",

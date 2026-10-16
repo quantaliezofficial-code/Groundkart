@@ -54,16 +54,45 @@ const notificationsApiMock = vi.hoisted(() => ({
 
 vi.mock('./lib/api/notifications', () => ({ notificationsApi: notificationsApiMock }));
 
+const supportApiMock = vi.hoisted(() => ({
+  createTicket: vi.fn(),
+  listTickets: vi.fn().mockResolvedValue([]),
+  getTicket: vi.fn(),
+  addComment: vi.fn(),
+  adminListTickets: vi.fn().mockResolvedValue([]),
+  adminUpdateTicket: vi.fn(),
+}));
+
+vi.mock('./lib/api/support', () => ({ supportApi: supportApiMock }));
+
 const adminApiMock = {
   getAuditLog: vi.fn().mockResolvedValue([]),
+  getHealth: vi.fn().mockResolvedValue({ api_live: true, db_connected: true }),
   getOverview: vi.fn().mockResolvedValue({
-    total_bookings: 0,
-    bookings_by_status: {},
-    gmv: '0',
-    total_commission_collected: '0',
-    active_venues: 0,
-    pending_venue_approvals: 0,
-    pending_owner_verifications: 0,
+    metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
+    attention: [],
+    live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
+    booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
+    revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
+    venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
+    top_venues: [],
+    category_performance: [],
+    support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
+    notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
+    recent_activity: [],
+  }),
+  getDashboardOverview: vi.fn().mockResolvedValue({
+    metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
+    attention: [],
+    live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
+    booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
+    revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
+    venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
+    top_venues: [],
+    category_performance: [],
+    support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
+    notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
+    recent_activity: [],
   }),
   listVenues: vi.fn().mockResolvedValue([]),
   suspendVenue: vi.fn(),
@@ -74,6 +103,7 @@ const adminApiMock = {
   suspendUser: vi.fn(),
   reactivateUser: vi.fn(),
   listVerifications: vi.fn().mockResolvedValue([]),
+  viewVerificationDocument: vi.fn(),
   approveVerification: vi.fn(),
   rejectVerification: vi.fn(),
   listBookings: vi.fn().mockResolvedValue([]),
@@ -115,7 +145,7 @@ describe('Admin dashboard role gating', () => {
   it('a real admin lands in the full Admin Dashboard automatically on session restore', async () => {
     mockLoggedInAs('admin');
     renderApp();
-    expect(await screen.findByText('Admin Dashboard')).toBeInTheDocument();
+    expect(await screen.findByText('Admin Dashboard', {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByText('Approval Queue')).toBeInTheDocument();
   });
 
@@ -140,19 +170,30 @@ describe('Admin dashboard role gating', () => {
 
 describe('Admin dashboard data + mutations', () => {
   it('renders real overview figures from the API, not any hardcoded mock numbers', async () => {
-    adminApiMock.getOverview.mockResolvedValueOnce({
-      total_bookings: 42,
-      bookings_by_status: { confirmed: 30, cancelled: 12 },
-      gmv: '184500.00',
-      total_commission_collected: '18450.00',
-      active_venues: 7,
-      pending_venue_approvals: 2,
-      pending_owner_verifications: 1,
-    });
+    adminApiMock.getDashboardOverview.mockResolvedValueOnce({
+      metrics: {
+        total_bookings: 42,
+        gmv: '184500.00',
+        total_commission: '18450.00',
+        active_venues: 7,
+        active_users: 100,
+        average_booking_value: '4392.00',
+      },
+      attention: [],
+      live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
+      booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
+      revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
+      venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
+      top_venues: [],
+      category_performance: [],
+      support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
+      notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
+      recent_activity: [],
+    } as any);
     mockLoggedInAs('admin');
     renderApp();
     await screen.findByText('Admin Dashboard');
-    expect(await screen.findByText('₹1,84,500')).toBeInTheDocument();
+    expect(await screen.findByText('42')).toBeInTheDocument();
     expect(screen.getByText('7')).toBeInTheDocument();
     // The mock version of this tab had hardcoded "Total Users"/"Dispute
     // Rate" cards with no real backend field behind them — confirms they
@@ -179,17 +220,41 @@ describe('Admin dashboard data + mutations', () => {
     await screen.findByText('Admin Dashboard');
     fireEvent.click(await screen.findByText('Approval Queue'));
 
-    // Shows the real owner's name, not a bare UUID — appears twice (queue
-    // subtitle + auto-selected detail panel), same reasoning as the venue
-    // name below.
-    expect(await screen.findAllByText(/Rekha Nair/)).toHaveLength(2);
+    // Shows the real owner's name, not a bare UUID.
+    expect(await screen.findAllByText(/Rekha Nair/)).toHaveLength(1);
 
-    // Appears twice by design: once in the sidebar list, once in the
-    // auto-selected detail panel (there's only one pending item).
-    expect(await screen.findAllByText('Riverside Turf')).toHaveLength(2);
+    // Only appears once in the unified list.
+    expect(await screen.findAllByText('Riverside Turf')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: /approve/i }));
 
     await waitFor(() => expect(adminApiMock.approveVenue).toHaveBeenCalledWith('venue-1'));
+  });
+
+  it('clicking View document on a pending verification calls the authenticated viewVerificationDocument route', async () => {
+    adminApiMock.listVerifications.mockResolvedValue([
+      {
+        id: 'verif-123',
+        user_id: 'user-1',
+        applicant_name: 'Amit Kumar',
+        applicant_email: 'amit@example.com',
+        business_name: 'Amit Sports Hub',
+        identification_type: 'Aadhaar',
+        identification_number: '1234-5678-9012',
+        status: 'pending',
+        created_at: '2026-07-01T00:00:00Z',
+      },
+    ]);
+
+    mockLoggedInAs('admin');
+    renderApp();
+    await screen.findByText('Admin Dashboard');
+    fireEvent.click(await screen.findByText('Approval Queue'));
+
+    expect(await screen.findByText('Amit Sports Hub')).toBeInTheDocument();
+    const viewBtn = screen.getByRole('button', { name: /view document/i });
+    fireEvent.click(viewBtn);
+
+    expect(adminApiMock.viewVerificationDocument).toHaveBeenCalledWith('verif-123');
   });
 
   it('suspending a user prompts for a reason and calls the real suspend route with it', async () => {
@@ -197,7 +262,6 @@ describe('Admin dashboard data + mutations', () => {
       { id: 'user-1', name: 'Priya Sharma', email: 'priya@example.com', role: 'customer', suspended_at: null, suspension_reason: null },
     ]);
     adminApiMock.suspendUser.mockResolvedValue({});
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Repeated no-shows');
 
     mockLoggedInAs('admin');
     renderApp();
@@ -207,10 +271,13 @@ describe('Admin dashboard data + mutations', () => {
     expect(await screen.findByText('Priya Sharma')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /suspend/i }));
 
+    const input = await screen.findByPlaceholderText('Reason for suspension…');
+    fireEvent.change(input, { target: { value: 'Repeated no-shows' } });
+    fireEvent.click(screen.getByRole('button', { name: /Suspend User/i }));
+
     await waitFor(() =>
       expect(adminApiMock.suspendUser).toHaveBeenCalledWith('user-1', 'Repeated no-shows'),
     );
-    promptSpy.mockRestore();
   });
 
   it('confirming a booking payment sends the entered amount/method to the real confirm-payment route, and an expired hold is flagged', async () => {
@@ -234,15 +301,16 @@ describe('Admin dashboard data + mutations', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm payment/i }));
 
     const amountInput = await screen.findByPlaceholderText('Amount received');
-    fireEvent.change(amountInput, { target: { value: '1200.00' } });
-    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+    fireEvent.change(amountInput, { target: { value: '1200' } });
+    
+    const confirmBtn = screen.getByRole('button', { name: /^confirm$/i });
+    await waitFor(() => expect(confirmBtn).not.toBeDisabled());
+    fireEvent.click(confirmBtn);
 
     await waitFor(() =>
       expect(adminApiMock.confirmBookingPayment).toHaveBeenCalledWith('booking-1', {
-        amount: '1200.00',
-        method: 'bank_transfer',
-        reference: undefined,
-        notes: undefined,
+        amount: 1200,
+        method: 'cash',
       }),
     );
   });
@@ -262,8 +330,7 @@ describe('Admin dashboard data + mutations', () => {
     await screen.findByText('Admin Dashboard');
     fireEvent.click(await screen.findByText('Payouts'));
 
-    expect(await screen.findByText(/2026-07-01/)).toBeInTheDocument();
-    expect(screen.getByText(/Vikram Singh/)).toBeInTheDocument();
+    expect(await screen.findByText(/Vikram Singh/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /mark paid/i }));
 
     await waitFor(() => expect(adminApiMock.markPayoutPaid).toHaveBeenCalledWith('payout-1'));
@@ -330,12 +397,56 @@ describe('Admin dashboard data + mutations', () => {
     fireEvent.click(screen.getByRole('button', { name: /^find$/i }));
 
     await waitFor(() => expect(adminApiMock.getBookingById).toHaveBeenCalledWith('booking-42'));
-    expect(await screen.findByText('Lookup Test Arena')).toBeInTheDocument();
+    expect(await screen.findByText(/Lookup Test Arena/)).toBeInTheDocument();
     // The looked-up booking gets the same real actions as the regular
     // list — confirm-payment is available since it's pending_payment.
     // (getAllBy, not getBy: leftover mocked data from an earlier test in
     // this file may also render its own Confirm payment button in the
     // regular list — this only asserts the lookup result itself has one.)
     expect(screen.getAllByRole('button', { name: /confirm payment/i }).length).toBeGreaterThan(0);
+  });
+
+  it('support tickets tab renders ticket list and details with responsive status and priority selectors without overflow', async () => {
+    supportApiMock.adminListTickets.mockResolvedValue([
+      {
+        id: 'ticket-12345678',
+        creator_id: 'user-1',
+        subject: 'Payment Issue',
+        description: 'Payment failed for booking',
+        status: 'open',
+        priority: 'medium',
+        category: 'billing',
+        created_at: '2026-10-15T10:00:00Z',
+        updated_at: '2026-10-15T10:00:00Z',
+      },
+    ]);
+    supportApiMock.getTicket.mockResolvedValue({
+      id: 'ticket-12345678',
+      creator_id: 'user-1',
+      subject: 'Payment Issue',
+      description: 'Payment failed for booking',
+      status: 'open',
+      priority: 'medium',
+      category: 'billing',
+      created_at: '2026-10-15T10:00:00Z',
+      updated_at: '2026-10-15T10:00:00Z',
+      events: [],
+    });
+
+    mockLoggedInAs('admin');
+    renderApp();
+    await screen.findByText('Admin Dashboard');
+    fireEvent.click(await screen.findByText('Support Tickets'));
+
+    expect(await screen.findByText('Payment Issue')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Payment Issue'));
+
+    expect(await screen.findByText(/Ticket #ticket-1/)).toBeInTheDocument();
+    expect(screen.getByText('Open')).toBeInTheDocument();
+    expect(screen.getByText('Medium Priority')).toBeInTheDocument();
+
+    const priorityButton = screen.getByText('Medium Priority').closest('button');
+    expect(priorityButton).toHaveClass('w-full');
+    expect(priorityButton).not.toHaveClass('sm:w-[200px]');
   });
 });

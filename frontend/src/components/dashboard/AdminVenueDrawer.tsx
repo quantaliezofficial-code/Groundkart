@@ -52,7 +52,7 @@ export function AdminVenueDrawer({ venue, onClose }: Props) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6" data-lenis-prevent>
           
           {activeTab === 'info' && (
             <div className="space-y-6">
@@ -99,9 +99,9 @@ export function AdminVenueDrawer({ venue, onClose }: Props) {
 
           {activeTab === 'images' && (
             <div>
-              {venue.images && venue.images.length > 0 ? (
+              {venue.media && venue.media.length > 0 ? (
                 <div className="grid grid-cols-2 gap-4">
-                  {venue.images.map(img => (
+                  {venue.media.map(img => (
                     <div key={img.id} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video">
                       <SafeImage src={img.url} alt="Venue image" className="w-full h-full object-cover" />
                       

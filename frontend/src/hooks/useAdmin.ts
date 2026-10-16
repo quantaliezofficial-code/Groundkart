@@ -17,6 +17,7 @@ import type {
   AdminAuditLogParams,
   AdminBookingsParams,
   AdminConfirmPaymentRequest,
+  AdminPasswordResetRequest,
   AdminPayoutsParams,
   AdminUsersParams,
   AdminVenuesParams,
@@ -410,3 +411,44 @@ export function useDeleteVenueImage() {
     onSuccess: (_, { venueId }) => qc.invalidateQueries({ queryKey: ['admin-venues'] }),
   });
 }
+
+
+export function useAdminDashboardOverview() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin-dashboard-overview'],
+    queryFn: () => adminApi.getDashboardOverview(),
+    enabled: Boolean(user),
+  });
+}
+
+export function useAdminPasswordResetRequests(status: string = 'pending') {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['admin-password-reset-requests', status],
+    queryFn: () => adminApi.listPasswordResetRequests(status),
+    enabled: Boolean(user),
+  });
+}
+
+export function useAdminResetPassword() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, data }: { userId: string; data: AdminPasswordResetRequest }) => adminApi.resetPassword(userId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-password-reset-requests'] });
+    },
+  });
+}
+
+export function useAdminCancelPasswordResetRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, reason }: { requestId: string; reason?: string }) =>
+      adminApi.cancelPasswordResetRequest(requestId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-password-reset-requests'] });
+    },
+  });
+}
+

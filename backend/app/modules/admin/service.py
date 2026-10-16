@@ -30,7 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.core import AuditLog, Booking, OwnerVerification, Payment, Payout, RefreshToken, User, Venue
+from app.models.core import AuditLog, Booking, BookingActionRequest, InventoryUnit, OwnerVerification, Payment, Payout, RefreshToken, SupportTicket, User, Venue
 from app.modules.notifications.service import notify
 
 
@@ -158,6 +158,7 @@ async def list_users_for_admin(
     session: AsyncSession,
     role: str | None = None,
     suspended_only: bool | None = None,
+    search: str | None = None,
     *,
     limit: int = 50,
     offset: int = 0,
@@ -213,7 +214,7 @@ async def suspend_venue(session: AsyncSession, admin_id: uuid.UUID, venue_id: uu
                 extra_data={"reason": reason},
             )
         )
-        session.add(
+        session.add_all(
             notify(
                 venue.owner_id, "venue_suspended", f"Your venue '{venue.name}' was suspended: {reason}",
                 entity_type="venue", entity_id=venue.id,
@@ -237,7 +238,7 @@ async def reactivate_venue(session: AsyncSession, admin_id: uuid.UUID, venue_id:
         session.add(
             AuditLog(actor_id=admin_id, action="venue.reactivated", entity_type="venue", entity_id=venue.id)
         )
-        session.add(
+        session.add_all(
             notify(
                 venue.owner_id, "venue_reactivated", f"Your venue '{venue.name}' was reactivated and is live again.",
                 entity_type="venue", entity_id=venue.id,
@@ -284,7 +285,7 @@ async def suspend_user(session: AsyncSession, admin_id: uuid.UUID, target_user_i
                 extra_data={"reason": reason},
             )
         )
-        session.add(
+        session.add_all(
             notify(
                 user.id, "account_suspended", f"Your account was suspended: {reason}",
                 entity_type="user", entity_id=user.id,
@@ -311,7 +312,7 @@ async def reactivate_user(session: AsyncSession, admin_id: uuid.UUID, target_use
         session.add(
             AuditLog(actor_id=admin_id, action="user.reactivated", entity_type="user", entity_id=user.id)
         )
-        session.add(
+        session.add_all(
             notify(
                 user.id, "account_reactivated", "Your account was reactivated.",
                 entity_type="user", entity_id=user.id,
@@ -340,6 +341,11 @@ async def get_admin_health(session: AsyncSession) -> dict:
     )
     active_users = (await session.execute(stmt)).scalar() or 0
     
+    from app.models.core import Job
+    jobs_stmt = select(Job.status, func.count(Job.id)).group_by(Job.status)
+    jobs_result = (await session.execute(jobs_stmt)).all()
+    jobs_counts = {status: count for status, count in jobs_result}
+    
     return {
         "api_live": True,
         "db_connected": db_connected,
@@ -347,5 +353,259 @@ async def get_admin_health(session: AsyncSession) -> dict:
         "uptime_percent": 99.99,
         "latency_ms": latency if latency > 0 else 12,
         "web_server_health": 95,
-        "db_server_health": 100 if db_connected else 0
+        "db_server_health": 100 if db_connected else 0,
+        "jobs_pending": jobs_counts.get("pending", 0),
+        "jobs_running": jobs_counts.get("running", 0),
+        "jobs_failed": jobs_counts.get("failed", 0)
+    }
+
+
+from app.schemas.admin import DashboardOverview, DashboardMetrics, AttentionItem, LiveOperations, LiveOperationBooking, BookingActivity, BookingActivityStats, RecentBooking, RevenueStats, VenueHealthStats, TopVenue, CategoryStats, SupportStats, NotificationStats, RecentActivityItem
+from sqlalchemy import case, text
+import uuid
+from decimal import Decimal
+
+async def get_dashboard_overview_v2(session: AsyncSession) -> dict:
+    from app.models.core import Booking, Venue, User, OwnerVerification, Payout, SupportTicket, Notification, AuditLog, Category, Payment, BookingActionRequest
+    from datetime import datetime, date, timedelta
+    
+    now = datetime.now()
+    today_start = datetime.combine(now.date(), datetime.min.time())
+    
+    # 1. Metrics
+    total_bookings = (await session.execute(select(func.count()).select_from(Booking))).scalar_one()
+    gmv = (await session.execute(select(func.coalesce(func.sum(Booking.amount), 0)).where(Booking.status.in_(GMV_ELIGIBLE_STATUSES)))).scalar_one()
+    total_commission_collected = (await session.execute(select(func.coalesce(func.sum(Payout.commission_amount), 0)).where(Payout.status == "paid"))).scalar_one()
+    active_venues = (await session.execute(select(func.count()).select_from(Venue).where(Venue.status == "active", Venue.deleted_at.is_(None)))).scalar_one()
+    active_users = (await session.execute(select(func.count()).select_from(User).where(User.suspended_at.is_(None), User.deleted_at.is_(None)))).scalar_one()
+
+    # 2. Requires Attention
+    attention_items = []
+    
+    pending_venues = (await session.execute(select(func.count()).select_from(Venue).where(Venue.status == "pending_review", Venue.deleted_at.is_(None)))).scalar_one()
+    if pending_venues > 0:
+        attention_items.append({"type": "venue_approval", "count": pending_venues, "label": "Pending Venue Approvals", "action_label": "Review", "action_link": "ApprovalQueue"})
+        
+    pending_verifications = (await session.execute(select(func.count()).select_from(OwnerVerification).where(OwnerVerification.status == "pending"))).scalar_one()
+    if pending_verifications > 0:
+        attention_items.append({"type": "owner_verification", "count": pending_verifications, "label": "Owner Verifications", "action_label": "Review", "action_link": "ApprovalQueue"})
+        
+    open_tickets = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "open"))).scalar_one()
+    if open_tickets > 0:
+        attention_items.append({"type": "support_ticket", "count": open_tickets, "label": "Open Support Tickets", "action_label": "Open", "action_link": "Support"})
+        
+    pending_refunds = (await session.execute(select(func.count()).select_from(BookingActionRequest).where(BookingActionRequest.action_type == "refund_request", BookingActionRequest.status == "pending"))).scalar_one()
+    if pending_refunds > 0:
+        attention_items.append({"type": "refund", "count": pending_refunds, "label": "Refund Requests", "action_label": "Review", "action_link": "Bookings"})
+        
+    failed_payments = (await session.execute(select(func.count()).select_from(Payment).where(Payment.status == "failed"))).scalar_one()
+    if failed_payments > 0:
+         attention_items.append({"type": "payment_failure", "count": failed_payments, "label": "Payment Failures", "action_label": "Investigate", "action_link": "Bookings"})
+
+    # 3. Live Operations
+    current_time = now.time()
+    from sqlalchemy.orm import selectinload
+    todays_bookings_res = await session.execute(
+        select(Booking, Venue, User)
+        .outerjoin(Venue, Booking.venue_id == Venue.id)
+        .outerjoin(User, Booking.customer_id == User.id)
+        .join(InventoryUnit, Booking.inventory_unit_id == InventoryUnit.id)
+        .where(InventoryUnit.date == now.date())
+        .options(selectinload(Booking.inventory_unit))
+    )
+    todays_bookings = todays_bookings_res.all()
+    
+    currently_booked = 0
+    pending_today = 0
+    cancelled_today = 0
+    completed_today = 0
+    confirmed_today = 0
+    active_bookings = []
+    
+    for b, v, u in todays_bookings:
+        if b.status == "pending":
+            pending_today += 1
+        elif b.status in ("cancelled", "refunded"):
+            cancelled_today += 1
+        elif b.status == "completed":
+            completed_today += 1
+        elif b.status == "confirmed":
+            confirmed_today += 1
+            
+        if b.status == "confirmed" and b.slot_start_time is not None and b.slot_end_time is not None:
+            if b.slot_start_time <= current_time <= b.slot_end_time:
+                currently_booked += 1
+                active_bookings.append({
+                    "id": b.id,
+                    "venue_name": v.name if v else "Unknown",
+                    "category": b.venue_category,
+                    "start_time": datetime.combine(b.slot_date, b.slot_start_time),
+                    "end_time": datetime.combine(b.slot_date, b.slot_end_time),
+                    "customer_name": u.name if u else b.guest_name or "Unknown",
+                    "status": b.status
+                })
+            
+    available = active_venues - currently_booked
+    if available < 0: available = 0
+
+    # 4. Booking Activity
+    recent_bookings_res = await session.execute(
+        select(Booking, Venue, User)
+        .outerjoin(Venue, Booking.venue_id == Venue.id)
+        .outerjoin(User, Booking.customer_id == User.id)
+        .order_by(Booking.created_at.desc())
+        .limit(5)
+    )
+    recent = []
+    for b, v, u in recent_bookings_res.all():
+        recent.append({
+            "id": b.id,
+            "time": b.created_at,
+            "venue_name": v.name if v else "Unknown",
+            "customer_name": u.name if u else b.guest_name or "Unknown",
+            "status": b.status,
+            "amount": b.amount
+        })
+
+    # 5. Revenue
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=now.weekday())
+    
+    rev_today = (await session.execute(select(func.coalesce(func.sum(Booking.amount), 0)).where(Booking.status.in_(GMV_ELIGIBLE_STATUSES), Booking.created_at >= today_start))).scalar_one()
+    rev_week = (await session.execute(select(func.coalesce(func.sum(Booking.amount), 0)).where(Booking.status.in_(GMV_ELIGIBLE_STATUSES), Booking.created_at >= week_start))).scalar_one()
+    rev_month = (await session.execute(select(func.coalesce(func.sum(Booking.amount), 0)).where(Booking.status.in_(GMV_ELIGIBLE_STATUSES), Booking.created_at >= month_start))).scalar_one()
+    
+    chart_data = []
+    for i in range(7):
+        d = today_start - timedelta(days=6-i)
+        d_end = d + timedelta(days=1)
+        val = (await session.execute(select(func.coalesce(func.sum(Booking.amount), 0)).where(Booking.status.in_(GMV_ELIGIBLE_STATUSES), Booking.created_at >= d, Booking.created_at < d_end))).scalar_one()
+        chart_data.append({"label": d.strftime("%a"), "value": float(val)})
+
+    # 6. Venue Health
+    venue_health_rows = (await session.execute(select(Venue.status, func.count()).where(Venue.deleted_at.is_(None)).group_by(Venue.status))).all()
+    vh = {row[0]: row[1] for row in venue_health_rows}
+    incomplete = (await session.execute(select(func.count()).select_from(Venue).where(Venue.status == 'draft'))).scalar_one()
+    
+    venue_health = {
+        "approved": vh.get("active", 0),
+        "pending_approval": vh.get("pending_review", 0),
+        "incomplete": incomplete,
+        "inactive": vh.get("inactive", 0),
+        "suspended": vh.get("suspended", 0)
+    }
+
+    # 7. Top Venues
+    top_venues_res = await session.execute(
+        select(Venue.id, Venue.name, func.count(Booking.id).label("c"), func.coalesce(func.sum(Booking.amount), 0).label("g"))
+        .join(Booking, Venue.id == Booking.venue_id)
+        .where(Booking.status.in_(GMV_ELIGIBLE_STATUSES))
+        .group_by(Venue.id)
+        .order_by(text("c DESC"))
+        .limit(3)
+    )
+    top_venues = []
+    for row in top_venues_res.all():
+        top_venues.append({
+            "id": row.id,
+            "name": row.name,
+            "bookings_count": row.c,
+            "gmv": row.g
+        })
+
+    # 8. Category Performance
+    cat_res = await session.execute(
+        select(Booking.venue_category, func.count(Booking.id))
+        .where(Booking.status.in_(GMV_ELIGIBLE_STATUSES))
+        .group_by(Booking.venue_category)
+    )
+    all_cats = cat_res.all()
+    total_valid_bookings = sum([r[1] for r in all_cats])
+    all_cats_sorted = sorted(all_cats, key=lambda x: x[1], reverse=True)
+    cats = []
+    for c, count in all_cats_sorted:
+        cats.append({
+            "category": c,
+            "percentage": float(round((count / total_valid_bookings * 100), 1)) if total_valid_bookings > 0 else 0.0,
+            "count": count
+        })
+
+    # 9. Support & Communication
+    high_priority = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "open", SupportTicket.priority == "high"))).scalar_one()
+    
+    from app.models.core import NotificationDelivery
+    notif_sent = (await session.execute(select(func.count()).select_from(NotificationDelivery).where(NotificationDelivery.created_at >= today_start, NotificationDelivery.status == "delivered"))).scalar_one()
+    notif_failed = (await session.execute(select(func.count()).select_from(NotificationDelivery).where(NotificationDelivery.created_at >= today_start, NotificationDelivery.status == "failed"))).scalar_one()
+    
+    waiting_customer = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "waiting_customer"))).scalar_one()
+    in_review = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "in_review"))).scalar_one()
+    
+    support = {
+        "open_tickets": open_tickets,
+        "high_priority": high_priority,
+        "waiting_for_owner": in_review,
+        "waiting_for_customer": waiting_customer,
+    }
+    notifications = {
+        "sent_today": notif_sent,
+        "failed": notif_failed,
+        "unread_alerts": 0
+    }
+
+    # 10. Recent Activity
+    audit_res = await session.execute(
+        select(AuditLog, User)
+        .outerjoin(User, AuditLog.actor_id == User.id)
+        .order_by(AuditLog.created_at.desc())
+        .limit(10)
+    )
+    recent_activity = []
+    for al, u in audit_res.all():
+        recent_activity.append({
+            "id": al.id,
+            "event": al.action.replace("_", " ").title(),
+            "entity_name": f"{al.entity_type} {al.entity_id}" if al.entity_id else al.entity_type,
+            "actor_name": u.name if u else (str(al.actor_id) if al.actor_id else "System"),
+            "timestamp": al.created_at,
+            "amount": None
+        })
+
+    return {
+        "metrics": {
+            "gmv": Decimal(gmv),
+            "total_bookings": total_bookings,
+            "active_venues": active_venues,
+            "active_users": active_users,
+            "total_commission_collected": Decimal(total_commission_collected)
+        },
+        "attention": attention_items,
+        "live_operations": {
+            "currently_booked": currently_booked,
+            "available": available,
+            "pending": pending_today,
+            "cancelled_today": cancelled_today,
+            "active_bookings": active_bookings
+        },
+        "booking_activity": {
+            "stats": {
+                "total_today": len(todays_bookings),
+                "confirmed_today": confirmed_today,
+                "pending_today": pending_today,
+                "cancelled_today": cancelled_today,
+                "completed_today": completed_today
+            },
+            "recent": recent
+        },
+        "revenue": {
+            "this_month": Decimal(rev_month),
+            "this_week": Decimal(rev_week),
+            "today": Decimal(rev_today),
+            "chart_data": chart_data
+        },
+        "venue_health": venue_health,
+        "top_venues": top_venues,
+        "category_performance": cats,
+        "support": support,
+        "notifications": notifications,
+        "recent_activity": recent_activity
     }

@@ -1,15 +1,18 @@
+import AdminPasswords from './dashboard/AdminPasswords';
+import { useDebounce } from '../hooks/useDebounce';
 import { useAdminNotifications, useAdminSendNotification } from '../hooks/useNotifications';
 import GroundSelect from './ui/GroundSelect';
-import { Activity, AlertCircle, Ban, CalendarClock, CheckCircle2, FileText, Globe, Layers, LayoutDashboard, Loader2, Mail, MessageSquare, Minus, PlusasPlusIcon, PlayCircle, RefreshCw, Search, Server, ShieldCheck, UsersasUsersIcon, Wallet, Wifi, XCircle, ArrowRight, Star, Bell, Clock } from 'lucide-react';
+import { Activity, AlertCircle, Ban, CalendarClock, CheckCircle2, FileText, Globe, Layers, LayoutDashboard, Key, Loader2, Mail, MessageSquare, Minus, Plus as PlusIcon, PlayCircle, RefreshCw, Search, Server, ShieldCheck, Users as UsersIcon, Wallet, Wifi, XCircle, ArrowRight, Star, Bell, Clock } from 'lucide-react';
 import { DashboardShell, MetricCard, StatusBadge as DashboardStatusBadge, EmptyState } from './dashboard';
 import { Home } from 'lucide-react';
 import HomepageTab from './dashboard/HomepageTab';
 import { AdminVenueDrawer } from './dashboard/AdminVenueDrawer';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useAdminBookings,
   useAdminBookingsPaginated,
-  useAdminOverview,
+  useAdminDashboardOverview,
   useAdminHealth,
   useAdminPayouts,
   useAdminPayoutsPaginated,
@@ -38,13 +41,14 @@ import {
   useAdminDeleteReview,
 } from '../hooks/useAdmin';
 import { ApiError } from '../lib/api/client';
+import { adminApi } from '../lib/api/admin';
 import type {
   ApiAdminOwnerVerificationView,
   ApiAdminUserView,
   ApiAuditLogEntry,
   ApiBookingDetail,
   ApiAdminBookingView,
-  ApiPlatformOverview,
+  ApiDashboardOverview,
   ApiAdminVenueView,
   ApiAdminReview,
   BookingStatus,
@@ -52,7 +56,7 @@ import type {
 } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'Overview' | 'Analytics' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews' | 'Support' | 'Notifications' | 'Homepage';
+type Tab = 'Overview' | 'Analytics' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews' | 'Support' | 'Notifications' | 'Homepage' | 'Passwords';
 
 function money(value: string | number): string {
   const n = typeof value === 'string' ? Number(value) : value;
@@ -120,7 +124,12 @@ export default function AdminLayout({ onReturnToSite }: { onReturnToSite?: () =>
 
 function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const { user, logout } = useAuth();
+  const [searchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(() => {
+    if (urlTab && ['Overview', 'Analytics', 'ApprovalQueue', 'Venues', 'Users', 'Bookings', 'Payouts', 'Reviews', 'Support', 'Notifications', 'Homepage', 'Passwords'].includes(urlTab)) {
+      return urlTab;
+    }
     const saved = sessionStorage.getItem('initialAdminTab') as Tab;
     if (saved) {
       sessionStorage.removeItem('initialAdminTab');
@@ -128,6 +137,12 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     }
     return 'Overview';
   });
+
+  useEffect(() => {
+    if (urlTab && ['Overview', 'Analytics', 'ApprovalQueue', 'Venues', 'Users', 'Bookings', 'Payouts', 'Reviews', 'Support', 'Notifications', 'Homepage', 'Passwords'].includes(urlTab)) {
+      setActiveTab(urlTab);
+    }
+  }, [urlTab]);
 
   useEffect(() => {
     const handleNavigate = (e: Event) => {
@@ -140,7 +155,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     return () => window.removeEventListener('navigate-admin-tab', handleNavigate);
   }, []);
 
-  const { data: overview, isLoading: overviewLoading } = useAdminOverview();
+  const { data: dashboard, isLoading: overviewLoading } = useAdminDashboardOverview();
   const { data: auditLog = [], isLoading: auditLoading } = useAuditLog({ limit: 25 });
 
   const { data: pendingVenues = [], isLoading: pendingVenuesLoading } = useAdminVenues({
@@ -154,7 +169,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const pendingCount = pendingVenues.length + pendingVerifications.length;
 
   const navItems = [
-    { id: 'Overview', label: 'Overview', icon: LayoutDashboard, onClick: () => setActiveTab('Overview') },
+    { id: 'Overview', label: 'Overview', icon: LayoutDashboard, Key, onClick: () => setActiveTab('Overview') },
     { id: 'Analytics', label: 'Analytics', icon: Activity, onClick: () => setActiveTab('Analytics') },
     { id: 'ApprovalQueue', label: 'Approval Queue', icon: ShieldCheck, badge: pendingCount || undefined, onClick: () => setActiveTab('ApprovalQueue') },
     { id: 'Venues', label: 'Venues', icon: Layers, onClick: () => setActiveTab('Venues') },
@@ -163,6 +178,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => setActiveTab('Payouts') },
     { id: 'Reviews', label: 'Reviews', icon: MessageSquare, onClick: () => setActiveTab('Reviews') },
     { id: 'Support', label: 'Support Tickets', icon: AlertCircle, onClick: () => setActiveTab('Support') },
+    { id: 'Passwords', label: 'Passwords', icon: Key, onClick: () => setActiveTab('Passwords') },
     { id: 'Notifications', label: 'Notification Center', icon: Bell, onClick: () => setActiveTab('Notifications') },
     { id: 'Homepage', label: 'Homepage Curation', icon: Globe, onClick: () => setActiveTab('Homepage') },
   ];
@@ -179,6 +195,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     Support: { title: 'Support Tickets', desc: 'Customer and owner support' },
     Homepage: { title: 'Homepage Curation', desc: 'Manage the public homepage layout and featured venues' },
     Notifications: { title: 'Notifications', desc: 'Manage notifications' },
+    Passwords: { title: 'Password Management', desc: 'Admin password reset and account recovery tools' },
   };
 
   const currentInfo = titles[activeTab];
@@ -196,17 +213,13 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
     >
       {activeTab === 'Overview' && (
         <OverviewTab 
-          overview={overview} 
+          dashboard={dashboard} 
           overviewLoading={overviewLoading} 
-          auditLog={auditLog} 
-          auditLoading={auditLoading} 
-          pendingVenuesCount={pendingVenues.length}
-          pendingVerificationsCount={pendingVerifications.length}
           onNavigate={(tab) => setActiveTab(tab)}
         />
       )}
       {activeTab === 'Analytics' && (
-        <AnalyticsTab overview={overview} auditLog={auditLog} />
+        <AnalyticsTab overview={dashboard} auditLog={auditLog} />
       )}
       {activeTab === 'ApprovalQueue' && (
         <ApprovalQueueTab
@@ -221,6 +234,8 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
       {activeTab === 'Payouts' && <PayoutsTab />}
       {activeTab === 'Reviews' && <ReviewsTab />}
       {activeTab === 'Support' && <SupportTab />}
+      {activeTab === 'Passwords' && <AdminPasswords />}
+      {activeTab === 'Homepage' && <HomepageTab />}
       {activeTab === 'Notifications' && <AdminNotifications />}
     </DashboardShell>
   );
@@ -236,1112 +251,280 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
 // ---------------------------------------------------------------------------
 
 function OverviewTab({
-  overview,
+  dashboard,
   overviewLoading,
-  auditLog,
-  auditLoading,
-  pendingVenuesCount,
-  pendingVerificationsCount,
   onNavigate,
 }: {
-  overview: ApiPlatformOverview | undefined;
+  dashboard: ApiDashboardOverview | undefined;
   overviewLoading: boolean;
-  auditLog: ApiAuditLogEntry[];
-  auditLoading: boolean;
-  pendingVenuesCount: number;
-  pendingVerificationsCount: number;
   onNavigate: (tab: Tab) => void;
 }) {
   if (overviewLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="shimmer h-24 rounded-2xl" />
-        ))}
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="shimmer h-24 rounded-2xl" />
+          ))}
+        </div>
+        <div className="shimmer h-64 rounded-2xl" />
       </div>
     );
   }
 
-  if (!overview) {
+  if (!dashboard) {
     return <p className="font-sans text-on-surface-variant">Couldn't load the platform overview.</p>;
   }
 
+  const { metrics, attention, live_operations, booking_activity, revenue, venue_health, top_venues, category_performance, support, notifications, recent_activity } = dashboard;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Primary KPIs */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard label="GMV (This Month)" value={money(overview.gmv)} />
-        <MetricCard label="Commission Collected" value={money(overview.total_commission_collected)} />
-        <MetricCard label="Active Venues" value={overview.active_venues.toLocaleString('en-IN')} />
-        <MetricCard label="Total Bookings" value={overview.total_bookings.toLocaleString('en-IN')} />
+        <MetricCard label="GMV (This Month)" value={money(metrics.gmv)} />
+        <MetricCard label="Total Bookings" value={metrics.total_bookings.toLocaleString('en-IN')} />
+        <MetricCard label="Active Venues" value={metrics.active_venues.toLocaleString('en-IN')} />
+        <MetricCard label="Users" value={metrics.active_users.toLocaleString('en-IN')} />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[1fr_350px]">
-        {/* Main Content Area */}
-        <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Left Column: Attention & Live Ops */}
+        <div className="md:col-span-2 space-y-6">
+          
+          {/* Requires Attention */}
           <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
-            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 bg-mist/50">
-              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Requires your attention</h3>
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 bg-marigold/10">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide flex items-center gap-2"><AlertCircle size={16} className="text-marigold" /> Requires Attention</h3>
             </div>
             <div className="divide-y divide-surface-container">
-              {pendingVenuesCount > 0 && (
-                <div className="flex items-center justify-between p-5 hover:bg-surface-container/30 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-marigold/10 text-marigold">
-                      <ShieldCheck size={20} />
-                    </div>
-                    <div>
-                      <p className="font-sans text-sm font-medium text-ink">Pending Venue Approvals</p>
-                      <p className="font-sans text-xs text-on-surface-variant">{pendingVenuesCount} venue(s) waiting for review</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => onNavigate('ApprovalQueue')}
-                    className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs font-medium text-ink hover:bg-surface-container-high transition-colors"
-                  >
-                    Review
-                  </button>
-                </div>
-              )}
-              {pendingVerificationsCount > 0 && (
-                <div className="flex items-center justify-between p-5 hover:bg-surface-container/30 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-info/10 text-info">
-                      <ShieldCheck size={20} />
-                    </div>
-                    <div>
-                      <p className="font-sans text-sm font-medium text-ink">Pending Owner Verifications</p>
-                      <p className="font-sans text-xs text-on-surface-variant">{pendingVerificationsCount} owner(s) waiting for verification</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => onNavigate('ApprovalQueue')}
-                    className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs font-medium text-ink hover:bg-surface-container-high transition-colors"
-                  >
-                    Review
-                  </button>
-                </div>
-              )}
-              {pendingVenuesCount === 0 && pendingVerificationsCount === 0 && (
+              {attention.length === 0 ? (
                 <div className="p-8 text-center">
-                  <p className="font-sans text-sm text-on-surface-variant">You're all caught up!</p>
+                  <p className="font-sans text-sm text-on-surface-variant">Everything is up to date.</p>
+                  <p className="font-sans text-xs text-on-surface-variant mt-1">No urgent operational actions currently require attention.</p>
                 </div>
+              ) : (
+                attention.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 hover:bg-surface-container/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container font-sans text-sm font-medium text-ink">{item.count}</span>
+                      <span className="font-sans text-sm font-medium text-ink">{item.label}</span>
+                    </div>
+                    <button 
+                      onClick={() => onNavigate(item.action_link as Tab)}
+                      className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs font-medium text-ink hover:bg-surface-container-high transition-colors"
+                    >
+                      [{item.action_label}]
+                    </button>
+                  </div>
+                ))
               )}
             </div>
           </div>
 
+          {/* Live Operations */}
           <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
-            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 bg-mist/50">
-              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Recent Activity</h3>
+            <div className="border-b border-surface-container px-5 py-4 bg-mist/50">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Live Operations</h3>
             </div>
-            {auditLoading ? (
-              <div className="shimmer h-48 w-full" />
-            ) : auditLog.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="font-sans text-sm text-on-surface-variant">No audit log entries yet.</p>
+            <div className="grid grid-cols-4 gap-4 p-5 border-b border-surface-container bg-surface-container-lowest">
+              <div className="text-center">
+                <p className="font-sans text-xs text-on-surface-variant uppercase">Currently Booked</p>
+                <p className="font-sans text-2xl font-semibold text-ink mt-1">{live_operations.currently_booked}</p>
               </div>
-            ) : (
-              <div className="divide-y divide-surface-container">
-                {auditLog.slice(0, 10).map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-4 p-4 hover:bg-surface-container/30 transition-colors">
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
-                      <Activity size={14} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-sans text-sm font-medium text-ink truncate">{entry.action}</p>
-                      <p className="font-sans text-xs text-on-surface-variant truncate mt-0.5">
-                        {entry.entity_type} {entry.entity_id ? `· ${entry.entity_id.slice(0, 8)}` : ''}
+              <div className="text-center">
+                <p className="font-sans text-xs text-on-surface-variant uppercase">Available</p>
+                <p className="font-sans text-2xl font-semibold text-ink mt-1">{live_operations.available}</p>
+              </div>
+              <div className="text-center">
+                <p className="font-sans text-xs text-on-surface-variant uppercase">Pending</p>
+                <p className="font-sans text-2xl font-semibold text-ink mt-1">{live_operations.pending}</p>
+              </div>
+              <div className="text-center">
+                <p className="font-sans text-xs text-on-surface-variant uppercase">Cancelled Today</p>
+                <p className="font-sans text-2xl font-semibold text-ink mt-1">{live_operations.cancelled_today}</p>
+              </div>
+            </div>
+            <div className="divide-y divide-surface-container">
+              {live_operations.active_bookings.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="font-sans text-sm text-on-surface-variant">No bookings are happening right now.</p>
+                </div>
+              ) : (
+                live_operations.active_bookings.map(b => (
+                  <div key={b.id} className="p-4 flex items-center justify-between hover:bg-surface-container/30">
+                    <div>
+                      <p className="font-sans text-sm font-medium text-ink">{b.venue_name}</p>
+                      <p className="font-sans text-xs text-on-surface-variant mt-0.5">{b.category}</p>
+                      <p className="font-sans text-xs text-on-surface-variant mt-0.5">
+                        {new Date(b.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(b.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </p>
+                      <p className="font-sans text-xs text-on-surface-variant mt-0.5">Customer: {b.customer_name}</p>
+                      <p className="font-sans text-xs text-on-surface-variant mt-0.5">Status: <StatusBadge status={b.status} /></p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="font-sans text-xs text-on-surface-variant">{dateTimeStr(entry.created_at)}</span>
-                      <p className="font-sans text-[10px] text-on-surface-variant/70 mt-1 capitalize">{entry.actor_id ? `by ${entry.actor_id.slice(0, 8)}` : 'System'}</p>
-                    </div>
+                    <button onClick={() => onNavigate('Bookings')} className="text-primary hover:underline font-sans text-xs font-medium">
+                      [View Booking]
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Top Venues & Venue Health */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+              <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Top Venues</h3>
+              <div className="space-y-4">
+                {top_venues.map((v, i) => (
+                  <div key={v.id} className="flex flex-col gap-0.5">
+                    <span className="font-sans text-sm font-medium text-ink">{i + 1}. {v.name}</span>
+                    <span className="font-sans text-xs text-on-surface-variant">{v.bookings_count} bookings · {money(v.gmv)}</span>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+            <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+              <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Venue Health</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Approved</span><span className="font-medium text-ink">{venue_health.approved}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Pending</span><span className="font-medium text-ink">{venue_health.pending_approval}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-marigold font-medium">Incomplete</span><span className="font-medium text-ink">{venue_health.incomplete}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-clay font-medium">Inactive</span><span className="font-medium text-ink">{venue_health.inactive}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-clay font-medium">Suspended</span><span className="font-medium text-ink">{venue_health.suspended}</span></div>
+              </div>
+            </div>
           </div>
+
+          {/* Recent Activity */}
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
+            <div className="border-b border-surface-container px-5 py-4 bg-mist/50">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Recent Activity</h3>
+            </div>
+            <div className="divide-y divide-surface-container">
+              {recent_activity.slice(0, 5).map(item => (
+                <div key={item.id} className="p-4 flex gap-4 hover:bg-surface-container/30 transition-colors">
+                   <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant">
+                      <Activity size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-sans text-sm font-medium text-ink">{item.event}</p>
+                      <p className="font-sans text-xs text-on-surface-variant mt-0.5">{item.entity_name} · {item.actor_name}</p>
+                      {item.amount && <p className="font-sans text-xs text-ink mt-0.5">{money(item.amount)}</p>}
+                      <p className="font-sans text-xs text-on-surface-variant mt-1">{new Date(item.timestamp).toLocaleString()}</p>
+                    </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
 
-        {/* Sidebar Actions Area */}
+        {/* Right Column: Actions & Bookings & Revenue */}
         <div className="space-y-6">
+          
+          {/* Quick Actions */}
           <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
             <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Quick Actions</h3>
-            <div className="grid gap-3">
-              <button onClick={() => onNavigate('Venues')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container/10 text-primary-container">
-                  <Layers size={16} />
-                </div>
-                <span className="font-sans text-sm font-medium text-ink">Manage Venues</span>
+            <div className="grid gap-2">
+              <button onClick={() => onNavigate('ApprovalQueue')} className="flex justify-between items-center w-full px-3 py-2 rounded-lg hover:bg-surface-container text-left font-sans text-sm text-ink transition-colors">
+                Review Pending Venues <ArrowRight size={14} className="text-on-surface-variant" />
               </button>
-              <button onClick={() => onNavigate('Users')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-info/10 text-info">
-                  <UsersIcon size={16} />
-                </div>
-                <span className="font-sans text-sm font-medium text-ink">Manage Users</span>
+              <button onClick={() => onNavigate('Homepage')} className="flex justify-between items-center w-full px-3 py-2 rounded-lg hover:bg-surface-container text-left font-sans text-sm text-ink transition-colors">
+                Manage Homepage <ArrowRight size={14} className="text-on-surface-variant" />
               </button>
-              <button onClick={() => onNavigate('Bookings')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-marigold/10 text-marigold">
-                  <CalendarClock size={16} />
-                </div>
-                <span className="font-sans text-sm font-medium text-ink">View Bookings</span>
+              <button onClick={() => onNavigate('Bookings')} className="flex justify-between items-center w-full px-3 py-2 rounded-lg hover:bg-surface-container text-left font-sans text-sm text-ink transition-colors">
+                Booking Operations <ArrowRight size={14} className="text-on-surface-variant" />
               </button>
-              <button onClick={() => onNavigate('Payouts')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-clay/10 text-clay">
-                  <Wallet size={16} />
-                </div>
-                <span className="font-sans text-sm font-medium text-ink">Review Payouts</span>
+              <button onClick={() => onNavigate('Support')} className="flex justify-between items-center w-full px-3 py-2 rounded-lg hover:bg-surface-container text-left font-sans text-sm text-ink transition-colors">
+                Support Tickets <ArrowRight size={14} className="text-on-surface-variant" />
+              </button>
+              <button onClick={() => onNavigate('Notifications')} className="flex justify-between items-center w-full px-3 py-2 rounded-lg hover:bg-surface-container text-left font-sans text-sm text-ink transition-colors">
+                Notification Center <ArrowRight size={14} className="text-on-surface-variant" />
               </button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Approval queue — combines pending venues (catalog approve/reject) and
-// pending owner-verifications (onboarding approve/reject) into one queue,
-// since that's how the Goal for this session names it ("the owner-
-// verification/venue approval queue") and how the mock UI treated it — but
-// unlike the mock, approving/rejecting each item hits its own real,
-// distinct backend entity/endpoint rather than one shared fake handler.
-// ---------------------------------------------------------------------------
-
-type QueueItem = { kind: 'venue'; venue: ApiAdminVenueView } | { kind: 'verification'; verification: ApiAdminOwnerVerificationView };
-
-function queueKey(item: QueueItem): string {
-  return item.kind === 'venue' ? `venue:${item.venue.id}` : `verification:${item.verification.id}`;
-}
-
-function ApprovalQueueTab({
-  pendingVenues,
-  pendingVerifications,
-  isLoading,
-}: {
-  pendingVenues: ApiAdminVenueView[];
-  pendingVerifications: ApiAdminOwnerVerificationView[];
-  isLoading: boolean;
-}) {
-  const items: QueueItem[] = [
-    ...pendingVerifications.map((verification) => ({ kind: 'verification' as const, verification })),
-    ...pendingVenues.map((venue) => ({ kind: 'venue' as const, venue })),
-  ];
-
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const selected = items.find((item) => queueKey(item) === selectedKey) ?? items[0];
-
-  const approveVenue = useApproveVenue();
-  const rejectVenue = useRejectVenue();
-  const approveVerification = useApproveVerification();
-  const rejectVerification = useRejectVerification();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const isActing = approveVenue.isPending || rejectVenue.isPending || approveVerification.isPending || rejectVerification.isPending;
-
-  if (isLoading) {
-    return <div className="shimmer h-96 rounded-2xl" />;
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="rounded-2xl bg-surface-container p-10 text-center">
-        <CheckCircle2 size={28} className="mx-auto mb-2 text-pitch" />
-        <p className="font-sans text-on-surface-variant">Nothing waiting for review right now.</p>
-      </div>
-    );
-  }
-
-  const handleApprove = async () => {
-    if (!selected) return;
-    setActionError(null);
-    try {
-      if (selected.kind === 'venue') await approveVenue.mutateAsync(selected.venue.id);
-      else await approveVerification.mutateAsync(selected.verification.id);
-      setSelectedKey(null);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handleReject = async () => {
-    if (!selected) return;
-    const reason = window.prompt('Reason for rejecting this (shown to the applicant/owner):');
-    if (!reason) return;
-    setActionError(null);
-    try {
-      if (selected.kind === 'venue') await rejectVenue.mutateAsync({ venueId: selected.venue.id, reason });
-      else await rejectVerification.mutateAsync({ verificationId: selected.verification.id, reason });
-      setSelectedKey(null);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  return (
-    <div className="grid gap-6 md:grid-cols-[280px_1fr]">
-      <div className="space-y-2">
-        {items.map((item) => {
-          const key = queueKey(item);
-          const isSelected = selected && key === queueKey(selected);
-          const title = item.kind === 'venue' ? item.venue.name : item.verification.applicant_name;
-          const subtitle = item.kind === 'venue' ? `Venue listing · ${item.venue.owner_name}` : 'Owner verification';
-          return (
-            <button
-              key={key}
-              onClick={() => setSelectedKey(key)}
-              className={`w-full rounded-xl px-4 py-3 text-left transition ${
-                isSelected ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-ink hover:bg-surface-container-high'
-              } ease-out`}
-            >
-              <p className="font-sans text-sm font-medium">{title}</p>
-              <p className="font-sans text-xs opacity-80">{subtitle}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      {selected && (
-        <div className="space-y-4 rounded-2xl bg-surface-container p-6">
-          {actionError && <ErrorBanner message={actionError} />}
-
-          {selected.kind === 'venue' ? <VenueReviewDetail venue={selected.venue} /> : <VerificationReviewDetail verification={selected.verification} />}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={handleApprove}
-              disabled={isActing}
-              className="flex items-center gap-2 rounded-full bg-pitch px-5 py-2 font-sans text-sm text-chalk disabled:opacity-50"
-            >
-              {isActing ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              Approve
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={isActing}
-              className="flex items-center gap-2 rounded-full bg-surface-container-high px-5 py-2 font-sans text-sm text-ink disabled:opacity-50"
-            >
-              <XCircle size={15} /> Reject
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function VenueReviewDetail({ venue }: { venue: ApiAdminVenueView }) {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <p className="font-display text-xl text-ink">{venue.name}</p>
-          <StatusBadge status={venue.status} />
-        </div>
-        <p className="font-sans text-sm text-on-surface-variant">
-          {venue.category} · {venue.city} · {money(venue.base_price)}/{venue.unit_type.replace('_', ' ')}
-        </p>
-        {venue.description && <p className="font-sans text-sm text-ink">{venue.description}</p>}
-        {venue.amenities.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {venue.amenities.map((a) => (
-              <span key={a} className="rounded-full bg-surface-container-high px-3 py-1 font-sans text-xs text-ink">
-                {a}
-              </span>
-            ))}
-          </div>
-        )}
-        <p className="font-sans text-xs text-on-surface-variant">
-          Owner: {venue.owner_name} ({venue.owner_email}) {venue.owner_phone && `· ${venue.owner_phone}`}
-        </p>
-      </div>
-
-      {venue.pending_changes && (
-        <div className="rounded-xl border border-surface-container-high bg-surface px-4 py-3">
-          <h4 className="mb-2 font-sans text-sm font-medium text-ink">Requested Changes</h4>
-          <div className="space-y-3">
-            {Object.entries(venue.pending_changes).map(([field, diff]) => (
-              <div key={field} className="text-sm">
-                <span className="font-medium text-on-surface-variant capitalize">{field.replace('_', ' ')}</span>
-                <div className="mt-1 grid gap-2 md:grid-cols-2">
-                  <div className="rounded bg-surface-container-low p-2">
-                    <span className="text-xs text-error font-medium mb-1 block">Old</span>
-                    <span className="text-ink line-through opacity-70 break-words">{diff.old === null ? 'None' : (Array.isArray(diff.old) ? diff.old.join(', ') : String(diff.old))}</span>
+          {/* Booking Activity */}
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest overflow-hidden">
+            <div className="border-b border-surface-container px-5 py-4 bg-mist/50">
+              <h3 className="font-sans text-sm font-semibold text-ink uppercase tracking-wide">Today's Booking Activity</h3>
+            </div>
+            <div className="p-5 border-b border-surface-container space-y-2">
+               <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Confirmed</span><span className="font-medium text-ink">{booking_activity.stats.confirmed_today}</span></div>
+               <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Pending</span><span className="font-medium text-ink">{booking_activity.stats.pending_today}</span></div>
+               <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Cancelled</span><span className="font-medium text-ink">{booking_activity.stats.cancelled_today}</span></div>
+               <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Completed</span><span className="font-medium text-ink">{booking_activity.stats.completed_today}</span></div>
+            </div>
+            <div className="divide-y divide-surface-container">
+               {booking_activity.recent.map(r => (
+                  <div key={r.id} className="p-4 flex justify-between items-center">
+                     <div>
+                       <p className="font-sans text-xs text-on-surface-variant mb-1">{new Date(r.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                       <p className="font-sans text-sm font-medium text-ink">{r.venue_name}</p>
+                       <p className="font-sans text-xs text-on-surface-variant">{r.customer_name} · <StatusBadge status={r.status} /></p>
+                     </div>
                   </div>
-                  <div className="rounded bg-surface-container-low p-2">
-                    <span className="text-xs text-success font-medium mb-1 block">New</span>
-                    <span className="text-ink break-words">{diff.new === null ? 'None' : (Array.isArray(diff.new) ? diff.new.join(', ') : String(diff.new))}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+               ))}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
-function VerificationReviewDetail({ verification }: { verification: ApiAdminOwnerVerificationView }) {
-  return (
-    <div className="space-y-2">
-      <p className="font-display text-xl text-ink">{verification.applicant_name}</p>
-      <p className="flex items-center gap-1 font-sans text-sm text-on-surface-variant">
-        <Mail size={14} /> {verification.applicant_email}
-      </p>
-            {verification.business_name && <p className="font-sans text-sm text-ink">Business: {verification.business_name}</p>}
-      {verification.identification_type && <p className="font-sans text-sm text-ink">ID Type: {verification.identification_type}</p>}
-      {verification.identification_number && <p className="font-sans text-sm text-ink">ID Number: {verification.identification_number}</p>}
-      <a
-        href={verification.document_url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-2 font-sans text-sm text-info underline"
-      >
-        <FileText size={15} /> View submitted document
-      </a>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Venues — every venue regardless of status (not just active), so a
-// suspended one doesn't disappear with no way back to reactivate it. The
-// mock version also had "Featured"/"Delete" controls; both are dropped
-// here rather than mapped onto something misleading: there's no
-// is_featured field anywhere in the backend, and there's no DELETE route
-// for a venue — only suspend, which is what "remove from the marketplace"
-// actually maps to for a venue that may have real booking history.
-// ---------------------------------------------------------------------------
-
-function LoadMoreButton({ onClick, isLoading, hasMore }: { onClick: () => void; isLoading: boolean; hasMore: boolean }) {
-  if (!hasMore) return null;
-  return (
-    <button
-      onClick={onClick}
-      disabled={isLoading}
-      className="mx-auto flex items-center gap-2 rounded-full bg-surface-container-high px-5 py-2 font-sans text-sm text-ink disabled:opacity-50"
-    >
-      {isLoading && <Loader2 size={14} className="animate-spin" />}
-      Load more
-    </button>
-  );
-}
-
-function VenuesTab() {
-  const [statusFilter, setStatusFilter] = useState<'all' | ApiAdminVenueView['status']>('all');
-  const [query, setQuery] = useState('');
-  const [drawerVenue, setDrawerVenue] = useState<any>(null);
-
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminVenuesPaginated(
-    statusFilter === 'all' ? {} : { status: statusFilter }
-  );
-  // .pages is an array of pages (each a page-sized array) — flatten once
-  // per render rather than re-flattening inside the filter below.
-  const venues = useMemo(() => data?.pages.flat() ?? [], [data]);
-
-  const suspendVenue = useSuspendVenue();
-  const reactivateVenue = useReactivateVenue();
-  const updateVenue = useAdminUpdateVenue();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  // Search only matches within pages already loaded — there's no
-  // server-side text-search endpoint for this, so "Load more" first if
-  // the one you're after isn't showing up yet.
-  const filtered = useMemo(() => {
-    if (!query) return venues;
-    const q = query.toLowerCase();
-    return venues.filter((v) => v.name.toLowerCase().includes(q) || v.owner_name.toLowerCase().includes(q));
-  }, [venues, query]);
-
-  const handleSuspend = async (venueId: string) => {
-    const reason = window.prompt('Reason for suspending this venue (visible in the audit log):');
-    if (!reason) return;
-    setActionError(null);
-    try {
-      await suspendVenue.mutateAsync({ venueId, reason });
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handleReactivate = async (venueId: string) => {
-    setActionError(null);
-    try {
-      await reactivateVenue.mutateAsync(venueId);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handlePriceStep = async (venue: ApiAdminVenueView, delta: number) => {
-    const next = Number(venue.base_price) + delta;
-    if (next <= 0) return;
-    setActionError(null);
-    try {
-      await updateVenue.mutateAsync({ venueId: venue.id, body: { base_price: next.toFixed(2) } });
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by venue or owner name..."
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
-        />
-        <GroundSelect
-            value={statusFilter}
-            onValueChange={() => {}}
-            options={[
-              { value: "all", label: "All statuses" },
-              { value: "draft", label: "Draft" },
-              { value: "pending_review", label: "Pending review" },
-              { value: "active", label: "Active" },
-              { value: "suspended", label: "Suspended" }
-            ]}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-      </div>
-
-      {actionError && <ErrorBanner message={actionError} />}
-
-      {filtered.length === 0 ? (
-        <p className="font-sans text-sm text-on-surface-variant">No venues match this filter.</p>
-      ) : (
-        <div className="grid gap-3">
-          {filtered.map((venue) => (
-            <div key={venue.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-container p-4">
-              <div>
-                <p className="font-sans text-sm font-medium text-ink">{venue.name}</p>
-                <p className="flex items-center gap-2 font-sans text-xs text-on-surface-variant">
-                  {venue.owner_name} · {venue.city} · {venue.category} <StatusBadge status={venue.status} />
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handlePriceStep(venue, -50)}
-                  disabled={updateVenue.isPending}
-                  className="rounded-full bg-surface-container-high p-2 text-ink disabled:opacity-50"
-                  aria-label="Decrease price"
-                >
-                  <Minus size={14} />
-                </button>
-                <span className="w-24 text-center font-sans text-sm text-ink">{money(venue.base_price)}</span>
-                <button
-                  onClick={() => handlePriceStep(venue, 50)}
-                  disabled={updateVenue.isPending}
-                  className="rounded-full bg-surface-container-high p-2 text-ink disabled:opacity-50"
-                  aria-label="Increase price"
-                >
-                  <PlusIcon size={14} />
-                </button>
-
-                {venue.status === 'active' && (
-                  <button
-                    onClick={() => handleSuspend(venue.id)}
-                    disabled={suspendVenue.isPending}
-                    className="flex items-center gap-1 rounded-full bg-clay px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-                  >
-                    <Ban size={13} /> Suspend
-                  </button>
-                )}
-                {venue.status === 'suspended' && (
-                  <button
-                    onClick={() => handleReactivate(venue.id)}
-                    disabled={reactivateVenue.isPending}
-                    className="flex items-center gap-1 rounded-full bg-pitch px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-                  >
-                    <PlayCircle size={13} /> Reactivate
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-
-      {drawerVenue && <AdminVenueDrawer venue={drawerVenue} onClose={() => setDrawerVenue(null)} />}
-      <LoadMoreButton onClick={() => fetchNextPage()} isLoading={isFetchingNextPage} hasMore={Boolean(hasNextPage)} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Users — new section; the mock had no user-management UI at all despite
-// the Goal naming "venue/user suspend-reactivate" as one of the four
-// dashboard areas.
-// ---------------------------------------------------------------------------
-
-function UsersTab() {
-  const { user: currentUser } = useAuth();
-  const [roleFilter, setRoleFilter] = useState<'all' | ApiAdminUserView['role']>('all');
-  const [query, setQuery] = useState('');
-
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminUsersPaginated(
-    roleFilter === 'all' ? {} : { role: roleFilter }
-  );
-  const users = useMemo(() => data?.pages.flat() ?? [], [data]);
-
-  const suspendUser = useSuspendUser();
-  const reactivateUser = useReactivateUser();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  // Same as Venues: search only matches within pages already loaded.
-  const filtered = useMemo(() => {
-    if (!query) return users;
-    const q = query.toLowerCase();
-    return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
-  }, [users, query]);
-
-  const handleSuspend = async (userId: string) => {
-    const reason = window.prompt('Reason for suspending this user (visible in the audit log):');
-    if (!reason) return;
-    setActionError(null);
-    try {
-      await suspendUser.mutateAsync({ userId, reason });
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handleReactivate = async (userId: string) => {
-    setActionError(null);
-    try {
-      await reactivateUser.mutateAsync(userId);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or email..."
-          className="rounded-full bg-surface-container px-4 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
-        />
-        <GroundSelect
-            value={roleFilter}
-            onValueChange={() => {}}
-            options={[
-              { value: "all", label: "All roles" },
-              { value: "customer", label: "Customer" },
-              { value: "owner", label: "Owner" },
-              { value: "admin", label: "Admin" }
-            ]}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-      </div>
-
-      {actionError && <ErrorBanner message={actionError} />}
-
-      {filtered.length === 0 ? (
-        <p className="font-sans text-sm text-on-surface-variant">No users match this filter.</p>
-      ) : (
-        <div className="grid gap-3">
-          {filtered.map((u) => {
-            const isSelf = u.id === currentUser?.id;
-            return (
-              <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-container p-4">
-                <div>
-                  <p className="font-sans text-sm font-medium text-ink">
-                    {u.name} {isSelf && <span className="font-sans text-xs text-on-surface-variant">(you)</span>}
-                  </p>
-                  <p className="font-sans text-xs text-on-surface-variant">
-                    {u.email} · {u.role}
-                    {u.suspended_at ? ` · suspended${u.suspension_reason ? `: ${u.suspension_reason}` : ''}` : ''}
-                  </p>
-                </div>
-                {u.suspended_at ? (
-                  <button
-                    onClick={() => handleReactivate(u.id)}
-                    disabled={reactivateUser.isPending}
-                    className="flex items-center gap-1 rounded-full bg-pitch px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-                  >
-                    <PlayCircle size={13} /> Reactivate
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleSuspend(u.id)}
-                    disabled={suspendUser.isPending || isSelf}
-                    title={isSelf ? "You can't suspend your own account" : undefined}
-                    className="flex items-center gap-1 rounded-full bg-clay px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-                  >
-                    <Ban size={13} /> Suspend
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <LoadMoreButton onClick={() => fetchNextPage()} isLoading={isFetchingNextPage} hasMore={Boolean(hasNextPage)} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Bookings — the entire payment model here is offline confirmation (no
-// gateway webhook wired up), so this screen is how an admin actually
-// operates the marketplace day to day: confirming payment on a
-// pending_payment booking (after receiving it outside this system — bank
-// transfer, UPI, etc.) is what turns it into a real, confirmed booking.
-// Defaults to showing pending_payment first, since that's the queue that
-// actually needs attention; everything else is available via the filter.
-// No customer identity here either, same guarantee as everywhere else
-// bookings are shown — see BookingDetail's own docstring.
-// ---------------------------------------------------------------------------
-
-const PAYMENT_METHODS = ['bank_transfer', 'upi', 'cash', 'cheque', 'other'] as const;
-
-function formatSlot(booking: ApiBookingDetail): string {
-  if (!booking.slot_start_time) return booking.slot_date;
-  const trim = (t: string) => t.slice(0, 5);
-  return `${booking.slot_date} · ${trim(booking.slot_start_time)}–${booking.slot_end_time ? trim(booking.slot_end_time) : ''}`;
-}
-
-function isHoldExpired(booking: ApiBookingDetail): boolean {
-  // There's no sweep job that clears a stale pending_payment booking
-  // automatically (see hold_expires_at's own backend docstring) — this is
-  // the only signal an admin has that a hold is stale and the slot is
-  // effectively free to release via cancel-pending.
-  return booking.status === 'pending_payment' && booking.hold_expires_at !== null && new Date(booking.hold_expires_at) < new Date();
-}
-
-function BookingRow({ booking }: { booking: ApiAdminBookingView }) {
-  const confirmPayment = useConfirmBookingPayment();
-  const cancelPending = useCancelPendingBooking();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [amount, setAmount] = useState(booking.amount);
-  const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]>('bank_transfer');
-  const [reference, setReference] = useState('');
-  const [notes, setNotes] = useState('');
-
-  const openConfirmForm = () => {
-    setActionError(null);
-    setIsConfirmOpen(true);
-    setAmount(booking.amount);
-    setMethod('bank_transfer');
-    setReference('');
-    setNotes('');
-  };
-
-  const submitConfirm = async () => {
-    if (!amount.trim() || !method) {
-      setActionError('Amount and method are required.');
-      return;
-    }
-    setActionError(null);
-    try {
-      await confirmPayment.mutateAsync({
-        bookingId: booking.id,
-        body: { amount: amount.trim(), method, reference: reference.trim() || undefined, notes: notes.trim() || undefined },
-      });
-      setIsConfirmOpen(false);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handleCancelPending = async () => {
-    const reason = window.prompt('Reason for cancelling this pending booking (releases the slot immediately):');
-    if (!reason) return;
-    setActionError(null);
-    try {
-      await cancelPending.mutateAsync({ bookingId: booking.id, reason });
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  return (
-    <div className="space-y-3 rounded-2xl bg-surface-container p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex-1 min-w-[250px]">
-          <p className="font-sans text-sm font-medium text-ink">{booking.venue_name}</p>
-          <p className="flex flex-wrap items-center gap-2 font-sans text-xs text-on-surface-variant mb-2">
-            {booking.venue_category} · {formatSlot(booking)} · {money(booking.amount)} <StatusBadge status={booking.status} />
-            {isHoldExpired(booking) && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-clay/15 px-2 py-0.5 text-clay">
-                <AlertCircle size={11} /> hold expired
-              </span>
-            )}
-          </p>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-chalk p-2 rounded-xl border border-ink/5 mb-2">
-            <div>
-              <p className="font-sans text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">Customer</p>
-              <p className="font-sans text-xs font-medium text-ink truncate">{booking.user_name || 'Guest'}</p>
-              <p className="font-sans text-xs text-on-surface-variant truncate">{booking.user_email || 'No email'}</p>
-              {booking.user_phone && <p className="font-sans text-xs text-on-surface-variant truncate">{booking.user_phone}</p>}
-            </div>
-            <div>
-              <p className="font-sans text-[10px] uppercase font-bold text-on-surface-variant tracking-wider">Owner</p>
-              <p className="font-sans text-xs font-medium text-ink truncate">{booking.owner_name}</p>
-              <p className="font-sans text-xs text-on-surface-variant truncate">{booking.owner_email}</p>
-              {booking.owner_phone && <p className="font-sans text-xs text-on-surface-variant truncate">{booking.owner_phone}</p>}
+          {/* Revenue */}
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+            <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Revenue Overview</h3>
+            <div className="space-y-4">
+               <div>
+                  <p className="font-sans text-2xl font-semibold text-ink">{money(revenue.this_month)}</p>
+                  <p className="font-sans text-xs text-on-surface-variant uppercase">This Month</p>
+               </div>
+               <div>
+                  <p className="font-sans text-xl font-semibold text-ink">{money(revenue.this_week)}</p>
+                  <p className="font-sans text-xs text-on-surface-variant uppercase">This Week</p>
+               </div>
+               <div>
+                  <p className="font-sans text-lg font-semibold text-ink">{money(revenue.today)}</p>
+                  <p className="font-sans text-xs text-on-surface-variant uppercase">Today</p>
+               </div>
+               <div className="mt-4 pt-4 border-t border-surface-container">
+                  <div className="flex items-end h-16 gap-1">
+                     {revenue.chart_data.map((d, i) => {
+                        const maxVal = Math.max(...revenue.chart_data.map(x => x.value)) || 1;
+                        const height = Math.max((d.value / maxVal) * 100, 5);
+                        return (
+                           <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                              <div className="w-full bg-primary/20 rounded-t-sm" style={{height: `${height}%`}}></div>
+                              <span className="text-[10px] text-on-surface-variant">{d.label}</span>
+                           </div>
+                        );
+                     })}
+                  </div>
+               </div>
             </div>
           </div>
           
-          <p className="font-mono text-[10px] text-on-surface-variant">ID: {booking.id}</p>
-        </div>
-        {booking.status === 'pending_payment' && (
-          <div className="flex gap-2">
-            <button
-              onClick={openConfirmForm}
-              className="flex items-center gap-1 rounded-full bg-pitch px-3 py-1.5 font-sans text-xs text-chalk"
-            >
-              <CheckCircle2 size={13} /> Confirm payment
-            </button>
-            <button
-              onClick={handleCancelPending}
-              disabled={cancelPending.isPending}
-              className="flex items-center gap-1 rounded-full bg-clay px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-            >
-              <XCircle size={13} /> Cancel
-            </button>
-          </div>
-        )}
-      </div>
-
-      {actionError && <ErrorBanner message={actionError} />}
-
-      {isConfirmOpen && (
-        <div className="space-y-2 rounded-xl bg-surface-container-high p-4">
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Amount received"
-              className="rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
-            />
-            <GroundSelect
-            value={method}
-            onValueChange={() => {}}
-            options={PAYMENT_METHODS.map((m) => ({ value: m, label: `${m.replace('_', ' ')}` }))}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-          </div>
-          <input
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            placeholder="Reference / transaction ID (optional)"
-            className="w-full rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
-          />
-          <input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notes (optional)"
-            className="w-full rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
-          />
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={submitConfirm}
-              disabled={confirmPayment.isPending}
-              className="flex items-center gap-2 rounded-full bg-pitch px-4 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-            >
-              {confirmPayment.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-              Confirm
-            </button>
-            <button
-              onClick={() => setIsConfirmOpen(false)}
-              className="rounded-full bg-surface-container px-4 py-1.5 font-sans text-xs text-ink"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Jump-to-booking-by-id: reuses GET /api/v1/bookings/{id} (not an /admin/
-// prefixed route at all — see adminApi.getBookingById's own comment for
-// why this needed no new backend endpoint). Renders the same BookingRow
-// as the regular list, so confirm-payment/cancel-pending work identically
-// whether you found the booking by browsing or by pasting its ID.
-function BookingLookup() {
-  const [bookingId, setBookingId] = useState('');
-  const lookup = useBookingLookup();
-
-  const handleLookup = async () => {
-    if (!bookingId.trim()) return;
-    try {
-      await lookup.mutateAsync(bookingId.trim());
-    } catch {
-      // surfaced via lookup.error below — nothing further to do here
-    }
-  };
-
-  return (
-    <div className="space-y-3 rounded-2xl bg-surface-container-high p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Search size={15} className="text-on-surface-variant" />
-        <input
-          value={bookingId}
-          onChange={(e) => setBookingId(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
-          placeholder="Jump to a booking by ID..."
-          className="flex-1 rounded-full bg-mist px-4 py-2 font-mono text-sm text-ink placeholder:text-on-surface-variant placeholder:font-sans focus:outline-none"
-        />
-        <button
-          onClick={handleLookup}
-          disabled={lookup.isPending || !bookingId.trim()}
-          className="flex items-center gap-2 rounded-full bg-primary-container px-4 py-2 font-sans text-sm text-on-primary-container disabled:opacity-50"
-        >
-          {lookup.isPending ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-          Find
-        </button>
-      </div>
-      {lookup.isError && <ErrorBanner message="No booking found with that ID." />}
-      {lookup.data && <BookingRow booking={lookup.data} />}
-    </div>
-  );
-}
-
-function BookingsTab() {
-  const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('pending_payment');
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminBookingsPaginated(
-    statusFilter === 'all' ? {} : { status: statusFilter }
-  );
-  const bookings = useMemo(() => data?.pages.flat() ?? [], [data]);
-  const sortedBookings = useMemo(
-    () => [...bookings].sort((a, b) => Number(isHoldExpired(b)) - Number(isHoldExpired(a))),
-    [bookings]
-  );
-
-  const sweepHolds = useSweepExpiredHolds();
-  const [sweepMessage, setSweepMessage] = useState<string | null>(null);
-  const [sweepError, setSweepError] = useState<string | null>(null);
-
-  const handleSweepNow = async () => {
-    setSweepError(null);
-    setSweepMessage(null);
-    try {
-      const result = await sweepHolds.mutateAsync();
-      setSweepMessage(
-        result.swept === 0 ? 'No expired holds to release right now.' : `Released ${result.swept} expired hold(s).`
-      );
-    } catch (err) {
-      setSweepError(errorMessage(err));
-    }
-  };
-
-  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
-
-  return (
-    <div className="space-y-4">
-      <BookingLookup />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <GroundSelect
-            value={statusFilter}
-            onValueChange={() => {}}
-            options={[
-              { value: "pending_payment", label: "Pending payment" },
-              { value: "all", label: "All statuses" },
-              { value: "confirmed", label: "Confirmed" },
-              { value: "completed", label: "Completed" },
-              { value: "cancelled", label: "Cancelled" },
-              { value: "expired", label: "Expired" },
-              { value: "refunded", label: "Refunded" }
-            ]}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-
-        <button
-          onClick={handleSweepNow}
-          disabled={sweepHolds.isPending}
-          className="flex items-center gap-2 rounded-full bg-surface-container-high px-4 py-2 font-sans text-sm text-ink disabled:opacity-50"
-        >
-          {sweepHolds.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          Sweep expired holds now
-        </button>
-      </div>
-
-      {sweepMessage && (
-        <div className="flex items-center gap-2 rounded-xl bg-pitch/10 px-4 py-3 font-sans text-sm text-pitch">
-          <CheckCircle2 size={16} /> {sweepMessage}
-        </div>
-      )}
-      {sweepError && <ErrorBanner message={sweepError} />}
-
-      {bookings.length === 0 ? (
-        <p className="font-sans text-sm text-on-surface-variant">No bookings match this filter.</p>
-      ) : (
-        <div className="grid gap-3">
-          {sortedBookings.map((booking) => (
-            <BookingRow key={booking.id} booking={booking} />
-          ))}
-        </div>
-      )}
-
-      <LoadMoreButton onClick={() => fetchNextPage()} isLoading={isFetchingNextPage} hasMore={Boolean(hasNextPage)} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Payouts — an admin's view of owner earnings settlement: running a payout
-// for an owner/period, and marking a run payout as actually paid out
-// (offline, same model as booking payments — there's no payment gateway
-// disbursing this automatically either).
-// ---------------------------------------------------------------------------
-
-function PayoutsTab() {
-  const [statusFilter, setStatusFilter] = useState<'all' | PayoutStatus>('all');
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminPayoutsPaginated(
-    statusFilter === 'all' ? {} : { status: statusFilter }
-  );
-  const payouts = useMemo(() => data?.pages.flat() ?? [], [data]);
-  // Only for populating the "run a payout" owner picker — avoids making
-  // an admin type a raw owner UUID blind, same reasoning as showing
-  // owner_name everywhere else on this screen.
-  const { data: owners = [] } = useAdminUsers({ role: 'owner' });
-
-  const markPaid = useMarkPayoutPaid();
-  const runPayout = useRunPayout();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const [showRunForm, setShowRunForm] = useState(false);
-  const [ownerId, setOwnerId] = useState('');
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
-
-  const handleMarkPaid = async (payoutId: string) => {
-    setActionError(null);
-    try {
-      await markPaid.mutateAsync(payoutId);
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  const handleRunPayout = async () => {
-    if (!ownerId.trim() || !periodStart || !periodEnd) {
-      setActionError('Owner ID, period start, and period end are all required.');
-      return;
-    }
-    setActionError(null);
-    try {
-      await runPayout.mutateAsync({ owner_id: ownerId.trim(), period_start: periodStart, period_end: periodEnd });
-      setShowRunForm(false);
-      setOwnerId('');
-      setPeriodStart('');
-      setPeriodEnd('');
-    } catch (err) {
-      setActionError(errorMessage(err));
-    }
-  };
-
-  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <GroundSelect
-            value={statusFilter}
-            onValueChange={() => {}}
-            options={[
-              { value: "all", label: "All statuses" },
-              { value: "pending", label: "Pending" },
-              { value: "paid", label: "Paid" }
-            ]}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-        <button
-          onClick={() => setShowRunForm((v) => !v)}
-          className="flex items-center gap-2 rounded-full bg-primary-container px-4 py-2 font-sans text-sm text-on-primary-container"
-        >
-          <Wallet size={15} /> Run a payout
-        </button>
-      </div>
-
-      {actionError && <ErrorBanner message={actionError} />}
-
-      {showRunForm && (
-        <div className="space-y-2 rounded-2xl bg-surface-container-high p-4">
-          <GroundSelect
-            value={ownerId}
-            onValueChange={() => {}}
-            options={[{ value: "", label: "Select an owner…" }, ...owners.map((owner) => ({ value: owner.id, label: `${owner.name} (${owner.email})` }))]}
-            triggerClassName="w-full sm:w-[200px]"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={periodStart}
-              onChange={(e) => setPeriodStart(e.target.value)}
-              className="rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink focus:outline-none"
-            />
-            <input
-              type="date"
-              value={periodEnd}
-              onChange={(e) => setPeriodEnd(e.target.value)}
-              className="rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink focus:outline-none"
-            />
-          </div>
-          <button
-            onClick={handleRunPayout}
-            disabled={runPayout.isPending}
-            className="flex items-center gap-2 rounded-full bg-pitch px-4 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-          >
-            {runPayout.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wallet size={13} />}
-            Run
-          </button>
-        </div>
-      )}
-
-      {payouts.length === 0 ? (
-        <p className="font-sans text-sm text-on-surface-variant">No payouts match this filter.</p>
-      ) : (
-        <div className="grid gap-3">
-          {payouts.map((payout) => (
-            <div key={payout.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-container p-4">
-              <div>
-                <p className="font-sans text-xs text-on-surface-variant">
-                  {payout.owner_name} ({payout.owner_email})
-                </p>
-                <p className="flex flex-wrap items-center gap-2 font-sans text-sm text-ink">
-                  {payout.period_start} <ArrowRight size={12} className="inline mx-1 text-on-surface-variant"/> {payout.period_end} · Net {money(payout.net_amount)} <StatusBadge status={payout.status} />
-                </p>
-                <p className="font-sans text-xs text-on-surface-variant">
-                  Gross {money(payout.gross_amount)} · Commission {money(payout.commission_amount)}
-                </p>
-              </div>
-              {payout.status === 'pending' && (
-                <button
-                  onClick={() => handleMarkPaid(payout.id)}
-                  disabled={markPaid.isPending}
-                  className="flex items-center gap-1 rounded-full bg-pitch px-3 py-1.5 font-sans text-xs text-chalk disabled:opacity-50"
-                >
-                  <CheckCircle2 size={13} /> Mark paid
-                </button>
-              )}
+          {/* Support */}
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+            <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Support</h3>
+            <div className="space-y-2">
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Open Tickets</span><span className="font-medium text-ink">{support.open_tickets}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-marigold font-medium">High Priority</span><span className="font-medium text-ink">{support.high_priority}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Waiting for Owner</span><span className="font-medium text-ink">{support.waiting_for_owner}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Waiting for Customer</span><span className="font-medium text-ink">{support.waiting_for_customer}</span></div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      <LoadMoreButton onClick={() => fetchNextPage()} isLoading={isFetchingNextPage} hasMore={Boolean(hasNextPage)} />
+          {/* Notifications */}
+          <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
+            <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Notifications</h3>
+            <div className="space-y-2">
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Sent Today</span><span className="font-medium text-ink">{notifications.sent_today}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-clay font-medium">Failed</span><span className="font-medium text-ink">{notifications.failed}</span></div>
+                <div className="flex justify-between font-sans text-sm"><span className="text-on-surface-variant">Unread Alerts</span><span className="font-medium text-ink">{notifications.unread_alerts}</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
@@ -1350,7 +533,7 @@ function AnalyticsTab({
   overview,
   auditLog,
 }: {
-  overview: ApiPlatformOverview | undefined;
+  overview: ApiDashboardOverview | undefined;
   auditLog: ApiAuditLogEntry[];
 }) {
   const { data: health, refetch, isFetching: isQueryFetching } = useAdminHealth();
@@ -1480,14 +663,14 @@ function AnalyticsTab({
                 <CalendarClock size={16} className="text-clay" />
                 <span className="font-sans text-xs font-medium text-on-surface-variant">Total Bookings</span>
               </div>
-              <p className="font-display text-2xl font-bold text-pitch">{overview?.total_bookings || 0}</p>
+              <p className="font-display text-2xl font-bold text-pitch">{overview?.metrics?.total_bookings ?? overview?.total_bookings ?? 0}</p>
             </div>
             <div className="p-4 bg-chalk rounded-2xl shadow-sm border border-ink/5">
               <div className="flex items-center gap-2 mb-1">
                 <Layers size={16} className="text-marigold" />
                 <span className="font-sans text-xs font-medium text-on-surface-variant">Active Venues</span>
               </div>
-              <p className="font-display text-2xl font-bold text-pitch">{overview?.active_venues || 0}</p>
+              <p className="font-display text-2xl font-bold text-pitch">{overview?.metrics?.active_venues ?? overview?.active_venues ?? 0}</p>
             </div>
           </div>
         </div>
@@ -1524,6 +707,667 @@ function AnalyticsTab({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Approval Queue — pending venues + owner verifications
+// ---------------------------------------------------------------------------
+
+function ApprovalQueueTab({
+  pendingVenues,
+  pendingVerifications,
+  isLoading,
+}: {
+  pendingVenues: ApiAdminVenueView[];
+  pendingVerifications: ApiAdminOwnerVerificationView[];
+  isLoading: boolean;
+}) {
+  const approveVenue = useApproveVenue();
+  const rejectVenue = useRejectVenue();
+  const approveVerification = useApproveVerification();
+  const rejectVerification = useRejectVerification();
+  const [rejectVenueId, setRejectVenueId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  if (isLoading) return <div className="flex items-center gap-2 text-on-surface-variant"><Loader2 className="w-4 h-4 animate-spin" />Loading approval queue…</div>;
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="font-display text-2xl font-bold text-pitch mb-4">Pending Venues ({pendingVenues.length})</h2>
+        {pendingVenues.length === 0 ? (
+          <EmptyState icon={CheckCircle2} title="No venues pending review" description="All submissions have been processed." />
+        ) : (
+          <div className="space-y-3">
+            {pendingVenues.map((v) => (
+              <div key={v.id} className="flex items-center justify-between bg-chalk rounded-xl p-4 border border-ink/10 gap-4">
+                <div>
+                  <p className="font-semibold text-ink">{v.name}</p>
+                  <p className="text-sm text-on-surface-variant">{v.owner_name} · {v.category} · {v.city}</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => approveVenue.mutate(v.id)}
+                    disabled={approveVenue.isPending}
+                    className="px-3 py-1 text-sm bg-pitch text-chalk rounded-lg hover:bg-pitch/90 disabled:opacity-50"
+                  >Approve</button>
+                  <button
+                    onClick={() => setRejectVenueId(v.id)}
+                    className="px-3 py-1 text-sm border border-ink/20 rounded-lg hover:bg-mist"
+                  >Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {rejectVenueId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40">
+          <div className="bg-chalk rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-display text-lg font-semibold text-ink mb-3">Rejection Reason</h3>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full border border-ink/20 rounded-lg p-3 text-sm min-h-[100px] mb-4"
+              placeholder="Explain why this venue is being rejected…"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setRejectVenueId(null); setRejectReason(''); }} className="px-4 py-2 text-sm border border-ink/20 rounded-lg">Cancel</button>
+              <button
+                disabled={!rejectReason.trim() || rejectVenue.isPending}
+                onClick={() => {
+                  if (rejectVenueId) {
+                    rejectVenue.mutate({ venueId: rejectVenueId, reason: rejectReason });
+                    setRejectVenueId(null); setRejectReason('');
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >Reject Venue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h2 className="font-display text-2xl font-bold text-pitch mb-4">Owner Verifications ({pendingVerifications.length})</h2>
+        {pendingVerifications.length === 0 ? (
+          <EmptyState icon={CheckCircle2} title="No verifications pending" description="All owner applications have been reviewed." />
+        ) : (
+          <div className="space-y-3">
+            {pendingVerifications.map((v) => (
+              <div key={v.id} className="flex items-center justify-between bg-chalk rounded-xl p-4 border border-ink/10 gap-4">
+                <div>
+                  <p className="font-semibold text-ink">{v.business_name ?? 'No business name'}</p>
+                  <p className="text-sm text-on-surface-variant">{v.identification_type} · {v.identification_number}</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => adminApi.viewVerificationDocument(v.id)}
+                    className="px-3 py-1 text-sm border border-ink/20 rounded-lg hover:bg-mist text-ink"
+                  >View document</button>
+                  <button
+                    onClick={() => approveVerification.mutate(v.id)}
+                    disabled={approveVerification.isPending}
+                    className="px-3 py-1 text-sm bg-pitch text-chalk rounded-lg hover:bg-pitch/90 disabled:opacity-50"
+                  >Approve</button>
+                  <button
+                    onClick={() => rejectVerification.mutate({ verificationId: v.id, reason: 'Documentation insufficient — please resubmit with valid documents.' })}
+                    disabled={rejectVerification.isPending}
+                    className="px-3 py-1 text-sm border border-ink/20 rounded-lg hover:bg-mist"
+                  >Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Venues — paginated admin venue list (uses infinite query, load-more)
+// ---------------------------------------------------------------------------
+
+function VenuesTab() {
+  const { data: venuePages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminVenuesPaginated({});
+  const suspendVenue = useSuspendVenue();
+  const reactivateVenue = useReactivateVenue();
+  const [selectedVenue, setSelectedVenue] = useState<ApiAdminVenueView | null>(null);
+  const [suspendingId, setSuspendingId] = useState<string | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+
+  const venues = venuePages?.pages.flatMap((p) => p) ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-pitch">Venues</h2>
+          <p className="font-sans text-sm text-on-surface-variant">Manage all marketplace venues</p>
+        </div>
+      </div>
+
+      {suspendingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40">
+          <div className="bg-chalk rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-display text-lg font-semibold text-ink mb-3">Suspension Reason</h3>
+            <textarea
+              value={suspendReason}
+              onChange={(e) => setSuspendReason(e.target.value)}
+              className="w-full border border-ink/20 rounded-lg p-3 text-sm min-h-[80px] mb-4"
+              placeholder="Reason for venue suspension…"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setSuspendingId(null); setSuspendReason(''); }} className="px-4 py-2 text-sm border border-ink/20 rounded-lg">Cancel</button>
+              <button
+                disabled={!suspendReason.trim() || suspendVenue.isPending}
+                onClick={() => {
+                  if (suspendingId) { suspendVenue.mutate({ venueId: suspendingId, reason: suspendReason }); setSuspendingId(null); setSuspendReason(''); }
+                }}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg disabled:opacity-50"
+              >Suspend</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-on-surface-variant"><Loader2 className="w-4 h-4 animate-spin" />Loading venues…</div>
+      ) : venues.length === 0 ? (
+        <EmptyState icon={Layers} title="No venues found" description="No venues match the current filter." />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-ink/10">
+          <table className="w-full text-sm">
+            <thead className="bg-mist">
+              <tr>
+                {['Name', 'Category', 'City', 'Status', 'Price', 'Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 font-semibold text-on-surface-variant">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink/5">
+              {venues.map((v) => (
+                <tr key={v.id} className="hover:bg-mist/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <button onClick={() => setSelectedVenue(v)} className="font-medium text-pitch hover:underline text-left">{v.name}</button>
+                  </td>
+                  <td className="px-4 py-3 text-on-surface-variant">{v.category}</td>
+                  <td className="px-4 py-3 text-on-surface-variant">{v.city}</td>
+                  <td className="px-4 py-3"><DashboardStatusBadge status={v.status} /></td>
+                  <td className="px-4 py-3">₹{v.base_price}</td>
+                  <td className="px-4 py-3">
+                    {v.status === 'suspended' ? (
+                      <button onClick={() => reactivateVenue.mutate(v.id)} disabled={reactivateVenue.isPending} className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100">Reactivate</button>
+                    ) : v.status === 'active' ? (
+                      <button onClick={() => setSuspendingId(v.id)} className="text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100">Suspend</button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasNextPage && (
+        <button
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="text-sm px-4 py-2 border border-ink/20 rounded-xl hover:bg-mist disabled:opacity-50"
+        >
+          {isFetchingNextPage ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+          Load More
+        </button>
+      )}
+
+      {selectedVenue && (
+        <AdminVenueDrawer venue={selectedVenue} onClose={() => setSelectedVenue(null)} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Users — paginated admin user list (uses infinite query, load-more)
+// ---------------------------------------------------------------------------
+
+function UsersTab() {
+  const { data: userPages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminUsersPaginated({});
+  const suspendUser = useSuspendUser();
+  const reactivateUser = useReactivateUser();
+  const [suspendingId, setSuspendingId] = useState<string | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+
+  const users = userPages?.pages.flatMap((p) => p) ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="font-display text-2xl font-bold text-pitch">Users</h2>
+        <p className="font-sans text-sm text-on-surface-variant">Manage customers and venue owners</p>
+      </div>
+
+      {suspendingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40">
+          <div className="bg-chalk rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-display text-lg font-semibold text-ink mb-3">Suspension Reason</h3>
+            <textarea
+              value={suspendReason}
+              onChange={(e) => setSuspendReason(e.target.value)}
+              className="w-full border border-ink/20 rounded-lg p-3 text-sm min-h-[80px] mb-4"
+              placeholder="Reason for suspension…"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setSuspendingId(null); setSuspendReason(''); }} className="px-4 py-2 text-sm border border-ink/20 rounded-lg">Cancel</button>
+              <button
+                disabled={!suspendReason.trim() || suspendUser.isPending}
+                onClick={() => {
+                  if (suspendingId) { suspendUser.mutate({ userId: suspendingId, reason: suspendReason }); setSuspendingId(null); setSuspendReason(''); }
+                }}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg disabled:opacity-50"
+              >Suspend User</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-on-surface-variant"><Loader2 className="w-4 h-4 animate-spin" />Loading users…</div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-ink/10">
+          <table className="w-full text-sm">
+            <thead className="bg-mist">
+              <tr>
+                {['Name', 'Email', 'Role', 'Status', 'Joined', 'Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 font-semibold text-on-surface-variant">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink/5">
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-mist/50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-ink">{u.name}</td>
+                  <td className="px-4 py-3 text-on-surface-variant">{u.email || '—'}</td>
+                  <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-mist rounded-full">{u.role}</span></td>
+                  <td className="px-4 py-3"><DashboardStatusBadge status={u.suspended_at ? 'suspended' : 'active'} /></td>
+                  <td className="px-4 py-3 text-on-surface-variant">{new Date(u.created_at).toLocaleDateString('en-IN')}</td>
+                  <td className="px-4 py-3">
+                    {u.suspended_at ? (
+                      <button onClick={() => reactivateUser.mutate(u.id)} disabled={reactivateUser.isPending} className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg">Reactivate</button>
+                    ) : (
+                      <button onClick={() => setSuspendingId(u.id)} className="text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg">Suspend</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasNextPage && (
+        <button
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="text-sm px-4 py-2 border border-ink/20 rounded-xl hover:bg-mist disabled:opacity-50"
+        >
+          {isFetchingNextPage ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+          Load More
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bookings — paginated admin booking list with confirm / cancel
+// ---------------------------------------------------------------------------
+
+function BookingsTab() {
+  const { data: bookingPages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminBookingsPaginated({});
+  const confirmPayment = useConfirmBookingPayment();
+  const cancelPending = useCancelPendingBooking();
+  const sweepHolds = useSweepExpiredHolds();
+  const bookingLookup = useBookingLookup();
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmAmount, setConfirmAmount] = useState('');
+  const [confirmMethod, setConfirmMethod] = useState('cash');
+  const [lookupId, setLookupId] = useState('');
+
+  const bookings = bookingPages?.pages.flatMap((p) => p) ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-pitch">Bookings</h2>
+          <p className="font-sans text-sm text-on-surface-variant">Confirm payments and manage booking operations</p>
+        </div>
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex gap-1 items-center">
+            <input
+              type="text"
+              placeholder="Jump to a booking by ID..."
+              value={lookupId}
+              onChange={(e) => setLookupId(e.target.value)}
+              className="text-sm border border-ink/20 rounded-lg px-3 py-1.5 w-44"
+            />
+            <button
+              onClick={() => { if (lookupId) bookingLookup.mutate(lookupId); }}
+              disabled={!lookupId || bookingLookup.isPending}
+              className="text-sm px-3 py-1.5 bg-pitch text-chalk rounded-lg disabled:opacity-50"
+            >Find</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => sweepHolds.mutate()}
+              disabled={sweepHolds.isPending}
+              className="flex items-center gap-1 text-sm px-3 py-1.5 border border-ink/20 rounded-lg hover:bg-mist"
+            >
+              <RefreshCw className="w-3 h-3" />{sweepHolds.isPending ? 'Sweeping…' : 'Sweep expired holds now'}
+            </button>
+            {sweepHolds.isSuccess && sweepHolds.data && (
+              <span className="text-xs text-green-600">Released {sweepHolds.data.swept} expired holds</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {bookingLookup.data && (
+        <div className="bg-marigold/10 border border-marigold/30 rounded-xl p-4 text-sm">
+          <p className="font-semibold text-ink">Booking: {bookingLookup.data.id}</p>
+          <p className="text-on-surface-variant">{bookingLookup.data.venue_name} · ₹{bookingLookup.data.amount} · <DashboardStatusBadge status={bookingLookup.data.status} /></p>
+        </div>
+      )}
+
+      {confirmingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40">
+          <div className="bg-chalk rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-display text-lg font-semibold text-ink mb-3">Confirm Payment</h3>
+            <div className="space-y-3 mb-4">
+              <input
+                type="number"
+                value={confirmAmount}
+                onChange={(e) => setConfirmAmount(e.target.value)}
+                placeholder="Amount received"
+                className="w-full border border-ink/20 rounded-lg p-3 text-sm"
+              />
+              <select
+                value={confirmMethod}
+                onChange={(e) => setConfirmMethod(e.target.value)}
+                className="w-full border border-ink/20 rounded-lg p-3 text-sm bg-chalk"
+              >
+                {['cash', 'upi', 'bank_transfer', 'card'].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setConfirmingId(null); setConfirmAmount(''); }} className="px-4 py-2 text-sm border border-ink/20 rounded-lg">Cancel</button>
+              <button
+                disabled={!confirmAmount || confirmPayment.isPending}
+                onClick={() => {
+                  if (confirmingId) {
+                    confirmPayment.mutate({
+                      bookingId: confirmingId,
+                      body: { amount: Number(confirmAmount), method: confirmMethod },
+                    });
+                    setConfirmingId(null); setConfirmAmount('');
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-pitch text-chalk rounded-lg disabled:opacity-50"
+              >Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-on-surface-variant"><Loader2 className="w-4 h-4 animate-spin" />Loading bookings…</div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-ink/10">
+          <table className="w-full text-sm">
+            <thead className="bg-mist">
+              <tr>
+                {['Venue', 'Customer', 'Amount', 'Status', 'Created', 'Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 font-semibold text-on-surface-variant">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink/5">
+              {bookings.map((b) => (
+                <tr key={b.id} className="hover:bg-mist/50">
+                  <td className="px-4 py-3 font-medium text-ink">{b.venue_name}</td>
+                  <td className="px-4 py-3 text-on-surface-variant">{b.customer_name ?? b.guest_name ?? '—'}</td>
+                  <td className="px-4 py-3">₹{b.amount}</td>
+                  <td className="px-4 py-3">
+                    {b.status === 'pending_payment' && b.hold_expires_at && new Date(b.hold_expires_at) < new Date() ? 'hold expired' : <DashboardStatusBadge status={b.status} />}
+                  </td>
+                  <td className="px-4 py-3 text-on-surface-variant">{new Date(b.created_at).toLocaleDateString('en-IN')}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      {b.status === 'pending_payment' && (
+                        <>
+                          <button
+                            onClick={() => { setConfirmingId(b.id); setConfirmAmount(String(b.amount)); }}
+                            className="text-xs px-2 py-1 bg-pitch text-chalk rounded-lg"
+                          >Confirm Payment</button>
+                          <button
+                            onClick={() => cancelPending.mutate({ bookingId: b.id, reason: 'Admin cancelled pending booking' })}
+                            disabled={cancelPending.isPending}
+                            className="text-xs px-2 py-1 border border-ink/20 rounded-lg"
+                          >Cancel</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasNextPage && (
+        <button
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="text-sm px-4 py-2 border border-ink/20 rounded-xl hover:bg-mist disabled:opacity-50"
+        >
+          {isFetchingNextPage ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+          Load More
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payouts — paginated admin payout list (uses infinite query)
+// ---------------------------------------------------------------------------
+
+function PayoutsTab() {
+  const { data: payoutPages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAdminPayoutsPaginated({});
+  const markPaid = useMarkPayoutPaid();
+  const runPayout = useRunPayout();
+  const { data: owners = [] } = useAdminUsers({ role: 'owner' });
+
+  const [isRunModalOpen, setIsRunModalOpen] = useState(false);
+  const [selectedOwnerId, setSelectedOwnerId] = useState('');
+  
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const firstDayStr = firstDayOfMonth.toISOString().split('T')[0];
+
+  const [periodStart, setPeriodStart] = useState(firstDayStr);
+  const [periodEnd, setPeriodEnd] = useState(yesterdayStr);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+
+  const payouts = payoutPages?.pages.flatMap((p) => p) ?? [];
+
+  const handleRunPayout = async () => {
+    if (!selectedOwnerId) {
+      setPayoutError('Please select a venue owner.');
+      return;
+    }
+    setPayoutError(null);
+    try {
+      await runPayout.mutateAsync({
+        owner_id: selectedOwnerId,
+        period_start: periodStart,
+        period_end: periodEnd,
+      });
+      setIsRunModalOpen(false);
+    } catch (err: any) {
+      setPayoutError(errorMessage(err));
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-pitch">Payouts</h2>
+          <p className="font-sans text-sm text-on-surface-variant">Manage and process owner payouts</p>
+        </div>
+        <button
+          onClick={() => { setPayoutError(null); setIsRunModalOpen(true); }}
+          className="flex items-center gap-2 text-sm px-4 py-2 bg-pitch text-chalk rounded-xl hover:bg-pitch/90 transition-colors"
+        >
+          <PlayCircle className="w-4 h-4" />Run Payouts
+        </button>
+      </div>
+
+      {isRunModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div className="bg-chalk rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-display text-lg font-semibold text-ink mb-1">Run Owner Payout</h3>
+            <p className="font-sans text-xs text-on-surface-variant mb-4">
+              Aggregate settled bookings and calculate net payout after platform commission. Note: Period End must be in the past.
+            </p>
+
+            {payoutError && (
+              <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-700">
+                {payoutError}
+              </div>
+            )}
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">Select Owner</label>
+                <select
+                  value={selectedOwnerId}
+                  onChange={(e) => setSelectedOwnerId(e.target.value)}
+                  className="w-full border border-ink/20 rounded-xl p-2.5 text-sm bg-chalk"
+                >
+                  <option value="">-- Choose Venue Owner --</option>
+                  {owners.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} ({o.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-ink mb-1">Period Start</label>
+                  <input
+                    type="date"
+                    value={periodStart}
+                    onChange={(e) => setPeriodStart(e.target.value)}
+                    className="w-full border border-ink/20 rounded-xl p-2.5 text-sm bg-chalk"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-ink mb-1">Period End</label>
+                  <input
+                    type="date"
+                    max={yesterdayStr}
+                    value={periodEnd}
+                    onChange={(e) => setPeriodEnd(e.target.value)}
+                    className="w-full border border-ink/20 rounded-xl p-2.5 text-sm bg-chalk"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setIsRunModalOpen(false); setPayoutError(null); }}
+                className="px-4 py-2 text-sm border border-ink/20 rounded-xl hover:bg-mist"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!selectedOwnerId || !periodStart || !periodEnd || runPayout.isPending}
+                onClick={handleRunPayout}
+                className="px-4 py-2 text-sm bg-pitch text-chalk rounded-xl hover:bg-pitch/90 disabled:opacity-50"
+              >
+                {runPayout.isPending ? 'Processing…' : 'Generate Payout'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-on-surface-variant"><Loader2 className="w-4 h-4 animate-spin" />Loading payouts…</div>
+      ) : payouts.length === 0 ? (
+        <EmptyState icon={Wallet} title="No payouts yet" description="Run payouts to generate owner payout records." />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-ink/10">
+          <table className="w-full text-sm">
+            <thead className="bg-mist">
+              <tr>
+                {['Owner', 'Venue', 'Gross', 'Commission', 'Net', 'Status', 'Date', 'Actions'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 font-semibold text-on-surface-variant">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink/5">
+              {payouts.map((p) => (
+                <tr key={p.id} className="hover:bg-mist/50">
+                  <td className="px-4 py-3 font-medium text-ink">{p.owner_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant">{p.venue_name}</td>
+                  <td className="px-4 py-3">₹{p.gross_amount}</td>
+                  <td className="px-4 py-3 text-red-600">-₹{p.commission_amount}</td>
+                  <td className="px-4 py-3 font-semibold text-pitch">₹{p.net_amount}</td>
+                  <td className="px-4 py-3"><DashboardStatusBadge status={p.status} /></td>
+                  <td className="px-4 py-3 text-on-surface-variant">{p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}</td>
+                  <td className="px-4 py-3">
+                    {p.status === 'pending' && (
+                      <button
+                        onClick={() => markPaid.mutate(p.id)}
+                        disabled={markPaid.isPending}
+                        className="text-xs px-2 py-1 bg-pitch text-chalk rounded-lg hover:bg-pitch/90 disabled:opacity-50"
+                      >Mark Paid</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasNextPage && (
+        <button
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="text-sm px-4 py-2 border border-ink/20 rounded-xl hover:bg-mist disabled:opacity-50"
+        >
+          {isFetchingNextPage ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+          Load More
+        </button>
+      )}
+    </div>
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Reviews
@@ -1670,19 +1514,39 @@ import { useAdminTickets, useAdminUpdateTicket, useTicketDetail, useAddComment }
 import type { ApiSupportTicket, ApiTicketEvent } from '../lib/api/types';
 
 function SupportTab() {
+  const [searchParams] = useSearchParams();
+  const urlTicketId = searchParams.get('ticketId');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'in_review' | 'waiting_customer' | 'resolved' | 'closed'>('all');
-  const { data: tickets, isLoading } = useAdminTickets(statusFilter === 'all' ? {} : { status: statusFilter });
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  
+  const params: any = {};
+  if (statusFilter !== 'all') params.status = statusFilter;
+  if (debouncedSearch.trim()) params.q = debouncedSearch.trim();
+  
+  const { data: tickets, isLoading } = useAdminTickets(params);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(urlTicketId);
 
-  if (isLoading) return <div className="shimmer h-96 rounded-2xl" />;
+  useEffect(() => {
+    if (urlTicketId) {
+      setSelectedTicketId(urlTicketId);
+    }
+  }, [urlTicketId]);
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_400px]">
-      <div className="space-y-4">
-        <div className="flex gap-2">
+      <div className="space-y-4 min-w-0">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by Ticket ID or Subject..."
+            className="w-full rounded-lg bg-mist px-3 py-2 font-sans text-sm text-ink placeholder:text-on-surface-variant focus:outline-none"
+          />
           <GroundSelect
             value={statusFilter}
-            onValueChange={() => {}}
+            onValueChange={(v) => setStatusFilter(v as any)}
             options={[
               { value: "all", label: "All statuses" },
               { value: "open", label: "Open" },
@@ -1691,11 +1555,13 @@ function SupportTab() {
               { value: "resolved", label: "Resolved" },
               { value: "closed", label: "Closed" }
             ]}
-            triggerClassName="w-full sm:w-[200px]"
+            triggerClassName="w-full sm:w-[200px] shrink-0"
           />
         </div>
 
-        {(!tickets || tickets.length === 0) ? (
+        {isLoading ? (
+          <div className="shimmer h-96 rounded-2xl" />
+        ) : (!tickets || tickets.length === 0) ? (
           <p className="font-sans text-sm text-on-surface-variant">No support tickets found.</p>
         ) : (
           <div className="grid gap-3">
@@ -1748,6 +1614,7 @@ function AdminTicketDetail({ ticketId }: { ticketId: string }) {
   if (isLoading || !ticket) return <div className="shimmer h-96 rounded-2xl" />;
 
   const handleUpdateStatus = async (newStatus: string) => {
+    if (newStatus === ticket.status) return;
     setActionError(null);
     try {
       await updateTicket.mutateAsync({ ticketId, body: { status: newStatus as any } });
@@ -1757,6 +1624,7 @@ function AdminTicketDetail({ ticketId }: { ticketId: string }) {
   };
 
   const handleUpdatePriority = async (newPriority: string) => {
+    if (newPriority === ticket.priority) return;
     setActionError(null);
     try {
       await updateTicket.mutateAsync({ ticketId, body: { priority: newPriority as any } });
@@ -1778,19 +1646,19 @@ function AdminTicketDetail({ ticketId }: { ticketId: string }) {
   };
 
   return (
-    <div className="flex h-[600px] flex-col rounded-2xl bg-surface-container">
+    <div className="flex h-[600px] flex-col rounded-2xl bg-surface-container min-w-0">
       <div className="border-b border-ink/10 p-4">
-        <h3 className="font-sans text-lg font-medium text-ink">{ticket.subject}</h3>
+        <h3 className="font-sans text-lg font-medium text-ink truncate">{ticket.subject}</h3>
         <p className="mt-1 font-sans text-xs text-on-surface-variant">
           Ticket #{ticket.id.slice(0, 8)} · Created {dateTimeStr(ticket.created_at)}
         </p>
         
         {actionError && <div className="mt-2"><ErrorBanner message={actionError} /></div>}
 
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-3">
           <GroundSelect
             value={ticket.status}
-            onValueChange={() => {}}
+            onValueChange={(v) => handleUpdateStatus(v)}
             options={[
               { value: "open", label: "Open" },
               { value: "in_review", label: "In Review" },
@@ -1798,43 +1666,54 @@ function AdminTicketDetail({ ticketId }: { ticketId: string }) {
               { value: "resolved", label: "Resolved" },
               { value: "closed", label: "Closed" }
             ]}
-            triggerClassName="w-full sm:w-[200px]"
+            className="w-full min-w-0"
+            triggerClassName="w-full"
+            align="left"
           />
 
           <GroundSelect
             value={ticket.priority}
-            onValueChange={() => {}}
+            onValueChange={(v) => handleUpdatePriority(v)}
             options={[
               { value: "low", label: "Low Priority" },
               { value: "medium", label: "Medium Priority" },
               { value: "high", label: "High Priority" },
               { value: "urgent", label: "Urgent" }
             ]}
-            triggerClassName="w-full sm:w-[200px]"
+            className="w-full min-w-0"
+            triggerClassName="w-full"
+            align="right"
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {ticket.events?.map((event: ApiTicketEvent) => {
-          if (event.event_type !== 'comment' && event.event_type !== 'created') return null;
-          
-          return (
-            <div key={event.id} className={`rounded-xl p-3 ${event.internal ? 'bg-marigold/20' : 'bg-surface'}`}>
-              <div className="mb-1 flex justify-between font-sans text-xs">
-                <span className="font-medium text-ink">
-                  {event.actor_id === ticket.creator_id ? 'Customer' : 'Admin'}
-                  {event.internal && ' (Internal Note)'}
-                </span>
-                <span className="text-on-surface-variant">{dateTimeStr(event.created_at)}</span>
-              </div>
-              <p className="font-sans text-sm text-ink whitespace-pre-wrap">{event.comment}</p>
-            </div>
-          );
-        })}
-      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-surface-container">
+          {ticket.events?.map((event: ApiTicketEvent) => {
+            if (event.event_type !== 'comment' && event.event_type !== 'created') return null;
+            
+            const isCustomer = event.actor_id === ticket.creator_id;
 
-      <div className="border-t border-ink/10 p-4 bg-surface-container-low rounded-b-2xl">
+            return (
+              <div key={event.id} className={`flex gap-3 ${isCustomer ? '' : 'flex-row-reverse'}`}>
+                <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-bold ${isCustomer ? 'bg-emerald-600' : 'bg-ink'}`}>
+                  {isCustomer ? 'C' : 'A'}
+                </div>
+                <div className={`flex-1 rounded-2xl p-4 ${isCustomer ? 'rounded-tl-none bg-white border border-ink/5 text-ink' : 'rounded-tr-none text-chalk'} ${event.internal ? 'bg-marigold text-ink' : (isCustomer ? '' : 'bg-ink text-chalk')}`}>
+                  <div className="mb-1 flex justify-between font-sans text-xs opacity-70">
+                    <span className="font-semibold">
+                      {isCustomer ? 'Customer' : 'Admin'}
+                      {event.internal && ' (Internal)'}
+                    </span>
+                    <span>{dateTimeStr(event.created_at)}</span>
+                  </div>
+                  <p className="whitespace-pre-wrap font-sans text-sm">{event.comment}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-ink/10 p-4 bg-surface-container-low rounded-b-2xl">
         <textarea
           value={commentText}
           onChange={(e) => setCommentText(e.target.value)}
@@ -2063,3 +1942,6 @@ function AdminNotificationHistory() {
     </div>
   );
 }
+
+
+
