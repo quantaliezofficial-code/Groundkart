@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings, Star, Zap, ShieldCheck, CircleDollarSign, Target } from 'lucide-react';
+import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings, Star, Zap, ShieldCheck, CircleDollarSign, Target, AlertCircle } from 'lucide-react';
 import { motion, useInView } from 'framer-motion';
 import Header from './components/Header';
 
@@ -23,11 +23,23 @@ import Hero from './components/Hero';
 import VenueCard from './components/VenueCard';
 import FiltersSidebar from './components/FiltersSidebar';
 import AuthModal from './components/AuthModal';
-import { mockVenues } from './data';
+import { useSmoothScroll } from './components/SmoothScroll';
 
 import { useAuth } from './lib/auth';
 import { useVenues, useVenue, useVenueSlots, useHomepage } from './hooks/useVenues';
 import { useMyBookings, useCreateBooking, useCancelBooking } from './hooks/useBookings';
+import { useToast } from './components/ui/Toast';
+import { ApiError } from './lib/api/client';
+
+import { useLocation, useNavigate } from 'react-router-dom';
+import SEOHead from './components/SEOHead';
+import { generateWebsiteSchema, generateOrganizationSchema, generateCollectionPageSchema, generateBreadcrumbSchema } from './lib/schema';
+import About from './components/About';
+import Contact from './components/Contact';
+import PrivacyPolicy from './components/PrivacyPolicy';
+import TermsOfService from './components/TermsOfService';
+import NotFound from './components/NotFound';
+import { absUrl, SITE_NAME } from './lib/site';
 
 // Lazy loading large sub-views to optimize first-load bundle size and protect the main thread
 const DetailView = React.lazy(() => import('./components/DetailView'));
@@ -35,6 +47,7 @@ const ReviewPay = React.lazy(() => import('./components/ReviewPay'));
 const OwnerLayout = React.lazy(() => import('./components/OwnerLayout'));
 const AdminLayout = React.lazy(() => import('./components/AdminLayout'));
 const MyBookings = React.lazy(() => import('./components/MyBookings'));
+const SupportTickets = React.lazy(() => import('./components/SupportTickets'));
 
 // Reusable custom skeleton loaders to ensure no layout shift (CLS) and premium perceived speed
 function DashboardSkeleton() {
@@ -122,8 +135,29 @@ function MyBookingsSkeleton() {
   );
 }
 
+function VenueErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-chalk rounded-2xl border border-ink/10 max-w-md mx-auto my-12 space-y-4">
+      <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+        <AlertCircle size={24} />
+      </div>
+      <h3 className="font-display text-xl font-bold text-ink">Failed to load venue</h3>
+      <p className="font-sans text-sm text-on-surface-variant">
+        Something went wrong while loading this venue. Please try again.
+      </p>
+      <button
+        onClick={onRetry}
+        className="bg-pitch hover:bg-[#15462E] text-chalk px-6 py-2.5 rounded-full font-sans text-xs font-bold transition ease-out cursor-pointer"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const { user, isLoading: isAuthLoading } = useAuth();
+  const toast = useToast();
 
   // Global Perspective Role SWITCHER state — dev-only, gated below; real
   // customers never see this. Both Owner and Admin dashboards are now
@@ -182,9 +216,14 @@ export default function App() {
   // login/signup can resume exactly what the person was trying to do.
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
+  type AppView = 'home' | 'search' | 'detail' | 'checkout' | 'my-bookings' | 'support' | 'about' | 'contact' | 'terms' | 'privacy' | '404';
+
+  const location = useLocation();
+  const navigate = useNavigate();
+
   // Navigation & Primary State
   const [supportContext, setSupportContext] = useState<{ type: 'booking' | 'venue'; id: string } | null>(null);
-  const [currentView, setCurrentView] = useState<'home' | 'search' | 'detail' | 'checkout' | 'my-bookings' | 'support'>('home');
+  const [currentView, setCurrentView] = useState<AppView>('home');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Hero inputs
@@ -205,10 +244,10 @@ export default function App() {
   const [selectedRating, setSelectedRating] = useState<number>(0);
 
   // Dynamic booking transactions state
-  const [selectedVenueId, setSelectedVenueId] = useState('grand-turf-arena');
-  const [selectedSlot, setSelectedSlot] = useState('20:00');
+  const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const [bookingDate, setBookingDate] = useState('2024-10-24');
+  const [bookingDate, setBookingDate] = useState(() => new Date().toLocaleDateString('en-CA'));
 
   // Favorites persistence
   const [favorites, setFavorites] = useState<string[]>([
@@ -220,15 +259,129 @@ export default function App() {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Category mapping helpers
+  const DISPLAY_TO_BACKEND_CATEGORY: Record<string, string> = {
+    'Turfs': 'sports',
+    'Courts': 'sports',
+    'Pools': 'sports',
+    'Banquet Halls': 'banquet_hall',
+    'Farmhouses': 'farmhouse',
+    'Corporate Hubs': 'corporate',
+    'Community Halls': 'community_hall',
+    'banquet': 'banquet_hall',
+    'football': 'sports',
+    'conference': 'corporate',
+    'Sports Grounds': 'sports',
+    'Corporate Spaces': 'corporate',
+    'sports': 'sports',
+    'banquet_hall': 'banquet_hall',
+    'farmhouse': 'farmhouse',
+    'corporate': 'corporate',
+    'community_hall': 'community_hall',
+  };
+
+  const SLUG_TO_DISPLAY_CATEGORY: Record<string, string> = {
+    'sports': 'Sports Grounds',
+    'banquet-halls': 'Banquet Halls',
+    'banquet_hall': 'Banquet Halls',
+    'banquet': 'Banquet Halls',
+    'farmhouses': 'Farmhouses',
+    'farmhouse': 'Farmhouses',
+    'corporate': 'Corporate Spaces',
+    'corporate-hubs': 'Corporate Spaces',
+    'community-halls': 'Community Halls',
+    'community_hall': 'Community Halls',
+  };
+
   // Synchronize state value writes to LocalStorage to retain cross-role testing inputs
   useEffect(() => {
     localStorage.setItem('groundkart_active_role', activeRole);
   }, [activeRole]);
 
+  // Synchronize URL path to state views
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/' || path === '') {
+      setCurrentView('home');
+      setActiveRole('client');
+    } else if (path === '/search') {
+      setCurrentView('search');
+      setActiveRole('client');
+      const params = new URLSearchParams(location.search);
+      const cat = params.get('category');
+      const city = params.get('city');
+      const q = params.get('q');
+      const date = params.get('available_on');
+      if (cat) {
+        setCategoryInput(cat);
+        setSearchParams(prev => ({ ...prev, category: DISPLAY_TO_BACKEND_CATEGORY[cat] || cat }));
+      }
+      if (city) {
+        setLocationInput(city);
+        setSearchParams(prev => ({ ...prev, city }));
+      }
+      if (date) {
+        setDateInput(date);
+        setSearchParams(prev => ({ ...prev, available_on: date }));
+      }
+      if (q) {
+        setSearchQuery(q);
+      }
+    } else if (path.startsWith('/categories/')) {
+      const catSlug = path.replace('/categories/', '');
+      const displayCat = SLUG_TO_DISPLAY_CATEGORY[catSlug] || catSlug;
+      setCategoryInput(displayCat);
+      setCurrentView('search');
+      setActiveRole('client');
+      setSearchParams({ category: DISPLAY_TO_BACKEND_CATEGORY[displayCat] || DISPLAY_TO_BACKEND_CATEGORY[catSlug] || catSlug });
+    } else if (path.startsWith('/venues/')) {
+      const slugOrId = path.replace('/venues/', '');
+      setSelectedVenueId(slugOrId);
+      setSelectedSlotId(null);
+      setCurrentView('detail');
+      setActiveRole('client');
+    } else if (path === '/checkout') {
+      if (!selectedSlotId) {
+        navigate('/search', { replace: true });
+        return;
+      }
+      setCurrentView('checkout');
+      setActiveRole('client');
+    } else if (path === '/my-bookings') {
+      setCurrentView('my-bookings');
+      setActiveRole('client');
+    } else if (path === '/support') {
+      setCurrentView('support');
+      setActiveRole('client');
+    } else if (path === '/about') {
+      setCurrentView('about');
+      setActiveRole('client');
+    } else if (path === '/contact') {
+      setCurrentView('contact');
+      setActiveRole('client');
+    } else if (path === '/privacy') {
+      setCurrentView('privacy');
+      setActiveRole('client');
+    } else if (path === '/terms') {
+      setCurrentView('terms');
+      setActiveRole('client');
+    } else if (path === '/owner') {
+      setActiveRole('owner');
+    } else if (path === '/admin') {
+      setActiveRole('admin');
+    } else {
+      setCurrentView('404');
+      setActiveRole('client');
+    }
+  }, [location.pathname, location.search, selectedSlotId, navigate]);
+
+  const { scrollTo: smoothScrollTo } = useSmoothScroll();
+
   // Scroll to top on view changes to mirror SPA transitions
   useEffect(() => {
+    smoothScrollTo(0, { immediate: true });
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [currentView, selectedVenueId, activeRole]);
+  }, [currentView, selectedVenueId, activeRole, smoothScrollTo]);
 
   // Opens the auth modal and remembers what to do once login/signup
   // actually succeeds — so "log in" doesn't strand the person back at a
@@ -250,28 +403,14 @@ export default function App() {
     );
   };
 
-  // Switch category categories and query from hero
-  // Reverse of the backend->display mapping in src/lib/adapters.ts —
-  // needed here to turn a chosen display category back into the value
-  // the real search endpoint actually filters on.
-  const DISPLAY_TO_BACKEND_CATEGORY: Record<string, string> = {
-    'Turfs': 'sports',
-    'Courts': 'sports',
-    'Pools': 'sports',
-    'Banquet Halls': 'banquet_hall',
-    'Farmhouses': 'farmhouse',
-    'Corporate Hubs': 'corporate',
-    'Community Halls': 'community_hall',
-  };
-
   const handleSearchSubmit = () => {
     setIsLoading(true);
-    setCurrentView('search');
-    setSearchParams({
-      city: locationInput || undefined,
-      category: categoryInput ? DISPLAY_TO_BACKEND_CATEGORY[categoryInput] : undefined,
-      available_on: dateInput || undefined,
-    });
+    const params = new URLSearchParams();
+    if (locationInput) params.set('city', locationInput);
+    if (categoryInput) params.set('category', categoryInput);
+    if (dateInput) params.set('available_on', dateInput);
+    const qStr = params.toString();
+    navigate(qStr ? `/search?${qStr}` : '/search');
     setTimeout(() => {
       setIsLoading(false);
     }, 650);
@@ -294,8 +433,7 @@ export default function App() {
       lockerRooms: false
     });
 
-    setCurrentView('search');
-    setSearchParams({ category: DISPLAY_TO_BACKEND_CATEGORY[categoryName] });
+    navigate(`/search?category=${encodeURIComponent(categoryName)}`);
     setTimeout(() => {
       setIsLoading(false);
     }, 500);
@@ -306,7 +444,7 @@ export default function App() {
     setSelectedSlot(slot);
     setBookingDate(date);
     setSelectedSlotId(slotId);
-    setCurrentView('checkout');
+    navigate('/checkout');
   };
 
   // Handle sidebar toggling
@@ -395,18 +533,24 @@ export default function App() {
   // fetched directly by id rather than found within the (possibly
   // stale, possibly not-yet-loaded) search results list, so a direct
   // venue link always resolves correctly.
-  const { venue: activeVenueFromApi } = useVenue(currentView === 'detail' || currentView === 'checkout' ? selectedVenueId : undefined);
-  const { slots: activeVenueSlots } = useVenueSlots(currentView === 'detail' ? selectedVenueId : undefined);
-  const activeVenueObj = activeVenueFromApi || realVenues.find((v) => v.id === selectedVenueId) || realVenues[0] || mockVenues[0];
+  const {
+    venue: activeVenueFromApi,
+    isLoading: isVenueLoading,
+    notFound: isVenueNotFound,
+    isError: isVenueError,
+    refetch: refetchVenue,
+  } = useVenue((currentView === 'detail' || currentView === 'checkout') && selectedVenueId ? selectedVenueId : undefined);
+  const { slots: activeVenueSlots } = useVenueSlots(currentView === 'detail' && selectedVenueId ? selectedVenueId : undefined);
+  const activeVenueObj = activeVenueFromApi ?? realVenues.find((v) => v.id === selectedVenueId || v.slug === selectedVenueId);
 
-  // Admin featured banner configuration or default to grand turf
+  // Admin featured banner configuration or default to first real venue if available
   const featuredVenueObj = useMemo(() => {
     if (homepageData?.featured?.[0]) {
       const p = homepageData.featured[0];
       const v = realVenues.find(v => v.id === p.id);
       if (v) return { ...v, _badge: p.badge, _custom_title: p.custom_title, _custom_desc: p.custom_description };
     }
-    return realVenues[0] || mockVenues[0];
+    return realVenues[0];
   }, [realVenues, homepageData]);
 
   // State-aware trending list feed
@@ -429,23 +573,30 @@ export default function App() {
           currentView={currentView}
           onNavigate={(view) => {
             setActiveRole('client');
-            if (view === 'search') {
-              setIsLoading(true);
-              setTimeout(() => setIsLoading(false), 500);
-            }
-            setCurrentView(view);
-    if (view !== 'support') setSupportContext(null);
+            if (view === 'home') navigate('/');
+            else if (view === 'search') navigate('/search');
+            else if (view === 'checkout') navigate('/checkout');
+            else if (view === 'my-bookings') navigate('/my-bookings');
+            else if (view === 'support') navigate('/support');
+            else if (view === 'about') navigate('/about');
+            else if (view === 'contact') navigate('/contact');
+            else if (view === 'privacy') navigate('/privacy');
+            else if (view === 'terms') navigate('/terms');
+            if (view !== 'support') setSupportContext(null);
           }}
           searchQuery={searchQuery}
           onSearchChange={(val) => {
             setSearchQuery(val);
             setActiveRole('client');
             if (currentView !== 'search') {
-              setCurrentView('search');
+              navigate('/search');
             }
           }}
           onListVenue={() => {
-            requireAuth(() => setActiveRole(user?.role === 'admin' ? 'admin' : 'owner'));
+            requireAuth(() => {
+              if (user?.role === 'admin') navigate('/admin');
+              else navigate('/owner');
+            });
           }}
           onRequestAuth={() => setAuthModalMode('login')}
         />
@@ -476,15 +627,27 @@ export default function App() {
         
         {/* ================= ROLE CONDITIONAL ROUTER ================= */}
         {activeRole === 'owner' ? (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+          <div className="w-full flex-grow flex flex-col">
+            <SEOHead
+              title={`Owner Portal — ${SITE_NAME}`}
+              description={`Manage your sports turfs, banquet halls, and venue listings on ${SITE_NAME}.`}
+              canonicalUrl={absUrl('/owner')}
+              noindex={true}
+            />
             <React.Suspense fallback={<DashboardSkeleton />}>
-              <OwnerLayout onReturnToSite={() => setActiveRole('client')} />
+              <OwnerLayout onReturnToSite={() => { setActiveRole('client'); navigate('/'); }} />
             </React.Suspense>
           </div>
         ) : activeRole === 'admin' ? (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+          <div className="w-full flex-grow flex flex-col">
+            <SEOHead
+              title={`Admin Dashboard — ${SITE_NAME}`}
+              description={`${SITE_NAME} administrative management and approval portal.`}
+              canonicalUrl={absUrl('/admin')}
+              noindex={true}
+            />
             <React.Suspense fallback={<DashboardSkeleton />}>
-              <AdminLayout onReturnToSite={() => setActiveRole('client')} />
+              <AdminLayout onReturnToSite={() => { setActiveRole('client'); navigate('/'); }} />
             </React.Suspense>
           </div>
         ) : (
@@ -492,6 +655,12 @@ export default function App() {
             {/* ================= VIEW 1: HOME PAGE ================= */}
             {currentView === 'home' && (
               <div className="flex-grow pb-16">
+                <SEOHead
+                  title={`${SITE_NAME} — Book Sports Turfs, Courts, Banquet Halls & Spaces in India`}
+                  description="Discover and book physically verified sports turfs, badminton courts, wedding banquet halls, farmhouses, and corporate conference venues across India with instant confirmation."
+                  canonicalUrl={absUrl('/')}
+                  jsonLd={[generateWebsiteSchema(), generateOrganizationSchema()]}
+                />
                 
                 {/* Ambient Hero with Floating Widget */}
                 <Hero
@@ -505,16 +674,10 @@ export default function App() {
                 />
 
                 {/* Main Home Page Body */}
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 sm:mt-24 space-y-16">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 sm:mt-20 space-y-16">
                   
-                  {/* Divider lines */}
-                  <div className="boundary-line-double">
-                    <div className="top" />
-                    <div className="bottom" />
-                  </div>
-
                   {/* Title Header Section */}
-                  <section>
+                  <section id="trending-section">
                     <ScrollReveal>
                     <div className="flex justify-between items-end mb-8 relative">
                       <div className="relative z-10">
@@ -531,7 +694,7 @@ export default function App() {
                         whileTap={{ scale: 0.97 }}
                         onClick={() => {
                           setCategoryInput('');
-                          setCurrentView('search');
+                          navigate('/search');
                         }}
                         className="hidden md:flex items-center gap-1.5 font-sans text-sm font-bold text-pitch hover:text-marigold group cursor-pointer transition-colors px-4 py-2 rounded-full hover:bg-pitch/5 ease-out"
                       >
@@ -558,54 +721,57 @@ export default function App() {
                     </div>
 
                     {/* Dynamic Hero featured grid */}
-                    <ScrollReveal delay={0.1}>
-                    <div 
-                      onClick={() => {
-                        setSelectedVenueId(featuredVenueObj.id);
-                        setCurrentView('detail');
-                      }}
-                      className="relative bg-[#143828] rounded-3xl overflow-hidden tracking-tight shadow-2xl shadow-pitch/10 border border-white/10 group cursor-pointer mb-10 animate-fade-in hover:-translate-y-1 transition duration-200 ease-out"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-br from-chalk/10 to-transparent pointer-events-none"></div>
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
-                        <div className="md:col-span-7 relative aspect-[16/9] md:aspect-auto md:h-[400px] overflow-hidden">
-                          <img
-                            src={featuredVenueObj.image}
-                            alt={featuredVenueObj.name}
-                            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700 ease-out"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#143828] via-transparent to-transparent opacity-90"></div>
-                          <span className="absolute top-4 left-4 bg-marigold text-pitch text-xs uppercase font-bold tracking-widest px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
-                            <Sparkles size={14} /> FEATURED ARENA
-                          </span>
-                        </div>
-                        <div className="md:col-span-5 flex flex-col justify-between p-6 sm:p-8 relative z-10 text-chalk">
-                          <div>
-                            <div className="flex justify-between items-center mb-3">
-                              <span className="text-xs uppercase font-sans tracking-widest font-bold text-marigold truncate max-w-[200px]">{featuredVenueObj.district}</span>
-                              <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full text-marigold text-xs font-bold font-sans backdrop-blur-sm">
-                                <span className="flex items-center gap-1"><Star size={12} className="fill-marigold text-marigold" /> {featuredVenueObj.rating}</span>
+                    {featuredVenueObj && (
+                      <ScrollReveal delay={0.1}>
+                        <div 
+                          onClick={() => {
+                            const target = featuredVenueObj.slug || featuredVenueObj.id;
+                            setSelectedVenueId(target);
+                            navigate(`/venues/${target}`);
+                          }}
+                          className="relative bg-[#143828] rounded-3xl overflow-hidden tracking-tight shadow-2xl shadow-pitch/10 border border-white/10 group cursor-pointer mb-10 animate-fade-in hover:-translate-y-1 transition duration-200 ease-out"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-br from-chalk/10 to-transparent pointer-events-none"></div>
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
+                            <div className="md:col-span-7 relative aspect-[16/9] md:aspect-auto md:h-[400px] overflow-hidden">
+                              <img
+                                src={featuredVenueObj.image}
+                                alt={featuredVenueObj.name}
+                                className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-700 ease-out"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#143828] via-transparent to-transparent opacity-90"></div>
+                              <span className="absolute top-4 left-4 bg-marigold text-pitch text-xs uppercase font-bold tracking-widest px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                                <Sparkles size={14} /> FEATURED ARENA
+                              </span>
+                            </div>
+                            <div className="md:col-span-5 flex flex-col justify-between p-6 sm:p-8 relative z-10 text-chalk">
+                              <div>
+                                <div className="flex justify-between items-center mb-3">
+                                  <span className="text-xs uppercase font-sans tracking-widest font-bold text-marigold truncate max-w-[200px]">{featuredVenueObj.district}</span>
+                                  <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full text-marigold text-xs font-bold font-sans backdrop-blur-sm">
+                                    <span className="flex items-center gap-1"><Star size={12} className="fill-marigold text-marigold" /> {featuredVenueObj.rating}</span>
+                                  </div>
+                                </div>
+                                <h3 className="font-display text-3xl sm:text-4xl text-chalk font-bold mb-3 drop-shadow-md">{featuredVenueObj.name}</h3>
+                                <p className="font-sans text-sm text-chalk/80 leading-relaxed mb-6 truncate text-wrap line-clamp-4 font-light">
+                                  {featuredVenueObj.description}
+                                </p>
+                              </div>
+                              <div className="pt-5 border-t border-white/10 flex justify-between items-end">
+                                <div>
+                                  <span className="font-sans text-[10px] text-chalk/60 uppercase font-semibold tracking-wider">Starting at</span>
+                                  <p className="font-sans text-2xl text-marigold font-bold mt-0.5">₹{featuredVenueObj.basePrice}<span className="text-sm text-chalk/60 font-normal">/hr</span></p>
+                                </div>
+                                <span className="bg-gradient-to-r from-marigold to-amber-500 text-pitch text-sm font-bold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-shadow ease-out">
+                                  View Details
+                                </span>
                               </div>
                             </div>
-                            <h3 className="font-display text-3xl sm:text-4xl text-chalk font-bold mb-3 drop-shadow-md">{featuredVenueObj.name}</h3>
-                            <p className="font-sans text-sm text-chalk/80 leading-relaxed mb-6 truncate text-wrap line-clamp-4 font-light">
-                              {featuredVenueObj.description}
-                            </p>
-                          </div>
-                          <div className="pt-5 border-t border-white/10 flex justify-between items-end">
-                            <div>
-                              <span className="font-sans text-[10px] text-chalk/60 uppercase font-semibold tracking-wider">Starting at</span>
-                              <p className="font-sans text-2xl text-marigold font-bold mt-0.5">₹{featuredVenueObj.basePrice}<span className="text-sm text-chalk/60 font-normal">/hr</span></p>
-                            </div>
-                            <span className="bg-gradient-to-r from-marigold to-amber-500 text-pitch text-sm font-bold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-shadow ease-out">
-                              View Details
-                            </span>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                    </ScrollReveal>
+                      </ScrollReveal>
+                    )}
 
                     {/* Sub grid list for home trending items */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -614,8 +780,9 @@ export default function App() {
                           <VenueCard
                             venue={venue}
                             onClick={(id) => {
-                              setSelectedVenueId(id);
-                              setCurrentView('detail');
+                              const target = venue.slug || id;
+                              setSelectedVenueId(target);
+                              navigate(`/venues/${target}`);
                             }}
                             onToggleFavorite={handleToggleFavorite}
                             isFavorite={favorites.includes(venue.id)}
@@ -665,7 +832,7 @@ export default function App() {
                           whileTap={{ scale: 0.97 }}
                           onClick={() => {
                             setCategoryInput('');
-                            setCurrentView('search');
+                            navigate('/search');
                           }}
                           className="bg-chalk border-2 border-pitch/10 text-pitch hover:bg-pitch hover:border-pitch hover:text-chalk px-6 py-3 rounded-full font-sans text-sm font-bold transition duration-200 self-start cursor-pointer shadow-sm hover:shadow-md flex items-center gap-2 mt-2 ease-out"
                         >
@@ -804,15 +971,18 @@ export default function App() {
                         <button
                           onClick={() => {
                             setCategoryInput('');
-                            setCurrentView('search');
+                            navigate('/search');
                           }}
-                          className="bg-marigold hover:bg-amber-500 text-pitch font-sans text-base font-bold px-8 py-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+                          className="bg-marigold hover:bg-amber-500 text-pitch font-sans text-base font-bold px-8 py-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
                         >
                           Explore Grounds
                         </button>
                         <button
-                          onClick={() => requireAuth(() => setActiveRole(user?.role === 'admin' ? 'admin' : 'owner'))}
-                          className="bg-transparent border border-chalk/30 hover:bg-chalk/10 text-chalk font-sans text-base font-bold px-8 py-4 rounded-full transition-colors"
+                          onClick={() => requireAuth(() => {
+                            if (user?.role === 'admin') navigate('/admin');
+                            else navigate('/owner');
+                          })}
+                          className="bg-transparent border border-chalk/30 hover:bg-chalk/10 text-chalk font-sans text-base font-bold px-8 py-4 rounded-full transition-colors cursor-pointer"
                         >
                           List Your Venue
                         </button>
@@ -827,6 +997,23 @@ export default function App() {
             {/* ================= VIEW 2: SEARCH & Advanced FILTER CONTEXT ================= */}
             {currentView === 'search' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-8 py-8 w-full">
+                <SEOHead
+                  title={categoryInput ? `${categoryInput} in Metropolis | ${SITE_NAME}` : `Explore Verified Venues in Metropolis | ${SITE_NAME}`}
+                  description={categoryInput ? `Discover and book verified ${categoryInput} in Metropolis. View real-time availability, authentic photos, amenities, and transparent hourly rates.` : 'Browse verified sports grounds, banquet halls, farmhouses, and corporate spaces in Metropolis with transparent pricing and real-time slot booking.'}
+                  canonicalUrl={categoryInput ? absUrl(`/search?category=${encodeURIComponent(categoryInput)}`) : absUrl('/search')}
+                  jsonLd={[
+                    generateCollectionPageSchema(
+                      categoryInput ? `${categoryInput} in Metropolis` : 'Explore Venues in Metropolis',
+                      categoryInput ? `/search?category=${encodeURIComponent(categoryInput)}` : '/search',
+                      'Browse verified sports grounds, banquet halls, farmhouses, and corporate spaces.'
+                    ),
+                    generateBreadcrumbSchema([
+                      { name: 'Home', path: '/' },
+                      { name: 'Venues', path: '/search' },
+                      ...(categoryInput ? [{ name: categoryInput, path: `/search?category=${encodeURIComponent(categoryInput)}` }] : []),
+                    ]),
+                  ]}
+                />
                 
                 {/* Sidebar filtering */}
                 <FiltersSidebar
@@ -904,8 +1091,9 @@ export default function App() {
                           key={venue.id}
                           venue={venue}
                           onClick={(id) => {
-                            setSelectedVenueId(id);
-                            setCurrentView('detail');
+                            const target = venue.slug || id;
+                            setSelectedVenueId(target);
+                            navigate(`/venues/${target}`);
                           }}
                           onToggleFavorite={handleToggleFavorite}
                           isFavorite={favorites.includes(venue.id)}
@@ -938,56 +1126,86 @@ export default function App() {
             {/* ================= VIEW 3: VENUE DETAIL specifications page ================= */}
             {currentView === 'detail' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
-                <React.Suspense fallback={<DetailSkeleton />}>
-                  <DetailView
-                    venue={activeVenueObj}
-                    slots={activeVenueSlots}
-                    onBack={() => setCurrentView('search')}
-                    onSupport={(id) => { setSupportContext({ type: 'venue', id }); setCurrentView('support'); }}
-                    onInitiateBooking={handleInitiateBooking}
-                    onRequestAuth={() => setAuthModalMode('login')}
-                    waitingBooking={realBookings?.find(b => b.venueId === activeVenueObj.id && b.status === 'pending_payment')}
-                    onGoToBookings={() => setCurrentView('my-bookings')}
-                  />
-                </React.Suspense>
+                {isVenueLoading ? (
+                  <DetailSkeleton />
+                ) : isVenueNotFound ? (
+                  <NotFound />
+                ) : isVenueError ? (
+                  <VenueErrorState onRetry={() => refetchVenue()} />
+                ) : !activeVenueObj ? (
+                  <NotFound />
+                ) : (
+                  <React.Suspense fallback={<DetailSkeleton />}>
+                    <DetailView
+                      venue={activeVenueObj}
+                      slots={activeVenueSlots}
+                      onBack={() => navigate('/search')}
+                      onSupport={(id) => { setSupportContext({ type: 'venue', id }); navigate('/support'); }}
+                      onInitiateBooking={handleInitiateBooking}
+                      onRequestAuth={() => setAuthModalMode('login')}
+                      waitingBooking={realBookings?.find(b => b.venueId === activeVenueObj.id && b.status === 'pending_payment')}
+                      onGoToBookings={() => navigate('/my-bookings')}
+                    />
+                  </React.Suspense>
+                )}
               </div>
             )}
 
             {/* ================= VIEW 4: checkout payment details ================= */}
             {currentView === 'checkout' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full flex-grow">
-                <React.Suspense fallback={<CheckoutSkeleton />}>
-                  <ReviewPay
-                    venue={activeVenueObj}
-                    selectedSlot={selectedSlot}
-                    selectedSlotId={selectedSlotId}
-                    selectedDate={bookingDate}
-                    currentUser={user}
-                    onNavigateHome={() => {
-                      setCurrentView('home');
-                    }}
-                    onSubmitBooking={async (guestName?: string, guestEmail?: string, guestPhone?: string) => {
-                      if (!selectedSlotId) throw new Error('No slot selected');
-                      const result = await createBookingMutation.mutateAsync(
-                        user
-                          ? { inventory_unit_id: selectedSlotId }
-                          : { inventory_unit_id: selectedSlotId, guest_name: guestName, guest_email: guestEmail, guest_phone: guestPhone },
-                      );
-                      return result;
-                    }}
-                  />
-                </React.Suspense>
+                <SEOHead
+                  title={`Review & Confirm Booking — ${SITE_NAME}`}
+                  description={`Review your venue slot reservation and secure your booking with ${SITE_NAME}.`}
+                  canonicalUrl={absUrl('/checkout')}
+                  noindex={true}
+                />
+                {isVenueLoading ? (
+                  <CheckoutSkeleton />
+                ) : isVenueNotFound ? (
+                  <NotFound />
+                ) : isVenueError ? (
+                  <VenueErrorState onRetry={() => refetchVenue()} />
+                ) : !activeVenueObj ? (
+                  <NotFound />
+                ) : (
+                  <React.Suspense fallback={<CheckoutSkeleton />}>
+                    <ReviewPay
+                      venue={activeVenueObj}
+                      selectedSlot={selectedSlot}
+                      selectedSlotId={selectedSlotId}
+                      selectedDate={bookingDate}
+                      currentUser={user}
+                      onNavigateHome={() => navigate('/')}
+                      onSubmitBooking={async (guestName?: string, guestEmail?: string, guestPhone?: string) => {
+                        if (!selectedSlotId) throw new Error('No slot selected');
+                        const result = await createBookingMutation.mutateAsync(
+                          user
+                            ? { inventory_unit_id: selectedSlotId }
+                            : { inventory_unit_id: selectedSlotId, guest_name: guestName, guest_email: guestEmail, guest_phone: guestPhone },
+                        );
+                        return result;
+                      }}
+                    />
+                  </React.Suspense>
+                )}
               </div>
             )}
 
             {/* ================= VIEW 5: client my bookings/reservations ================= */}
             {currentView === 'my-bookings' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+                <SEOHead
+                  title={`My Bookings — ${SITE_NAME}`}
+                  description={`Manage and track your venue reservations and tickets on ${SITE_NAME}.`}
+                  canonicalUrl={absUrl('/my-bookings')}
+                  noindex={true}
+                />
                 <React.Suspense fallback={<MyBookingsSkeleton />}>
                   <MyBookings
                     bookings={realBookings}
                     venues={realVenues}
-                    onSupport={(id) => { setSupportContext({ type: 'booking', id }); setCurrentView('support'); }}
+                    onSupport={(id) => { setSupportContext({ type: 'booking', id }); navigate('/support'); }}
                     onCancelBooking={(id) => {
 
                       cancelBookingMutation.mutate(
@@ -995,20 +1213,47 @@ export default function App() {
                         {
                           onSuccess: (res) => {
                             const pct = res.refund_tier === 'full_refund' ? '100%' : res.refund_tier === 'partial_refund' ? '50%' : '0%';
-                            alert(`Booking cancelled. Refund: ${pct} (₹${res.refund_amount})`);
+                            toast.success(`Booking cancelled. Refund: ${pct} (₹${res.refund_amount})`);
                           },
-                          onError: () => alert('Could not cancel this booking. Please try again.'),
+                          onError: (err: any) => {
+                            const msg = err instanceof ApiError ? err.detail : err?.message || 'Could not cancel this booking. Please try again.';
+                            toast.error(msg);
+                          },
                         },
                       );
                     }}
                     onBookAgain={(venueId) => {
-                      setSelectedVenueId(venueId);
-                      setCurrentView('detail');
+                      const v = realVenues.find(rv => rv.id === venueId);
+                      const target = v?.slug || venueId;
+                      setSelectedVenueId(target);
+                      navigate(`/venues/${target}`);
                     }}
                   />
                 </React.Suspense>
               </div>
             )}
+
+            {currentView === 'support' && (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+                <SEOHead
+                  title={`Customer Support & Tickets — ${SITE_NAME}`}
+                  description={`Submit and track support inquiries for venue reservations on ${SITE_NAME}.`}
+                  canonicalUrl={absUrl('/support')}
+                  noindex={true}
+                />
+                <React.Suspense fallback={<DashboardSkeleton />}>
+                  <SupportTickets defaultContext={supportContext} />
+                </React.Suspense>
+              </div>
+            )}
+
+            {/* ================= VIEW 6: STATIC INFORMATIONAL & LEGAL PAGES ================= */}
+            {currentView === 'about' && <About />}
+            {currentView === 'contact' && <Contact />}
+            {currentView === 'privacy' && <PrivacyPolicy />}
+            {currentView === 'terms' && <TermsOfService />}
+            {currentView === '404' && <NotFound />}
+
           </>
         )}
 
@@ -1035,7 +1280,9 @@ export default function App() {
             
             {/* Brand column */}
             <div className="lg:col-span-4 space-y-4">
-              <img src="/logo-full.png" alt="GroundKart" className="h-16 md:h-20 w-auto object-contain " />
+              <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }} className="inline-block cursor-pointer">
+                <img src="/logo-full.png" alt="GroundKart" className="h-16 md:h-20 w-auto object-contain" />
+              </a>
               <p className="font-sans text-sm text-chalk/60 leading-relaxed max-w-sm font-light">
                 Find. Explore. Own. The ultimate premium marketplace for booking venues and event spaces.
               </p>
@@ -1044,37 +1291,36 @@ export default function App() {
             <div className="lg:col-span-2 lg:col-start-6">
               <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Explore</h4>
               <ul className="space-y-3 font-sans text-sm text-chalk/60">
-                <li><button onClick={() => setCurrentView('search')} className="hover:text-marigold transition">Find Grounds</button></li>
-                <li><button className="hover:text-marigold transition">Sports</button></li>
-                <li><button className="hover:text-marigold transition">Cities</button></li>
-                <li><button className="hover:text-marigold transition">Popular Venues</button></li>
+                <li><a href="/search" onClick={(e) => { e.preventDefault(); navigate('/search'); }} className="hover:text-marigold transition">Find Grounds</a></li>
+                <li><a href="/categories/sports" onClick={(e) => { e.preventDefault(); navigate('/categories/sports'); }} className="hover:text-marigold transition">Sports Grounds</a></li>
+                <li><a href="/categories/banquet-halls" onClick={(e) => { e.preventDefault(); navigate('/categories/banquet-halls'); }} className="hover:text-marigold transition">Banquet Halls</a></li>
+                <li><a href="/categories/corporate" onClick={(e) => { e.preventDefault(); navigate('/categories/corporate'); }} className="hover:text-marigold transition">Corporate Spaces</a></li>
               </ul>
             </div>
             
             <div className="lg:col-span-2">
               <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">For Owners</h4>
               <ul className="space-y-3 font-sans text-sm text-chalk/60">
-                <li><button onClick={() => requireAuth(() => setActiveRole('owner'))} className="hover:text-marigold transition">List Your Venue</button></li>
-                <li><button className="hover:text-marigold transition">Owner Dashboard</button></li>
-                <li><button className="hover:text-marigold transition">Resources</button></li>
+                <li><button onClick={() => requireAuth(() => { if (user?.role === 'admin') navigate('/admin'); else navigate('/owner'); })} className="hover:text-marigold transition cursor-pointer text-left">List Your Venue</button></li>
+                <li><button onClick={() => requireAuth(() => { if (user?.role === 'admin') navigate('/admin'); else navigate('/owner'); })} className="hover:text-marigold transition cursor-pointer text-left">Owner Dashboard</button></li>
+                <li><a href="/contact" onClick={(e) => { e.preventDefault(); navigate('/contact'); }} className="hover:text-marigold transition">Owner Support</a></li>
               </ul>
             </div>
             
             <div className="lg:col-span-2">
               <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Company</h4>
               <ul className="space-y-3 font-sans text-sm text-chalk/60">
-                <li><button className="hover:text-marigold transition">About</button></li>
-                <li><button className="hover:text-marigold transition">Contact</button></li>
-                <li><button className="hover:text-marigold transition">Help</button></li>
+                <li><a href="/about" onClick={(e) => { e.preventDefault(); navigate('/about'); }} className="hover:text-marigold transition">About Us</a></li>
+                <li><a href="/contact" onClick={(e) => { e.preventDefault(); navigate('/contact'); }} className="hover:text-marigold transition">Contact</a></li>
+                <li><a href="/support" onClick={(e) => { e.preventDefault(); navigate('/support'); }} className="hover:text-marigold transition">Help &amp; Support</a></li>
               </ul>
             </div>
 
             <div className="lg:col-span-2">
               <h4 className="font-sans text-sm font-bold text-chalk mb-4 tracking-wider uppercase">Legal</h4>
               <ul className="space-y-3 font-sans text-sm text-chalk/60">
-                <li><button className="hover:text-marigold transition">Privacy</button></li>
-                <li><button className="hover:text-marigold transition">Terms</button></li>
-                <li><button className="hover:text-marigold transition">Cookies</button></li>
+                <li><a href="/privacy" onClick={(e) => { e.preventDefault(); navigate('/privacy'); }} className="hover:text-marigold transition">Privacy Policy</a></li>
+                <li><a href="/terms" onClick={(e) => { e.preventDefault(); navigate('/terms'); }} className="hover:text-marigold transition">Terms of Service</a></li>
               </ul>
             </div>
           </div>
