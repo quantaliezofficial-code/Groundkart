@@ -1,5 +1,5 @@
 {
-  "name": "VenueSetu",
+  "name": "GroundKart",
   "description": "A high-performance marketplace for booking premium sports turfs, elegant banquet halls, and spectacular event venues.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
