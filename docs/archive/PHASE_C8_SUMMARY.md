@@ -1,6 +1,6 @@
 # Phase C, continued again — Owner Payout Ledger, and Two Structural Changes
 
-**Scope delivered:** the owner payout ledger (`HANDOFF.md` §7's next item after `PHASE_C7_SUMMARY.md` resolved customer-initiated cancellation), plus two changes made mid-slice by explicit client direction, unrelated to the payout feature itself but touching much of the same codebase: **Redis removed from the project entirely** (Postgres-only from here on), and **the project renamed from VenueSetu to GroundBooking**. All three are covered below, kept clearly separate since they're different kinds of change.
+**Scope delivered:** the owner payout ledger (`HANDOFF.md` §7's next item after `PHASE_C7_SUMMARY.md` resolved customer-initiated cancellation), plus two changes made mid-slice by explicit client direction, unrelated to the payout feature itself but touching much of the same codebase: **Redis removed from the project entirely** (Postgres-only from here on), and **the project renamed from VenueSetu to GroundKart**. All three are covered below, kept clearly separate since they're different kinds of change.
 
 Same infrastructure caveat as every prior summary: Postgres is this sandbox session's, reinstalled from scratch, restarted several more times while building this slice. One thing *is* different this time, on purpose: Redis is no longer part of this project's infrastructure at all, so it's no longer installed, started, or checked — see §2.
 
@@ -11,7 +11,7 @@ Same infrastructure caveat as every prior summary: Postgres is this sandbox sess
 Two changes in this revision are not features — they're structural, and everything else in this doc sits on top of them:
 
 1. **Redis is gone.** It was used for exactly one thing (login rate limiting). That's now Postgres-backed. No other part of this backend ever depended on Redis.
-2. **The project is now GroundBooking, not VenueSetu.** Databases, connection strings, the FastAPI app title, and this backend's own README are all updated. The nine original planning docs, `CLAUDE.md`, `MASTER_PROMPT.md`, and `PHASE_A_SUMMARY.md` through `PHASE_C7_SUMMARY.md` are **not** rewritten — they're historical records of what was true when each was written, the same treatment already given to the original docs throughout this project. `PHASE_C7_SUMMARY.md` still says "VenueSetu" in one place; that's correct, not a leftover.
+2. **The project is now GroundKart, not VenueSetu.** Databases, connection strings, the FastAPI app title, and this backend's own README are all updated. The nine original planning docs, `CLAUDE.md`, `MASTER_PROMPT.md`, and `PHASE_A_SUMMARY.md` through `PHASE_C7_SUMMARY.md` are **not** rewritten — they're historical records of what was true when each was written, the same treatment already given to the original docs throughout this project. `PHASE_C7_SUMMARY.md` still says "VenueSetu" in one place; that's correct, not a leftover.
 
 Noting both once, clearly, rather than letting either pass as an invisible substitution — the same standard `PHASE_C6_SUMMARY.md` §0 set for the payment-model change.
 
@@ -75,11 +75,11 @@ Same fixed-window semantics as the Redis version, same threshold, same observabl
 
 ---
 
-## 3. Renamed: VenueSetu → GroundBooking
+## 3. Renamed: VenueSetu → GroundKart
 
 Scoped to what's actually live and reads as "the current state of the project," not a wholesale rewrite of history:
 
-**Changed:** both Postgres databases (`groundbooking`/`groundbooking_test`, role renamed to match), `app/config.py`'s default `DATABASE_URL`, `.env`/`.env.example`, `tests/conftest.py`'s hardcoded test database URL, the FastAPI app title (`"GroundBooking API"`, visible in the OpenAPI docs), the default local-storage upload path (`/tmp/groundbooking-uploads`), and this backend's own `README.md` throughout.
+**Changed:** both Postgres databases (`groundkart`/`groundkart_test`, role renamed to match), `app/config.py`'s default `DATABASE_URL`, `.env`/`.env.example`, `tests/conftest.py`'s hardcoded test database URL, the FastAPI app title (`"GroundKart API"`, visible in the OpenAPI docs), the default local-storage upload path (`/tmp/groundkart-uploads`), and this backend's own `README.md` throughout.
 
 **Deliberately not changed:** the nine original planning docs (`01_PRD.md` through `09_UI_Design.md`), `CLAUDE.md`, `MASTER_PROMPT.md` — historical reference documents from before this session, not live artifacts this backend reads at runtime, the same boundary this whole project has already drawn around them. `PHASE_A_SUMMARY.md` through `PHASE_C7_SUMMARY.md` — already-delivered records of what was true at each point in time; rewriting them would misrepresent history, not correct it. The frontend (`venuesetu-phase-a.zip`) — untouched, out of scope for a backend-only slice; its own folder/package naming would need the identical rename whenever frontend work next resumes, flagged here so that's not a surprise then.
 

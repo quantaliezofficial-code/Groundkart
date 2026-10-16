@@ -1,6 +1,6 @@
 # Phase D — Frontend Wired to the Real Backend
 
-**Scope delivered:** the customer-facing journey (auth, browse, venue detail with real availability, booking creation, My Bookings, cancellation) wired end-to-end to the real GroundBooking backend, using the UI/UX/component structure you provided as the base. Three small-but-necessary backend gaps found and fixed along the way. Owner/Admin dashboards deliberately left unwired — see below.
+**Scope delivered:** the customer-facing journey (auth, browse, venue detail with real availability, booking creation, My Bookings, cancellation) wired end-to-end to the real GroundKart backend, using the UI/UX/component structure you provided as the base. Three small-but-necessary backend gaps found and fixed along the way. Owner/Admin dashboards deliberately left unwired — see below.
 
 ---
 
@@ -28,7 +28,7 @@ Backend: **161 tests** now (159 + these), 2 clean full-suite runs.
 
 ## 3. What changed in each component
 
-- **Header** — real login/logout state, brand fixed to GroundBooking.
+- **Header** — real login/logout state, brand fixed to GroundKart.
 - **AuthModal** (new) — real signup/login.
 - **DetailView** — real slot picker (available/held/booked), replacing a hardcoded 6-slot example; handles both hourly and half/full-day unit types.
 - **ReviewPay** — substantially rewritten: real pricing (no fake 5% service fee / 18% tax that never existed on the backend), guest name/email as real inputs (not hardcoded defaults) when not logged in, real submission with real loading/error states, and a success screen that says what actually happens next (slot held, payment confirmed by the team afterward) instead of claiming instant Razorpay success or showing the old "Pending Owner Approval" text — both explicitly flagged as stale in `HANDOFF.md` §3.

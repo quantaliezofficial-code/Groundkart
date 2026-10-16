@@ -10,7 +10,7 @@ If a `docs/` folder is present alongside this repo (`CLAUDE.md`, `01_PRD.md` thr
 
 ## Your mission
 
-Wire `src/components/AdminLayout.tsx` (frontend) to the real GroundBooking backend, exactly the way `OwnerLayout.tsx` was wired in the previous session — replace 100% of its mock/localStorage data with real API calls. Every backend route this needs already exists and is tested; `handoff.md`'s **Current State** section lists them all with exact paths. This is frontend-and-verification work, not backend design work, unless you discover a genuine gap the same way the previous session found three (see `handoff.md` if you want that precedent).
+Wire `src/components/AdminLayout.tsx` (frontend) to the real GroundKart backend, exactly the way `OwnerLayout.tsx` was wired in the previous session — replace 100% of its mock/localStorage data with real API calls. Every backend route this needs already exists and is tested; `handoff.md`'s **Current State** section lists them all with exact paths. This is frontend-and-verification work, not backend design work, unless you discover a genuine gap the same way the previous session found three (see `handoff.md` if you want that precedent).
 
 ## Before you start
 

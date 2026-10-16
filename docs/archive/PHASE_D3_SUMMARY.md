@@ -2,7 +2,7 @@
 
 **Scope delivered:** the Admin dashboard (audit log, platform overview,
 venue/user suspend-reactivate, the owner-verification/venue approval
-queue) wired end-to-end to the real GroundBooking backend, then extended
+queue) wired end-to-end to the real GroundKart backend, then extended
 past that original scope to cover Bookings (offline payment confirmation,
 pending cancellation) and Payouts (run, mark-paid) — the two remaining
 documented admin routes with no UI at all, necessary before a real launch

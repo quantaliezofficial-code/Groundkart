@@ -33,8 +33,8 @@ Everything after that first commit is a real, honest slice-by-slice history.
 **Postgres was not pre-installed in this sandbox.** The previous handoff's
 "always run `service postgresql start`" assumption didn't hold — the
 service didn't exist at all. Had to `apt-get install postgresql
-postgresql-contrib`, then create the `groundbooking` role/password and both
-`groundbooking`/`groundbooking_test` databases, then run `alembic upgrade
+postgresql-contrib`, then create the `groundkart` role/password and both
+`groundkart`/`groundkart_test` databases, then run `alembic upgrade
 head` against both, before anything else would work. If your sandbox
 already has Postgres, skip this; if not, this is the exact sequence that
 worked. Don't assume the next environment has it installed either — check.
@@ -466,3 +466,6 @@ renders of similar data are expected to coexist.
 Backend: 210 → 223 tests across this addendum (6 sweep + 6 pagination + 1
 docstring-accuracy), stable across 2+ runs each. Frontend: 15 → 18 tests,
 tsc/build clean throughout.
+  
+SUPPORT TICKETS -- COMPLETED  
+exact test results: 27/27 backend support tests passed, 179 total backend tests passed 
