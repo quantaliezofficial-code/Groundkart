@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from app.db import get_db, get_idem_db
 from app.main import app
@@ -18,11 +19,16 @@ from app.models.core import InventoryUnit, User, Venue
 from app.modules.auth.security import create_access_token, hash_password
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
-            yield session
+            try:
+                yield session
+            finally:
+                if session.in_transaction():
+                    await session.rollback()
+                await session.close()
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_idem_db] = _override_get_db

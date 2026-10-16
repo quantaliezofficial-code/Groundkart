@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import SessionLocal, get_db
-from app.models.core import Notification, Review, Venue, User, PasswordResetRequest, OwnerVerification
+from app.models.core import Notification, Review, Venue, User, PasswordResetRequest, OwnerVerification, BookingActionRequest, AuditLog
 from app.modules.admin import service as admin_service
 from app.modules.auth import service as auth_service
 from app.modules.auth.dependencies import (
@@ -54,6 +54,9 @@ from app.schemas.admin import (
     DashboardOverview,
     SuspendRequest,
     AdminHealthResponse,
+    SystemSettingsResponse,
+    SystemSettingsUpdateRequest,
+    BookingActionProcessRequest,
 )
 from app.schemas.auth import (
     AccessTokenResponse, 
@@ -1008,6 +1011,17 @@ async def get_owner_verification_document_route(
     if not storage_key:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    db.add(
+        AuditLog(
+            actor_id=current_user.id,
+            action="owner_verification.document_viewed",
+            entity_type="owner_verification",
+            entity_id=verification_id,
+            extra_data={"presigned": presigned, "storage_key": storage_key},
+        )
+    )
+    await db.commit()
+
     if presigned and hasattr(storage, "get_presigned_url"):
         url = await storage.get_presigned_url(storage_key, expires_in=300)
         return {"url": url}
@@ -1167,10 +1181,7 @@ async def update_venue_route(
         viewer=current_user,
         changes=body.model_dump(exclude_unset=True),
     )
-    # Re-fetch with images/amenities loaded — update_venue's own query
-    # doesn't eager-load them, and VenueResponse.from_venue needs both.
-    refreshed = await catalog_service.get_venue(db, venue_id, current_user)
-    return VenueResponse.from_venue(refreshed)
+    return VenueResponse.from_venue(venue)
 
 
 @app.post("/api/v1/venues/{venue_id}/images", response_model=VenueResponse, status_code=201)
@@ -1183,7 +1194,7 @@ async def upload_venue_media_route(
     storage=Depends(get_file_storage),
 ) -> VenueResponse:
     content = await image.read()
-    await catalog_service.upload_venue_media(
+    venue = await catalog_service.upload_venue_media(
         session=db,
         venue_id=venue_id,
         viewer=current_user,
@@ -1192,8 +1203,7 @@ async def upload_venue_media_route(
         storage=storage,
         is_cover=is_cover,
     )
-    refreshed = await catalog_service.get_venue(db, venue_id, current_user)
-    return VenueResponse.from_venue(refreshed)
+    return VenueResponse.from_venue(venue)
 
 
 @app.post(
@@ -1279,9 +1289,8 @@ async def approve_venue_route(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> VenueResponse:
-    await catalog_service.approve_venue(db, venue_id, current_user.id)
-    refreshed = await catalog_service.get_venue(db, venue_id, current_user)
-    return VenueResponse.from_venue(refreshed)
+    venue = await catalog_service.approve_venue(db, venue_id, current_user.id)
+    return VenueResponse.from_venue(venue)
 
 
 @app.post("/api/v1/admin/venues/{venue_id}/reject", response_model=VenueResponse)
@@ -1291,9 +1300,8 @@ async def reject_venue_route(
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> VenueResponse:
-    await catalog_service.reject_venue(db, venue_id, current_user.id, body.reason)
-    refreshed = await catalog_service.get_venue(db, venue_id, current_user)
-    return VenueResponse.from_venue(refreshed)
+    venue = await catalog_service.reject_venue(db, venue_id, current_user.id, body.reason)
+    return VenueResponse.from_venue(venue)
 
 
 @app.get("/api/v1/admin/payouts", response_model=list[AdminPayoutView])
@@ -1417,6 +1425,94 @@ async def get_audit_log_route(
         date_from=datetime_from, date_to=datetime_to, limit=limit, offset=offset,
     )
     return [AuditLogEntry.model_validate(e) for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# Admin System Settings Management (Finding A2)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/settings", response_model=SystemSettingsResponse)
+async def get_system_settings_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> SystemSettingsResponse:
+    """Get active system-wide configuration values."""
+    from app.modules.core.config_service import get_system_config
+    config = await get_system_config(db)
+    return SystemSettingsResponse.model_validate(config)
+
+
+@app.patch("/api/v1/admin/settings", response_model=SystemSettingsResponse)
+async def update_system_settings_route(
+    body: SystemSettingsUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> SystemSettingsResponse:
+    """Update active system-wide configuration values with audit logging."""
+    from app.modules.core.config_service import update_system_config
+    updates = body.model_dump(exclude_unset=True)
+    config = await update_system_config(db, current_user.id, updates)
+    return SystemSettingsResponse.model_validate(config)
+
+
+# ---------------------------------------------------------------------------
+# Admin Booking Action Requests (Disputes, Cancellations, Overrides) (Finding A4)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/booking-actions", response_model=list[BookingActionRequestResponse])
+async def list_admin_booking_actions_route(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[BookingActionRequestResponse]:
+    """List customer/owner booking action requests (cancellations, disputes, reschedules)."""
+    stmt = select(BookingActionRequest).order_by(BookingActionRequest.requested_at.desc())
+    if status:
+        stmt = stmt.where(BookingActionRequest.status == status)
+    stmt = stmt.limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    requests = result.scalars().all()
+    return [BookingActionRequestResponse.model_validate(r) for r in requests]
+
+
+@app.get("/api/v1/admin/booking-actions/{action_id}")
+async def get_admin_booking_action_route(
+    action_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> dict:
+    """Get a single booking action request with its financial refund assessment."""
+    from app.modules.booking.refund_service import RefundAssessmentService
+    stmt = select(BookingActionRequest).where(BookingActionRequest.id == action_id)
+    result = await db.execute(stmt)
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Action request not found")
+    assessment = await RefundAssessmentService.assess_refund_for_action(db, action_id)
+    return {
+        "request": BookingActionRequestResponse.model_validate(req).model_dump(),
+        "assessment": assessment,
+    }
+
+
+@app.post("/api/v1/admin/booking-actions/{action_id}/process", response_model=BookingActionRequestResponse)
+async def process_admin_booking_action_route(
+    action_id: uuid.UUID,
+    body: BookingActionProcessRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> BookingActionRequestResponse:
+    """Approve or reject a booking action request with an optional decision reason."""
+    req = await booking_service.process_booking_action_request(
+        session=db,
+        action_request_id=action_id,
+        admin_id=current_user.id,
+        decision=body.decision,
+        decision_reason=body.decision_reason,
+    )
+    return BookingActionRequestResponse.model_validate(req)
 
 
 @app.get("/api/v1/admin/overview", response_model=PlatformOverview)
@@ -1643,6 +1739,16 @@ async def admin_delete_review_route(
     venue = venue_result.scalar_one_or_none()
     if venue:
         venue.avg_rating = round(Decimal(str(new_avg)), 2)
+
+    db.add(
+        AuditLog(
+            actor_id=current_user.id,
+            action="review.deleted",
+            entity_type="review",
+            entity_id=review_id,
+            extra_data={"venue_id": str(venue_id), "deleted_by_admin_id": str(current_user.id)},
+        )
+    )
 
     await db.commit()
 

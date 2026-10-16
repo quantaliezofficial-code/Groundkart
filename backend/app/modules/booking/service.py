@@ -40,6 +40,7 @@ Five things in here are worth reading the comments on, not just the code:
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import date as date_
@@ -48,12 +49,12 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.config import settings
-from app.models.core import Review, AuditLog, Booking, BookingEvent, InventoryUnit, Payment, Venue
+from app.models.core import Review, AuditLog, Booking, BookingActionRequest, BookingEvent, InventoryUnit, Payment, Venue
 from app.modules.core.outbox import create_outbox_event
 from app.modules.notifications.service import notify
 from app.modules.booking.domain import transition_booking_status
@@ -115,9 +116,40 @@ async def create_booking(
             status_code=422,
             detail="A logged-in booking cannot also include guest_name/guest_email",
         )
+    if guest_phone is not None:
+        clean_phone = re.sub(r"[\s\-\(\)]", "", guest_phone)
+        if clean_phone.startswith("+91"):
+            clean_phone = clean_phone[3:]
+        elif clean_phone.startswith("91") and len(clean_phone) == 12:
+            clean_phone = clean_phone[2:]
+        elif clean_phone.startswith("0") and len(clean_phone) == 11:
+            clean_phone = clean_phone[1:]
+        if not re.match(r"^[6-9]\d{9}$", clean_phone):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid phone number: must be a valid 10-digit Indian mobile number",
+            )
+        guest_phone = clean_phone
+
     async with session.begin():
         from app.modules.core.config_service import get_system_config
         config = await get_system_config(session)
+
+        # Check active unconfirmed holds limit (Finding B7: maximum 3 active reservation holds)
+        active_holds_query = select(func.count(Booking.id)).where(
+            Booking.status == "pending_payment"
+        )
+        if customer_id is not None:
+            active_holds_query = active_holds_query.where(Booking.customer_id == customer_id)
+        else:
+            active_holds_query = active_holds_query.where(Booking.guest_email == guest_email)
+        active_holds_count = (await session.execute(active_holds_query)).scalar_one()
+        if active_holds_count >= 3:
+            raise HTTPException(
+                status_code=429,
+                detail="Maximum 3 active reservation holds allowed. Please complete or release existing reservations before booking again.",
+            )
+
         hold_duration = timedelta(minutes=config.booking_hold_duration_minutes)
         result = await session.execute(
             select(InventoryUnit)
@@ -399,6 +431,9 @@ async def confirm_booking_by_admin(
                 detail=f"Amount {amount} does not match the booking total {booking.amount}",
             )
 
+        comm_rate = Decimal(config.platform_commission_percent)
+        comm_amount = (amount * (comm_rate / Decimal(100))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
         payment = Payment(
             booking_id=booking.id,
             gateway="offline",
@@ -406,6 +441,8 @@ async def confirm_booking_by_admin(
             currency="INR",
             method=method,
             status="success",
+            commission_rate=comm_rate,
+            commission_amount=comm_amount,
             raw_payload={
                 "reference": reference,
                 "notes": notes,
@@ -594,29 +631,32 @@ async def flag_booking(
                 headers={"code": "grace_period_expired"},
             )
 
-        transition_booking_status(session, booking, "cancelled", owner_id, "owner")
+        # Move to under_admin_review and create a BookingActionRequest for admin review (Finding B6)
+        transition_booking_status(session, booking, "under_admin_review", owner_id, "owner")
         booking.owner_flagged_at = now
         booking.cancellation_reason = reason
-        booking.cancelled_at = now
-        booking.inventory_unit.status = "available"
-        booking.inventory_unit.hold_expires_at = None
 
-        # Always 100% — this is the owner-flagged path, distinct from the
-        # standard distance-from-event refund tiers (01_PRD.md, Decision
-        # Point C-7). The actual gateway refund call happens in the
-        # Payments module; this function records the outcome once that
-        # call has succeeded. refund_amount added here (Decision Point
-        # C-9, this slice) purely for data-model consistency with the new
-        # customer-initiated cancellation path below — without it, a
-        # 'refunded' payment row would mean "some unknown amount" here but
-        # "exactly this much" over there, which is worse than a one-line
-        # addition to code that was already touching this same loop.
-        for payment in booking.payments:
-            if payment.status == "success":
-                payment.status = "refunded"
-                payment.refund_amount = payment.amount
+        action_req = BookingActionRequest(
+            booking_id=booking.id,
+            action_type="cancel",
+            requested_by_type="owner",
+            requested_by_user_id=owner_id,
+            reason="owner_request",
+            notes=reason,
+            status="pending",
+        )
+        session.add(action_req)
+        await session.flush()
 
-        transition_booking_status(session, booking, "refunded", owner_id, "owner")
+        session.add(
+            AuditLog(
+                actor_id=owner_id,
+                action="booking.owner_flagged_for_review",
+                entity_type="booking",
+                entity_id=booking.id,
+                extra_data={"reason": reason, "action_request_id": str(action_req.id)},
+            )
+        )
 
     return booking
 
@@ -1026,9 +1066,13 @@ async def process_booking_action_request(
     admin_id: uuid.UUID,
     decision: str,
     decision_reason: str | None,
-    config,
+    config=None,
 ) -> BookingActionRequest:
-    async with session.begin():
+    tx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with tx:
+        if config is None:
+            from app.modules.core.config_service import get_system_config
+            config = await get_system_config(session)
         result = await session.execute(
             select(BookingActionRequest).options(
                 joinedload(BookingActionRequest.booking).joinedload(Booking.inventory_unit), 
@@ -1058,7 +1102,7 @@ async def process_booking_action_request(
 
         if decision == "approved" and req.action_type == "cancel":
             booking = req.booking
-            if booking.status in ["confirmed", "upcoming"]:
+            if booking.status in ["confirmed", "upcoming", "under_admin_review"]:
                 if req.requested_by_type in ["customer", "guest"]:
                     _apply_customer_cancellation(session, booking, req.reason, now, config, admin_id, "admin")
                 elif req.requested_by_type == "owner":
@@ -1072,6 +1116,11 @@ async def process_booking_action_request(
                             payment.status = "refunded"
                             payment.refund_amount = payment.amount
                     transition_booking_status(session, booking, "refunded", admin_id, "admin")
+
+        elif decision == "rejected":
+            booking = req.booking
+            if booking.status == "under_admin_review":
+                transition_booking_status(session, booking, "confirmed", admin_id, "admin")
 
         elif decision == "approved" and req.action_type == "reschedule":
             booking = req.booking

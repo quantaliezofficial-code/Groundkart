@@ -29,6 +29,7 @@ from app.models.core import (
     Category,
     InventoryUnit,
     UseCase,
+    User,
     Venue,
     VenueContentBlock,
     VenueMedia,
@@ -315,10 +316,8 @@ async def create_venue(
 
         session.add(venue)
         await session.flush()
-        venue_id = venue.id
-
-    refreshed = await _get_with_relations(session, venue_id)
-    return refreshed or venue
+        refreshed = await _get_with_relations(session, venue.id)
+        return refreshed or venue
 
 
 async def get_venue(
@@ -469,9 +468,11 @@ async def update_venue(
         result = await session.execute(
             select(Venue)
             .options(
+                selectinload(Venue.media),
                 selectinload(Venue.amenities),
-                selectinload(Venue.use_cases),
+                selectinload(Venue.content_blocks),
                 selectinload(Venue.venue_type),
+                selectinload(Venue.use_cases),
             )
             .where(Venue.id == venue_id)
             .with_for_update()
@@ -693,8 +694,8 @@ async def upload_venue_media(
         media_item = VenueMedia(venue_id=venue_id, url=url, storage_key=storage_key, is_cover=is_cover)
         session.add(media_item)
         await session.flush()
-
-    return media_item
+        refreshed = await _get_with_relations(session, venue_id)
+        return refreshed or venue
 
 
 async def add_inventory_units(
@@ -848,7 +849,8 @@ async def approve_venue(session: AsyncSession, venue_id: uuid.UUID, admin_id: uu
                 entity_id=venue.id,
             )
         )
-    return venue
+        refreshed = await _get_with_relations(session, venue_id)
+        return refreshed or venue
 
 
 async def reject_venue(
@@ -877,7 +879,8 @@ async def reject_venue(
                 entity_id=venue.id,
             )
         )
-    return venue
+        refreshed = await _get_with_relations(session, venue_id)
+        return refreshed or venue
 
 async def create_block(
     session: AsyncSession,

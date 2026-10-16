@@ -231,6 +231,17 @@ async def create_placement(
         await session.flush()
         placement_id = placement.id
 
+        from app.models.core import AuditLog
+        session.add(
+            AuditLog(
+                actor_id=None,
+                action="homepage_placement.created",
+                entity_type="homepage_placement",
+                entity_id=placement_id,
+                extra_data={"section": section, "venue_id": str(venue_id), "badge": badge},
+            )
+        )
+
     # Re-fetch with venue+images eagerly loaded for the response
     return await get_placement(session, placement_id)
 
@@ -262,6 +273,17 @@ async def update_placement(
 
         p.updated_at = datetime.now(timezone.utc)
 
+        from app.models.core import AuditLog
+        session.add(
+            AuditLog(
+                actor_id=None,
+                action="homepage_placement.updated",
+                entity_type="homepage_placement",
+                entity_id=placement_id,
+                extra_data={"changes": {k: str(v) for k, v in changes.items() if v is not None}},
+            )
+        )
+
     return await get_placement(session, placement_id)
 
 
@@ -274,7 +296,21 @@ async def delete_placement(session: AsyncSession, placement_id: uuid.UUID) -> No
         p = result.scalar_one_or_none()
         if p is None:
             raise HTTPException(status_code=404, detail="Placement not found")
+        
+        section = p.section
+        venue_id = p.venue_id
         await session.delete(p)
+
+        from app.models.core import AuditLog
+        session.add(
+            AuditLog(
+                actor_id=None,
+                action="homepage_placement.deleted",
+                entity_type="homepage_placement",
+                entity_id=placement_id,
+                extra_data={"section": section, "venue_id": str(venue_id)},
+            )
+        )
 
 
 async def reorder_section(
@@ -308,6 +344,17 @@ async def reorder_section(
         for idx, pid in enumerate(ordered_ids):
             existing[pid].priority = idx
             existing[pid].updated_at = datetime.now(timezone.utc)
+
+        from app.models.core import AuditLog
+        session.add(
+            AuditLog(
+                actor_id=None,
+                action="homepage_placement.reordered",
+                entity_type="homepage_section",
+                entity_id=None,
+                extra_data={"section": section, "ordered_ids": [str(x) for x in ordered_ids]},
+            )
+        )
 
     return await list_admin_placements(session, section=section)
 

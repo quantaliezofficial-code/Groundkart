@@ -184,15 +184,15 @@ class BookingActionRequestResponse(BaseModel):
     booking_id: uuid.UUID
     action_type: str
     status: str
-    reason: str | None
-    notes: str | None
+    reason: str | None = None
+    notes: str | None = None
     requested_at: datetime
-    reviewed_at: datetime | None
-    admin_decision: str | None
-    decision_reason: str | None
-    reason_code: str | None
-    requested_by_type: str | None
-    requested_by_user_id: uuid.UUID | None
+    reviewed_at: datetime | None = None
+    admin_decision: str | None = None
+    decision_reason: str | None = None
+    reason_code: str | None = None
+    requested_by_type: str | None = None
+    requested_by_user_id: uuid.UUID | None = None
     metadata_json: dict | None = None
 
     model_config = {"from_attributes": True}

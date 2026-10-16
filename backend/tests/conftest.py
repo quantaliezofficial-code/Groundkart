@@ -42,16 +42,36 @@ async def clean_tables(test_engine):
     creates its own fresh, randomly-generated owner_id, but leftover rows
     would have accumulated silently across a long test session)."""
     async def _truncate():
-        async with test_engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "TRUNCATE ticket_events, support_tickets, "
-                    "blocks, venue_media, venue_amenities, amenities, audit_logs, "
-                    "owner_verifications, refresh_tokens, login_rate_limits, payments, "
-                    "payouts, bookings, booking_events, notifications, reviews, "
-                    "inventory_units, categories, venue_types, use_cases, venue_use_cases, venues, users, idempotency_keys, outbox_events, jobs, pricing_rules CASCADE"
-                )
-            )
+        import asyncio
+        from sqlalchemy.exc import DBAPIError
+        for attempt in range(5):
+            try:
+                async with test_engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "TRUNCATE ticket_events, support_tickets, "
+                            "blocks, venue_media, venue_amenities, amenities, audit_logs, "
+                            "owner_verifications, refresh_tokens, login_rate_limits, payments, "
+                            "payouts, bookings, booking_events, booking_action_requests, notifications, reviews, "
+                            "inventory_units, categories, venue_types, use_cases, venue_use_cases, venues, users, idempotency_keys, outbox_events, jobs, pricing_rules CASCADE"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "UPDATE system_configuration SET "
+                            "booking_hold_duration_minutes = 30, "
+                            "booking_grace_period_hours = 2, "
+                            "cancellation_full_refund_hours = 48, "
+                            "cancellation_partial_refund_hours = 24, "
+                            "cancellation_partial_refund_percent = 50, "
+                            "platform_commission_percent = 10"
+                        )
+                    )
+                break
+            except DBAPIError:
+                if attempt == 4:
+                    raise
+                await asyncio.sleep(0.05 * (attempt + 1))
 
     await _truncate()
     yield

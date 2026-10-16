@@ -16,11 +16,16 @@ from app.models.core import Category, InventoryUnit, UseCase, Venue, VenueMedia,
 from app.modules.auth.security import create_access_token
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
-            yield session
+            try:
+                yield session
+            finally:
+                if session.in_transaction():
+                    await session.rollback()
+                await session.close()
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_idem_db] = _override_get_db
@@ -257,15 +262,16 @@ async def test_submitting_incomplete_draft_returns_422_with_missing_items(
 
     # Complete the requirements: 3 photos (one cover) and 1 future inventory unit
     for i in range(3):
-        await client.post(
+        img_resp = await client.post(
             f"/api/v1/venues/{venue_id}/images",
             files={"image": (f"img_{i}.jpg", b"\xff\xd8\xff test image", "image/jpeg")},
             data={"is_cover": "true" if i == 0 else "false"},
             headers={"Authorization": f"Bearer {owner_token}"},
         )
+        assert img_resp.status_code == 201, f"Image upload {i} failed: {img_resp.status_code} {img_resp.text}"
 
     tomorrow = date.today() + timedelta(days=1)
-    await client.post(
+    unit_resp = await client.post(
         f"/api/v1/venues/{venue_id}/inventory-units",
         json={
             "units": [
@@ -278,6 +284,7 @@ async def test_submitting_incomplete_draft_returns_422_with_missing_items(
         },
         headers={"Authorization": f"Bearer {owner_token}"},
     )
+    assert unit_resp.status_code == 201, f"Unit upload failed: {unit_resp.status_code} {unit_resp.text}"
 
     # Now submit the complete draft
     resubmit_resp = await client.patch(
@@ -314,14 +321,15 @@ async def test_content_edit_on_draft_preserves_draft_status_active_triggers_rere
 
     # Complete and submit
     for i in range(3):
-        await client.post(
+        r_img = await client.post(
             f"/api/v1/venues/{venue_id}/images",
             files={"image": (f"img_{i}.jpg", b"\xff\xd8\xff test image", "image/jpeg")},
             data={"is_cover": "true" if i == 0 else "false"},
             headers={"Authorization": f"Bearer {owner_token}"},
         )
+        assert r_img.status_code == 201
     tomorrow = date.today() + timedelta(days=2)
-    await client.post(
+    r_iu = await client.post(
         f"/api/v1/venues/{venue_id}/inventory-units",
         json={
             "units": [
@@ -334,17 +342,20 @@ async def test_content_edit_on_draft_preserves_draft_status_active_triggers_rere
         },
         headers={"Authorization": f"Bearer {owner_token}"},
     )
-    await client.patch(
+    assert r_iu.status_code == 201
+    sub_resp = await client.patch(
         f"/api/v1/venues/{venue_id}",
         json={"status": "pending_review"},
         headers={"Authorization": f"Bearer {owner_token}"},
     )
+    assert sub_resp.status_code == 200, f"Submit failed: {sub_resp.status_code} {sub_resp.text}"
 
     # Admin approves it -> active
-    await client.post(
+    app_resp = await client.post(
         f"/api/v1/admin/venues/{venue_id}/approve",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    assert app_resp.status_code == 200, f"Approve failed: {app_resp.status_code} {app_resp.text}"
 
     # 2. Content edit on active venue (e.g. description) knocks it to pending_review
     active_edit_resp = await client.patch(

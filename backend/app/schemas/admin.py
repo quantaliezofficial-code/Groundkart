@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.catalog import VenueMediaResponse
 from app.schemas.booking import BookingDetail
@@ -424,4 +424,30 @@ class AdminPasswordResetRequestView(BaseModel):
 
 class CancelPasswordResetRequest(BaseModel):
     reason: str | None = "Cancelled by administrator"
+
+
+class SystemSettingsResponse(BaseModel):
+    booking_hold_duration_minutes: int
+    booking_grace_period_hours: int
+    cancellation_full_refund_hours: int
+    cancellation_partial_refund_hours: int
+    cancellation_partial_refund_percent: int
+    platform_commission_percent: int
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SystemSettingsUpdateRequest(BaseModel):
+    booking_hold_duration_minutes: int | None = Field(default=None, ge=1, le=10080)
+    booking_grace_period_hours: int | None = Field(default=None, ge=0, le=168)
+    cancellation_full_refund_hours: int | None = Field(default=None, ge=0, le=720)
+    cancellation_partial_refund_hours: int | None = Field(default=None, ge=0, le=720)
+    cancellation_partial_refund_percent: int | None = Field(default=None, ge=0, le=100)
+    platform_commission_percent: int | None = Field(default=None, ge=0, le=100)
+
+
+class BookingActionProcessRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    decision_reason: str | None = None
 

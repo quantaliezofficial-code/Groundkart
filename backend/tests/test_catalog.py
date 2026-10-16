@@ -25,7 +25,12 @@ from app.modules.auth.security import create_access_token
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
-            yield session
+            try:
+                yield session
+            finally:
+                if session.in_transaction():
+                    await session.rollback()
+                await session.close()
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_idem_db] = _override_get_db

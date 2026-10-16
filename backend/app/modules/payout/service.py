@@ -119,7 +119,8 @@ async def run_payout(
             detail="period_end must be strictly in the past — a payout can only cover slots that have already happened",
         )
 
-    async with session.begin():
+    tx = session.begin_nested() if session.in_transaction() else session.begin()
+    async with tx:
         from app.modules.core.config_service import get_system_config
         config = await get_system_config(session)
         result = await session.execute(
@@ -144,11 +145,23 @@ async def run_payout(
             )
 
         gross_amount = Decimal("0.00")
+        commission_amount = Decimal("0.00")
         for payment in eligible_payments:
             retained = payment.amount - (payment.refund_amount or Decimal("0.00"))
             gross_amount += retained
+            if payment.commission_amount is not None:
+                if payment.amount > Decimal("0.00"):
+                    comm = (payment.commission_amount * (retained / payment.amount)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                else:
+                    comm = Decimal("0.00")
+                commission_amount += comm
+            else:
+                comm, _ = compute_payout_split(retained, config)
+                commission_amount += comm
 
-        commission_amount, net_amount = compute_payout_split(gross_amount, config)
+        net_amount = gross_amount - commission_amount
 
         payout = Payout(
             owner_id=owner_id,

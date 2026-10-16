@@ -452,6 +452,8 @@ class Payment(Base):
     # (Decision Point C-7's tiers). NULL until a refund is actually
     # recorded against this payment.
     refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    commission_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    commission_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Decision Point C-12 (see the phase summary doc for this slice): the
     # ERD in 06_Backend_Schema.md §2 has no relationship at all from
     # payments/bookings to payouts — a payout is modeled purely as an
@@ -888,7 +890,7 @@ class SystemConfiguration(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    booking_hold_duration_minutes: Mapped[int] = mapped_column(default=1440)
+    booking_hold_duration_minutes: Mapped[int] = mapped_column(default=30)
     booking_grace_period_hours: Mapped[int] = mapped_column(default=2)
     cancellation_full_refund_hours: Mapped[int] = mapped_column(default=48)
     cancellation_partial_refund_hours: Mapped[int] = mapped_column(default=24)

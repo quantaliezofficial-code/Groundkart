@@ -7,10 +7,10 @@ from app.models.core import BookingEvent
 ALLOWED_BOOKING_TRANSITIONS: Dict[str, Set[str]] = {
     "draft": {"requested", "cancelled", "expired"},
     "requested": {"under_admin_review", "pending_payment", "cancelled", "rejected", "expired"},
-    "under_admin_review": {"pending_payment", "cancelled", "rejected"},
+    "under_admin_review": {"pending_payment", "cancelled", "rejected", "confirmed", "refunded"},
     "pending_payment": {"confirmed", "expired", "cancelled"},
-    "confirmed": {"upcoming", "in_progress", "completed", "cancelled", "refunded"},
-    "upcoming": {"in_progress", "completed", "cancelled"},
+    "confirmed": {"upcoming", "in_progress", "completed", "cancelled", "refunded", "under_admin_review"},
+    "upcoming": {"in_progress", "completed", "cancelled", "under_admin_review"},
     "in_progress": {"completed", "cancelled"},
     "cancelled": {"refunded"},
     "rejected": set(),

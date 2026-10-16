@@ -7,6 +7,7 @@ real JWT -> require_role -> flag_booking()'s own venue-ownership check.
 from datetime import datetime, timezone
 
 import pytest
+import pytest_asyncio
 
 from app.db import get_db, get_idem_db
 from app.main import app
@@ -14,7 +15,7 @@ from app.modules.auth.security import create_access_token
 from app.modules.booking.service import confirm_booking_from_webhook, create_booking
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(test_session_factory):
     async def _override_get_db():
         async with test_session_factory() as session:
@@ -61,7 +62,7 @@ async def test_owner_can_flag_their_own_booking(client, test_session_factory, se
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "refunded"
+    assert resp.json()["status"] == "under_admin_review"
 
 
 async def test_a_different_owner_gets_403(client, test_session_factory, seeded_owner_with_unit):
@@ -142,14 +143,12 @@ async def test_past_grace_window_returns_410(client, test_session_factory, seede
 
 
 async def test_flag_booking_now_also_records_refund_amount(
-    client, test_session_factory, seeded_owner_with_unit
+    client, test_session_factory, seeded_owner_with_unit, seeded_admin
 ):
-    """Decision Point C-9 (this booking-cancellation slice, see its phase
-    summary doc): flag_booking's refund is always 100%, and now also
-    populates the new payments.refund_amount column (== amount) so a
-    'refunded' payment row means the same thing regardless of which of
-    the three cancellation paths produced it — a one-line addition to a
-    loop this function was already running, not a behavior change."""
+    """Phase 0 hardening (Finding B6): flag_booking moves the booking to
+    under_admin_review and creates a pending BookingActionRequest instead of
+    executing an immediate unreviewed refund. When an admin processes and approves
+    the action request, the refund is executed and payment.refund_amount is recorded."""
     from decimal import Decimal
 
     from sqlalchemy import select
@@ -170,6 +169,33 @@ async def test_flag_booking_now_also_records_refund_amount(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
+    assert resp.json()["status"] == "under_admin_review"
+
+    # Prior to admin approval, payment remains success
+    async with test_session_factory() as session:
+        payment = (
+            await session.execute(select(Payment).where(Payment.booking_id == booking_id))
+        ).scalar_one()
+        assert payment.status == "success"
+
+    # Admin lists pending booking action requests and processes this one
+    admin_token = create_access_token(seeded_admin, "admin")
+    actions_resp = await client.get(
+        "/api/v1/admin/booking-actions?status=pending",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert actions_resp.status_code == 200
+    actions = actions_resp.json()
+    action = next(a for a in actions if a["booking_id"] == str(booking_id))
+    assert action["action_type"] == "cancel"
+
+    # Process and approve
+    proc_resp = await client.post(
+        f"/api/v1/admin/booking-actions/{action['id']}/process",
+        json={"decision": "approved", "decision_reason": "Verified double booking"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert proc_resp.status_code == 200
 
     async with test_session_factory() as session:
         payment = (
@@ -177,3 +203,4 @@ async def test_flag_booking_now_also_records_refund_amount(
         ).scalar_one()
         assert payment.status == "refunded"
         assert payment.refund_amount == Decimal("2000.00")
+
