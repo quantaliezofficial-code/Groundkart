@@ -1,10 +1,11 @@
-import { AlertCircle, Calendar, Check, Clock, Copy, Info, Lock, ShieldCheck, User, Mail, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, Calendar, Check, Clock, Copy, Info, Lock, ShieldCheck, User, Mail, ChevronDown, ChevronUp, Users, MessageSquare, Loader2 } from 'lucide-react';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ApiError } from '../lib/api/client';
 import type { BookingCreateResponse } from '../lib/api/types';
 import type { UserMe } from '../lib/api/types';
 import { Venue } from '../types';
+import type { BookingMeta } from './DetailView';
 
 interface ReviewPayProps {
   venue: Venue;
@@ -13,7 +14,19 @@ interface ReviewPayProps {
   selectedDate: string;
   currentUser: UserMe | null;
   onNavigateHome: () => void;
-  onSubmitBooking: (guestName?: string, guestEmail?: string, guestPhone?: string) => Promise<BookingCreateResponse>;
+  onSubmitBooking: (
+    guestName?: string,
+    guestEmail?: string,
+    guestPhone?: string,
+    bookingDetails?: {
+      purpose_id?: string;
+      rental_mode?: any;
+      guest_count?: number;
+      customer_notes?: string;
+      idempotencyKey?: string;
+    }
+  ) => Promise<BookingCreateResponse>;
+  bookingMeta?: BookingMeta | null;
 }
 
 export default function ReviewPay({
@@ -24,21 +37,36 @@ export default function ReviewPay({
   currentUser,
   onNavigateHome,
   onSubmitBooking,
+  bookingMeta,
 }: ReviewPayProps) {
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [guestCount, setGuestCount] = useState<number | ''>(1);
+  const [customerNotes, setCustomerNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BookingCreateResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const idempotencyKeyRef = React.useRef<string>(
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+  const submittingRef = React.useRef<boolean>(false);
 
-  const estimatedPrice = venue.basePrice;
-  const canSubmit = Boolean(selectedSlotId) && (currentUser || (guestName.trim() && guestEmail.trim()));
+  const finalPrice = bookingMeta?.price ?? venue.basePrice;
+  const maxCapacity = bookingMeta?.maxGuests ?? venue.capacity ?? null;
+  const isGuestCountExceeded = Boolean(maxCapacity && guestCount && Number(guestCount) > maxCapacity);
+  const canSubmit = Boolean(selectedSlotId) && !isProcessing && !isGuestCountExceeded && (currentUser || (guestName.trim() && guestEmail.trim()));
 
   const handleConfirm = async () => {
-    if (!canSubmit) return;
+    if (submittingRef.current || isProcessing || !canSubmit) return;
+    submittingRef.current = true;
+    if (isGuestCountExceeded) {
+      setError(`Guest count exceeds the allowed limit of ${maxCapacity} for this booking.`);
+      submittingRef.current = false;
+      return;
+    }
     setError(null);
     setIsProcessing(true);
     try {
@@ -46,12 +74,20 @@ export default function ReviewPay({
         currentUser ? undefined : guestName.trim(),
         currentUser ? undefined : guestEmail.trim(),
         currentUser ? undefined : guestPhone.trim(),
+        {
+          purpose_id: bookingMeta?.purposeId,
+          rental_mode: bookingMeta?.rentalMode,
+          guest_count: guestCount ? Number(guestCount) : undefined,
+          customer_notes: customerNotes.trim() || undefined,
+          idempotencyKey: idempotencyKeyRef.current,
+        }
       );
       setResult(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Could not submit your booking. Please try again.');
     } finally {
       setIsProcessing(false);
+      submittingRef.current = false;
     }
   };
 
@@ -315,6 +351,63 @@ export default function ReviewPay({
                 </div>
               </div>
             )}
+
+            {/* Event & Booking Details */}
+            <div className="space-y-4 pt-4 border-t border-ink/10">
+              <h2 className="font-sans text-sm font-bold text-ink">Event &amp; Booking Details</h2>
+
+              {bookingMeta?.purposeName && (
+                <div className="flex items-center gap-2 text-xs bg-pitch/10 text-pitch font-semibold px-3.5 py-2.5 rounded-xl">
+                  <Users size={15} />
+                  <span>Purpose: {bookingMeta.purposeName}</span>
+                  {bookingMeta.rentalMode && (
+                    <span className="ml-auto capitalize bg-chalk/90 px-2 py-0.5 rounded-md text-ink text-2xs">
+                      {bookingMeta.rentalMode === 'half_day' ? 'Half Day' : bookingMeta.rentalMode === 'full_day' ? 'Full Day' : 'Hourly'}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="guest-count" className="block text-xs font-semibold text-ink">
+                  Guest Count {maxCapacity ? `(Max ${maxCapacity})` : ''}
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <Users size={18} className="text-on-surface-variant" />
+                  </div>
+                  <input
+                    id="guest-count"
+                    type="number"
+                    min={1}
+                    max={maxCapacity || undefined}
+                    value={guestCount}
+                    onChange={(e) => setGuestCount(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full bg-mist border border-ink/10 rounded-xl py-3 pl-10 pr-4 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition ease-out"
+                    placeholder="Number of guests attending"
+                  />
+                </div>
+                {isGuestCountExceeded && (
+                  <p className="text-xs text-rose-600 font-medium">
+                    Guest count exceeds the allowed limit of {maxCapacity} guests.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="customer-notes" className="block text-xs font-semibold text-ink">
+                  Notes for Venue Owner (Optional)
+                </label>
+                <textarea
+                  id="customer-notes"
+                  rows={3}
+                  value={customerNotes}
+                  onChange={(e) => setCustomerNotes(e.target.value)}
+                  className="w-full bg-mist border border-ink/10 rounded-xl p-3 font-sans text-sm text-ink focus:ring-2 focus:ring-pitch/15 focus:border-pitch/30 outline-none transition ease-out resize-none"
+                  placeholder="Any special requests, equipment requirements, or instructions..."
+                />
+              </div>
+            </div>
           </div>
 
           <motion.div 
@@ -412,8 +505,14 @@ export default function ReviewPay({
             <div className="p-6">
               <div className="space-y-4 font-sans text-sm text-on-surface-variant">
                 <div className="flex justify-between items-center">
-                  <span>{venue.unitType === 'hour' ? 'Hourly rate' : venue.unitType === 'half_day' ? 'Half-day rate' : 'Full-day rate'}</span>
-                  <span className="font-mono text-ink font-medium">₹{estimatedPrice.toFixed(2)}</span>
+                  <span>
+                    {bookingMeta?.rentalMode === 'half_day'
+                      ? 'Half-day rate'
+                      : bookingMeta?.rentalMode === 'full_day'
+                      ? 'Full-day rate'
+                      : 'Hourly rate'}
+                  </span>
+                  <span className="font-mono text-ink font-medium">₹{finalPrice.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -421,7 +520,7 @@ export default function ReviewPay({
 
               <div className="flex justify-between items-end mb-6 bg-marigold/5 p-4 rounded-xl border border-marigold/10">
                 <span className="font-sans text-sm font-bold text-ink">Total Amount</span>
-                <span className="font-display text-2xl text-marigold font-bold">₹{estimatedPrice.toFixed(2)}</span>
+                <span className="font-display text-2xl text-marigold font-bold">₹{finalPrice.toFixed(2)}</span>
               </div>
 
               <motion.button
@@ -432,7 +531,10 @@ export default function ReviewPay({
                 className="w-full bg-gradient-to-r from-pitch to-[#15462E] hover:shadow-lg hover:shadow-pitch/20 text-chalk font-sans text-sm font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ease-out"
               >
                 {isProcessing ? (
-                  <span>Requesting…</span>
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="animate-spin" size={18} />
+                    <span>Requesting… (Holding your slot...)</span>
+                  </span>
                 ) : (
                   <>
                     <span>Request Booking</span>
