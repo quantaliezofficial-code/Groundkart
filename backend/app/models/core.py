@@ -26,8 +26,9 @@ from sqlalchemy import (
     text,
     Text,
     String,
+    FetchedValue,
 )
-from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import (
@@ -97,6 +98,7 @@ class User(Base):
         back_populates="user", foreign_keys="OwnerVerification.user_id"
     )
     payouts: Mapped[list["Payout"]] = relationship(back_populates="owner")
+    bank_accounts: Mapped[list["OwnerBankAccount"]] = relationship(back_populates="owner")
     reviews: Mapped[list["Review"]] = relationship(back_populates="user")
     support_tickets: Mapped[list["SupportTicket"]] = relationship(
         back_populates="creator", foreign_keys="SupportTicket.creator_id"
@@ -204,6 +206,12 @@ class Venue(Base):
     homepage_placements: Mapped[list["HomepagePlacement"]] = relationship(
         back_populates="venue", cascade="all, delete-orphan"
     )
+    rental_options: Mapped[list["VenueRentalOption"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
+    purposes: Mapped[list["VenuePurpose"]] = relationship(
+        back_populates="venue", cascade="all, delete-orphan"
+    )
 
 
 class InventoryUnit(Base):
@@ -214,6 +222,14 @@ class InventoryUnit(Base):
             name="chk_time_range",
         ),
         UniqueConstraint("venue_id", "date", "start_time", "end_time", name="uq_unit_slot"),
+        Index(
+            "uq_inventory_unit_slot_nullsafe",
+            "venue_id",
+            "date",
+            text("COALESCE(start_time, '00:00:00'::time)"),
+            text("COALESCE(end_time, '23:59:59'::time)"),
+            unique=True,
+        ),
         CheckConstraint("price >= 0", name="chk_price_nonneg"),
         Index(
             "idx_inventory_venue_date",
@@ -236,6 +252,8 @@ class InventoryUnit(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(InventoryStatus, default="available")
     hold_expires_at: Mapped[datetime | None]
+    starts_at: Mapped[datetime | None] = mapped_column(server_default=FetchedValue())
+    ends_at: Mapped[datetime | None] = mapped_column(server_default=FetchedValue())
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
@@ -296,6 +314,12 @@ class Booking(Base):
     inventory_unit_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("inventory_units.id", ondelete="RESTRICT")
     )
+    purpose_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("venue_purposes.id", ondelete="SET NULL"), nullable=True
+    )
+    rental_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    guest_count: Mapped[int | None] = mapped_column(nullable=True)
+    customer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(BookingStatus, default="pending_payment")
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
@@ -320,6 +344,7 @@ class Booking(Base):
     customer: Mapped["User | None"] = relationship(back_populates="bookings")
     venue: Mapped["Venue"] = relationship()
     inventory_unit: Mapped["InventoryUnit"] = relationship(back_populates="bookings")
+    purpose: Mapped["VenuePurpose | None"] = relationship()
     payments: Mapped[list["Payment"]] = relationship(back_populates="booking")
     events: Mapped[list["BookingEvent"]] = relationship(
         back_populates="booking", cascade="all, delete-orphan", order_by="BookingEvent.created_at"
@@ -328,6 +353,7 @@ class Booking(Base):
         back_populates="booking", cascade="all, delete-orphan", order_by="BookingActionRequest.created_at"
     )
     review: Mapped["Review | None"] = relationship(back_populates="booking", uselist=False)
+    refunds: Mapped[list["Refund"]] = relationship(back_populates="booking", cascade="all, delete-orphan")
 
     # A real gap found while starting frontend integration (Phase D):
     # BookingDetail had no way to show *when* a booking is actually for —
@@ -431,6 +457,12 @@ class Payment(Base):
     __table_args__ = (
         Index("idx_payments_booking_id", "booking_id"),
         Index("idx_payments_payout_id", "payout_id"),
+        Index(
+            "uq_one_successful_payment_per_booking",
+            "booking_id",
+            unique=True,
+            postgresql_where=text("status IN ('success', 'refunded')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -470,6 +502,7 @@ class Payment(Base):
 
     booking: Mapped["Booking"] = relationship(back_populates="payments")
     payout: Mapped["Payout | None"] = relationship(back_populates="payments")
+    refunds: Mapped[list["Refund"]] = relationship(back_populates="payment", cascade="all, delete-orphan")
 
 
 
@@ -582,6 +615,8 @@ class OwnerVerification(Base):
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     identification_type: Mapped[str | None]
     identification_number: Mapped[str | None]
+    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
     business_name: Mapped[str | None]
     status: Mapped[str] = mapped_column(OwnerVerificationStatus, default="pending")
     rejection_reason: Mapped[str | None]
@@ -706,12 +741,16 @@ class VenueMedia(Base):
     """06_Backend_Schema.md §4: 'partial unique index ensures only one
     is_cover = true per venue' — implemented exactly as the doc's summary
     describes, same partial-unique-index pattern used everywhere else in
-    this schema (uq_active_booking_per_unit, uq_one_pending_verification_per_user)."""
+    this schema (uq_active_booking_per_unit, uq_one_pending_verification_per_user).
+
+    media_type / thumbnail_url added by migration 48fc1eaeba4f (add_video_support).
+    Index was renamed from uq_one_cover_image_per_venue → uq_one_cover_media_per_venue
+    in that same migration."""
 
     __tablename__ = "venue_media"
     __table_args__ = (
         Index(
-            "uq_one_cover_image_per_venue",
+            "uq_one_cover_media_per_venue",
             "venue_id",
             unique=True,
             postgresql_where=text("is_cover = true"),
@@ -724,6 +763,8 @@ class VenueMedia(Base):
     venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
     url: Mapped[str]
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_type: Mapped[str] = mapped_column(default="image", server_default="image")
+    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_cover: Mapped[bool] = mapped_column(default=False)
     sort_order: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
@@ -757,6 +798,75 @@ class VenueContentBlock(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     venue: Mapped["Venue"] = relationship(back_populates="content_blocks")
+
+
+class VenueRentalOption(Base):
+    """Guide 11: Multi-mode rental configuration per venue.
+    Modes: 'hour', 'half_day', 'full_day'.
+    """
+    __tablename__ = "venue_rental_options"
+    __table_args__ = (
+        CheckConstraint("mode IN ('hour', 'half_day', 'full_day')", name="chk_rental_mode"),
+        CheckConstraint("price >= 0", name="chk_rental_price_non_negative"),
+        UniqueConstraint("venue_id", "mode", name="uq_venue_rental_mode"),
+        Index("idx_venue_rental_options_venue_id", "venue_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
+    mode: Mapped[str] = mapped_column(String(20))
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    open_time: Mapped[time | None]
+    close_time: Mapped[time | None]
+    slot_minutes: Mapped[int | None]
+    min_minutes: Mapped[int | None]
+    max_minutes: Mapped[int | None]
+    buffer_minutes: Mapped[int] = mapped_column(default=0, server_default="0")
+    enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship(back_populates="rental_options")
+
+
+class VenuePurpose(Base):
+    """Guide 11: Purpose / Event types a venue can host."""
+    __tablename__ = "venue_purposes"
+    __table_args__ = (
+        CheckConstraint(
+            "use_case_id IS NOT NULL OR custom_name IS NOT NULL",
+            name="chk_purpose_has_name",
+        ),
+        CheckConstraint(
+            "price_override IS NULL OR price_override >= 0",
+            name="chk_purpose_price_override_non_negative",
+        ),
+        Index("idx_venue_purposes_venue_id", "venue_id"),
+        Index("idx_venue_purposes_use_case_id", "use_case_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    venue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("venues.id", ondelete="CASCADE"))
+    use_case_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("use_cases.id", ondelete="SET NULL"), nullable=True
+    )
+    custom_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_custom_approved: Mapped[bool | None] = mapped_column(nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    max_guests: Mapped[int | None] = mapped_column(nullable=True)
+    allowed_modes: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)), nullable=True)
+    price_override: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    venue: Mapped["Venue"] = relationship(back_populates="purposes")
+    use_case: Mapped["UseCase | None"] = relationship()
 
 
 class LoginRateLimit(Base):
@@ -812,11 +922,14 @@ class Payout(Base):
     commission_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     net_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(PayoutStatus, default="pending")
+    payout_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    bank_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("owner_bank_accounts.id", ondelete="SET NULL"), nullable=True)
     paid_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     owner: Mapped["User"] = relationship(back_populates="payouts")
+    bank_account: Mapped["OwnerBankAccount | None"] = relationship(back_populates="payouts")
     payments: Mapped[list["Payment"]] = relationship(back_populates="payout")
 
 
@@ -857,6 +970,7 @@ class IdempotencyKey(Base):
     __table_args__ = (
         UniqueConstraint("key", "actor_id", "operation", name="uq_idemp_key_actor_op"),
         Index("idx_idempotency_keys_expires_at", "expires_at"),
+        Index("uq_idemp_key_null_actor_op", "key", "operation", unique=True, postgresql_where=text("actor_id IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -896,6 +1010,7 @@ class SystemConfiguration(Base):
     cancellation_partial_refund_hours: Mapped[int] = mapped_column(default=24)
     cancellation_partial_refund_percent: Mapped[int] = mapped_column(default=50)
     platform_commission_percent: Mapped[int] = mapped_column(default=10)
+    payout_holdback_days: Mapped[int] = mapped_column(default=3)
 
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
@@ -1012,6 +1127,7 @@ class SupportTicket(Base):
             postgresql_where=text("venue_id IS NOT NULL"),
         ),
         Index("idx_support_tickets_status", "status", "created_at"),
+        Index("idx_support_tickets_help_article", "help_article_id", "help_section"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1034,6 +1150,12 @@ class SupportTicket(Base):
     venue_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("venues.id", ondelete="SET NULL")
     )
+    help_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("help_articles.id", ondelete="SET NULL")
+    )
+    help_article_version: Mapped[int | None]
+    help_section: Mapped[str | None]
+    help_excerpt: Mapped[str | None]
     resolved_at: Mapped[datetime | None]
     closed_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
@@ -1045,6 +1167,7 @@ class SupportTicket(Base):
     assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
     booking: Mapped["Booking | None"] = relationship()
     venue: Mapped["Venue | None"] = relationship()
+    help_article: Mapped["HelpArticle | None"] = relationship()
     events: Mapped[list["TicketEvent"]] = relationship(
         back_populates="ticket",
         cascade="all, delete-orphan",
@@ -1200,3 +1323,260 @@ venue_use_cases = Table(
     Column("venue_id", ForeignKey("venues.id", ondelete="CASCADE"), primary_key=True),
     Column("use_case_id", ForeignKey("use_cases.id", ondelete="CASCADE"), primary_key=True),
 )
+
+
+class OwnerBankAccount(Base):
+    """Structured beneficiary account for venue owners to receive payout disbursements."""
+    __tablename__ = "owner_bank_accounts"
+    __table_args__ = (
+        Index("idx_owner_bank_accounts_owner", "owner_id", "is_primary"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    account_holder_name: Mapped[str] = mapped_column(String(255))
+    account_number: Mapped[str] = mapped_column(String(64))
+    ifsc_code: Mapped[str] = mapped_column(String(16))
+    bank_name: Mapped[str | None] = mapped_column(String(128))
+    upi_id: Mapped[str | None] = mapped_column(String(128))
+    is_verified: Mapped[bool] = mapped_column(server_default=text("false"), default=False)
+    is_primary: Mapped[bool] = mapped_column(server_default=text("true"), default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    owner: Mapped["User"] = relationship(back_populates="bank_accounts")
+    payouts: Mapped[list["Payout"]] = relationship(back_populates="bank_account")
+
+
+class Refund(Base):
+    """Structured refund record capturing mode, status, reference, and approval audit."""
+    __tablename__ = "refunds"
+    __table_args__ = (
+        Index("idx_refunds_payment_id", "payment_id"),
+        Index("idx_refunds_booking_id", "booking_id"),
+        Index(
+            "uq_one_processed_refund_per_booking",
+            "booking_id",
+            unique=True,
+            postgresql_where=text("status = 'processed'"),
+        ),
+        Index(
+            "uq_one_processed_refund_per_payment",
+            "payment_id",
+            unique=True,
+            postgresql_where=text("status = 'processed'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("payments.id", ondelete="RESTRICT"))
+    booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="RESTRICT"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(default="INR", server_default="INR")
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
+    mode: Mapped[str] = mapped_column(String(32), default="offline_manual", server_default="offline_manual")
+    reference: Mapped[str | None] = mapped_column(String(128))
+    requested_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    processed_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    processed_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    payment: Mapped["Payment"] = relationship(back_populates="refunds")
+    booking: Mapped["Booking"] = relationship(back_populates="refunds")
+    requested_by: Mapped["User | None"] = relationship(foreign_keys=[requested_by_id])
+    processed_by: Mapped["User | None"] = relationship(foreign_keys=[processed_by_id])
+
+
+class LedgerEntry(Base):
+    """
+    Append-only double-entry financial ledger recording every rupee movement:
+    debited accounts, credited accounts, amounts, references, and balance invariants.
+    """
+    __tablename__ = "ledger_entries"
+    __table_args__ = (
+        Index("idx_ledger_transaction_id", "transaction_id"),
+        Index("idx_ledger_account", "account"),
+        Index("idx_ledger_booking_id", "booking_id"),
+        Index("idx_ledger_payout_id", "payout_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    entry_type: Mapped[str] = mapped_column(String(64))
+    account: Mapped[str] = mapped_column(String(64))
+    direction: Mapped[str] = mapped_column(String(10))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(default="INR", server_default="INR")
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bookings.id", ondelete="SET NULL"))
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payments.id", ondelete="SET NULL"))
+    payout_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payouts.id", ondelete="SET NULL"))
+    refund_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("refunds.id", ondelete="SET NULL"))
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    description: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+
+class HelpCategory(Base):
+    """Categorization for help articles (e.g. Booking, Venue Listing, Payments)."""
+    __tablename__ = "help_categories"
+    __table_args__ = (
+        Index("idx_help_categories_audience", "audience", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    slug: Mapped[str] = mapped_column(unique=True)
+    name: Mapped[str]
+    icon: Mapped[str] = mapped_column(default="help-circle", server_default="help-circle")
+    audience: Mapped[str] = mapped_column(default="all", server_default="all")
+    sort_order: Mapped[int] = mapped_column(default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    articles: Mapped[list["HelpArticle"]] = relationship(
+        back_populates="category",
+        order_by="HelpArticle.sort_order",
+    )
+
+
+class HelpArticle(Base):
+    """Knowledge base article supporting versioning, translations, and Know More tickets."""
+    __tablename__ = "help_articles"
+    __table_args__ = (
+        Index("idx_help_articles_category_status", "category_id", "status"),
+        Index("idx_help_articles_audience_status_lang", "audience", "status", "language"),
+        Index("idx_help_articles_group_lang", "group_id", "language"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    slug: Mapped[str] = mapped_column(unique=True)
+    title: Mapped[str]
+    summary: Mapped[str]
+    body_markdown: Mapped[str]
+    audience: Mapped[str] = mapped_column(default="all", server_default="all")
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("help_categories.id", ondelete="SET NULL")
+    )
+    language: Mapped[str] = mapped_column(default="en", server_default="en")
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), server_default=text("gen_random_uuid()")
+    )
+    status: Mapped[str] = mapped_column(default="draft", server_default="draft")
+    sort_order: Mapped[int] = mapped_column(default=0, server_default="0")
+    video_url: Mapped[str | None]
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    category: Mapped["HelpCategory | None"] = relationship(back_populates="articles")
+    author: Mapped["User | None"] = relationship()
+    revisions: Mapped[list["HelpArticleRevision"]] = relationship(
+        back_populates="article",
+        cascade="all, delete-orphan",
+        order_by="HelpArticleRevision.version.desc()",
+    )
+    feedbacks: Mapped[list["HelpFeedback"]] = relationship(
+        back_populates="article",
+        cascade="all, delete-orphan",
+    )
+
+
+class HelpArticleRevision(Base):
+    """Historical snapshot of article versions to accurately ground tickets."""
+    __tablename__ = "help_article_revisions"
+    __table_args__ = (
+        Index("idx_help_revisions_article_version", "article_id", "version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("help_articles.id", ondelete="CASCADE")
+    )
+    version: Mapped[int]
+    title: Mapped[str]
+    summary: Mapped[str]
+    body_markdown: Mapped[str]
+    editor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    article: Mapped["HelpArticle"] = relationship(back_populates="revisions")
+    editor: Mapped["User | None"] = relationship()
+
+
+class HelpFeedback(Base):
+    """User feedback on articles and sections (Was this helpful? yes/no)."""
+    __tablename__ = "help_feedback"
+    __table_args__ = (
+        Index("idx_help_feedback_article", "article_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("help_articles.id", ondelete="CASCADE")
+    )
+    section: Mapped[str | None]
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    helpful: Mapped[bool]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    article: Mapped["HelpArticle"] = relationship(back_populates="feedbacks")
+    user: Mapped["User | None"] = relationship()
+
+
+class HelpSearchLog(Base):
+    """Search queries logged to surface zero-result searches and gaps in documentation."""
+    __tablename__ = "help_search_log"
+    __table_args__ = (
+        Index("idx_help_search_log_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    query: Mapped[str]
+    result_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    role: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+
+class GuestEnquiry(Base):
+    """Guest contact form submissions from unauthenticated users."""
+    __tablename__ = "guest_enquiries"
+    __table_args__ = (
+        Index("idx_guest_enquiries_status", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    name: Mapped[str]
+    email: Mapped[str]
+    phone: Mapped[str | None]
+    subject: Mapped[str]
+    message: Mapped[str]
+    status: Mapped[str] = mapped_column(default="new", server_default="new")
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+
