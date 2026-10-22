@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 import asyncio
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date as date_
@@ -16,8 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.db import SessionLocal, get_db
-from app.models.core import Notification, Review, Venue, User, PasswordResetRequest, OwnerVerification, BookingActionRequest, AuditLog
+from app.db import SessionLocal, get_db, get_idem_db
+from app.modules.core.idempotency import idempotency
+from app.models.core import (
+    Notification, Review, Venue, User, PasswordResetRequest, OwnerVerification,
+    BookingActionRequest, AuditLog, OwnerBankAccount, Refund, LedgerEntry
+)
 from app.modules.admin import service as admin_service
 from app.modules.auth import service as auth_service
 from app.modules.auth.dependencies import (
@@ -33,6 +38,7 @@ from app.modules.catalog import service as catalog_service
 from app.modules.notifications import service as notifications_service
 from app.modules.owner_onboarding import service as onboarding_service
 from app.modules.payout import service as payout_service
+from app.modules.ledger import service as ledger_service
 from app.modules.storage.base import UnsupportedFileError
 
 from app.modules.admin import passwords_service as admin_passwords_service
@@ -91,10 +97,27 @@ from app.schemas.catalog import (
     VenueUpdateRequest,
     BlockCreateRequest,
     BlockResponse,
+    VenueRentalOptionCreate,
+    VenueRentalOptionUpdate,
+    VenueRentalOptionResponse,
+    VenuePurposeCreate,
+    VenuePurposeUpdate,
+    VenuePurposeResponse,
+    DateAvailabilityResponse,
+    MediaLinkCreateRequest,
+    MediaReorderRequest,
 )
+from app.schemas.owner_dashboard import (
+    OwnerOverviewResponse,
+    OwnerVenueStats,
+)
+from app.modules.owner_dashboard import service as owner_dashboard_service
 from app.schemas.notifications import NotificationResponse, UnreadCountResponse
 from app.schemas.owner_verification import ApproveOwnerVerificationRequest, OwnerVerificationResponse, RejectVerificationRequest
-from app.schemas.payout import PayoutDetail, PayoutRunRequest
+from app.schemas.payout import PayoutDetail, PayoutRunRequest, PayoutMarkPaidRequest
+from app.schemas.ledger import LedgerEntryResponse, ReconciliationResponse
+from app.schemas.bank_account import OwnerBankAccountCreateRequest, OwnerBankAccountResponse
+from app.schemas.refund import RefundResponse
 
 from app.schemas.homepage import (
     HomepagePlacementCreate,
@@ -161,6 +184,17 @@ async def _outbox_sweep_loop() -> None:
             logger.exception("outbox sweep pass failed — will retry next interval")
         await asyncio.sleep(interval_seconds)
 
+async def _rate_limit_cleanup_loop():
+    while True:
+        try:
+            async with SessionLocal() as session:
+                await auth_service.cleanup_expired_rate_limits(session, older_than_seconds=3600)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("rate limit cleanup pass failed — will retry next interval")
+        await asyncio.sleep(1800)
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     import os
@@ -168,10 +202,12 @@ async def lifespan(_app: FastAPI):
     
     sweep_task = None
     outbox_task = None
+    cleanup_task = None
     
     if not is_test:
         sweep_task = asyncio.create_task(_hold_sweep_loop())
         outbox_task = asyncio.create_task(_outbox_sweep_loop())
+        cleanup_task = asyncio.create_task(_rate_limit_cleanup_loop())
         
     try:
         yield
@@ -187,6 +223,13 @@ async def lifespan(_app: FastAPI):
             outbox_task.cancel()
             try:
                 await outbox_task
+            except asyncio.CancelledError:
+                pass
+
+        if cleanup_task:
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
             except asyncio.CancelledError:
                 pass
 
@@ -432,22 +475,30 @@ async def dynamic_sitemap_xml_route(db: AsyncSession = Depends(get_db)) -> Respo
 
 @app.post("/api/v1/auth/signup", status_code=201)
 @app.post("/auth/signup", status_code=201, include_in_schema=True, tags=["Auth"], deprecated=True)
-async def signup_route(body: SignupRequest, db: AsyncSession = Depends(get_db)) -> dict:
-    await auth_service.check_login_rate_limit(db, f"ratelimit:signup:{body.phone}")
+async def signup_route(body: SignupRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    ip = auth_service.get_client_ip(request)
+    clean_phone = re.sub(r"[^\d+]", "", body.phone.strip())
+    await auth_service.check_rate_limit(db, f"ratelimit:signup:{clean_phone}", max_attempts=10, window_seconds=60)
+    await auth_service.check_rate_limit(db, f"ratelimit:signup:ip:{ip}", max_attempts=20, window_seconds=60)
     user = await auth_service.signup(db, body.name, body.phone, body.password, body.email)
     return {"id": str(user.id), "phone": user.phone}
 
 
 @app.post("/api/v1/auth/forgot-password")
 @app.post("/auth/forgot-password", include_in_schema=True, tags=["Auth"], deprecated=True)
-async def forgot_password_route(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)) -> dict:
-    await auth_service.check_login_rate_limit(db, f"ratelimit:forgot:{body.login_id}")
+async def forgot_password_route(body: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    ip = auth_service.get_client_ip(request)
+    clean_login = body.login_id.strip().lower()
+    await auth_service.check_rate_limit(db, f"ratelimit:forgot:{clean_login}", max_attempts=10, window_seconds=60)
+    await auth_service.check_rate_limit(db, f"ratelimit:forgot:ip:{ip}", max_attempts=20, window_seconds=60)
     await auth_service.forgot_password(db, body.login_id)
     return {"message": "If an account exists, our support team will contact you to complete the reset."}
 
 
 @app.post("/api/v1/auth/reset-password")
-async def reset_password_route(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)) -> dict:
+async def reset_password_route(body: ResetPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    ip = auth_service.get_client_ip(request)
+    await auth_service.check_rate_limit(db, f"ratelimit:reset:ip:{ip}", max_attempts=10, window_seconds=60)
     await auth_service.reset_password(db, body.token, body.new_password)
     return {"message": "Password reset successfully."}
 
@@ -456,9 +507,13 @@ async def reset_password_route(body: ResetPasswordRequest, db: AsyncSession = De
 async def login_route(
     body: LoginRequest,
     response: Response,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AccessTokenResponse:
-    await auth_service.check_login_rate_limit(db, f"ratelimit:login:{body.login_id}")
+    ip = auth_service.get_client_ip(request)
+    clean_login = body.login_id.strip().lower()
+    await auth_service.check_rate_limit(db, f"ratelimit:login:{clean_login}", max_attempts=10, window_seconds=60)
+    await auth_service.check_rate_limit(db, f"ratelimit:login:ip:{ip}", max_attempts=30, window_seconds=60)
     _, access_token, raw_refresh = await auth_service.login(db, body.login_id, body.password)
     _set_refresh_cookie(response, raw_refresh)
     return AccessTokenResponse(access_token=access_token)
@@ -470,6 +525,8 @@ async def refresh_route(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AccessTokenResponse:
+    ip = auth_service.get_client_ip(request)
+    await auth_service.check_rate_limit(db, f"ratelimit:refresh:ip:{ip}", max_attempts=60, window_seconds=60)
     raw_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if raw_token is None:
         raise HTTPException(status_code=401, detail="No refresh token presented")
@@ -489,12 +546,10 @@ async def logout_route(
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth")
 
 
-from app.modules.core.idempotency import idempotency
-from app.db import get_idem_db
-
 @app.post("/api/v1/bookings", response_model=BookingCreateResponse, status_code=201)
 async def create_booking_route(
     request: Request,
+    response: Response,
     body: BookingCreateRequest,
     db: AsyncSession = Depends(get_db),
     idem_db: AsyncSession | None = Depends(get_idem_db),
@@ -508,10 +563,18 @@ async def create_booking_route(
     01_PRD.md A 5, so an invalid token degrades to anonymous rather than
     401ing a route that's supposed to be open to guests."""
     idem_key = request.headers.get("Idempotency-Key")
-    async with idempotency(idem_db, idem_key, current_user.id if current_user else None, "create_booking", body) as idem:
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    client_ip = auth_service.get_client_ip(request)
+    async with idempotency(
+        idem_db, idem_key, current_user.id if current_user else None, "create_booking", body, client_ip=client_ip
+    ) as idem:
         if idem.is_replaying:
             if idem.response_code and idem.response_code >= 400:
                 raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 201
             return BookingCreateResponse(**idem.response_body)
 
         try:
@@ -522,6 +585,10 @@ async def create_booking_route(
                 guest_name=body.guest_name,
                 guest_email=body.guest_email,
                 guest_phone=body.guest_phone,
+                purpose_id=body.purpose_id,
+                rental_mode=body.rental_mode,
+                guest_count=body.guest_count,
+                customer_notes=body.customer_notes,
             )
         except HTTPException as e:
             await idem.complete({"detail": e.detail}, e.status_code)
@@ -596,8 +663,11 @@ async def flag_booking_route(
 @app.post("/api/v1/bookings/{booking_id}/cancel", response_model=BookingCancelResponse)
 async def cancel_booking_route(
     booking_id: uuid.UUID,
+    request: Request,
+    response: Response,
     body: BookingCancelRequest = BookingCancelRequest(),
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser = Depends(require_role("customer")),
 ) -> BookingCancelResponse:
     """Customer-initiated cancellation of a *confirmed* booking — the gap
@@ -617,37 +687,84 @@ async def cancel_booking_route(
     403 — a different property from this role gate, tested separately in
     test_booking_cancellation.py).
     """
-    booking, refund_amount, refund_tier = await booking_service.cancel_booking_as_customer(
-        session=db, booking_id=booking_id, customer_id=current_user.id, reason=body.reason,
-    )
-    return BookingCancelResponse(
-        id=booking.id,
-        status=booking.status,
-        cancellation_reason=booking.cancellation_reason,
-        refund_amount=refund_amount,
-        refund_tier=refund_tier,
-    )
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    async with idempotency(
+        idem_db, idem_key, current_user.id, f"cancel_booking:{booking_id}", body
+    ) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return BookingCancelResponse(**idem.response_body)
+
+        try:
+            booking, refund_amount, refund_tier = await booking_service.cancel_booking_as_customer(
+                session=db, booking_id=booking_id, customer_id=current_user.id, reason=body.reason,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = BookingCancelResponse(
+            id=booking.id,
+            status=booking.status,
+            cancellation_reason=booking.cancellation_reason,
+            refund_amount=refund_amount,
+            refund_tier=refund_tier,
+        )
+        await idem.complete(res, 200)
+        return res
 
 
 @app.post("/api/v1/bookings/manage/{token}/cancel", response_model=BookingCancelResponse)
 async def cancel_booking_by_manage_token_route(
     token: str,
+    request: Request,
+    response: Response,
     body: BookingCancelRequest = BookingCancelRequest(),
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
 ) -> BookingCancelResponse:
     """Guest half of the same operation as cancel_booking_route above — no
     auth dependency at all, same as get_booking_by_manage_token_route: the
     token in the path is this guest's entire authentication."""
-    booking, refund_amount, refund_tier = await booking_service.cancel_booking_by_manage_token(
-        session=db, raw_token=token, reason=body.reason,
-    )
-    return BookingCancelResponse(
-        id=booking.id,
-        status=booking.status,
-        cancellation_reason=booking.cancellation_reason,
-        refund_amount=refund_amount,
-        refund_tier=refund_tier,
-    )
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    client_ip = auth_service.get_client_ip(request)
+    token_prefix = token[:16] if len(token) >= 16 else token
+    async with idempotency(
+        idem_db, idem_key, None, f"cancel_booking_guest:{token_prefix}", body, client_ip=client_ip
+    ) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return BookingCancelResponse(**idem.response_body)
+
+        try:
+            booking, refund_amount, refund_tier = await booking_service.cancel_booking_by_manage_token(
+                session=db, raw_token=token, reason=body.reason,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = BookingCancelResponse(
+            id=booking.id,
+            status=booking.status,
+            cancellation_reason=booking.cancellation_reason,
+            refund_amount=refund_amount,
+            refund_tier=refund_tier,
+        )
+        await idem.complete(res, 200)
+        return res
 
 
 @app.post("/api/v1/bookings/{booking_id}/cancellation-requests", response_model=BookingActionRequestResponse, status_code=201)
@@ -754,40 +871,86 @@ async def get_booking_for_admin_route(
 async def admin_confirm_payment_route(
     booking_id: uuid.UUID,
     body: AdminConfirmPaymentRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> BookingDetail:
     """Decision Point C-5/C-6 (see PHASE_C6_SUMMARY.md): the client
     confirms payment offline; this route is admin marking that in the
     system. This is the real trigger for 'instant confirmation' today —
     not a Razorpay webhook, which is explicitly out of scope for now."""
-    booking = await booking_service.confirm_booking_by_admin(
-        session=db,
-        booking_id=booking_id,
-        admin_id=current_user.id,
-        amount=body.amount,
-        method=body.method,
-        reference=body.reference,
-        notes=body.notes,
-    )
-    return BookingDetail.model_validate(booking)
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    async with idempotency(idem_db, idem_key, current_user.id, f"confirm_payment:{booking_id}", body) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return BookingDetail(**idem.response_body)
+
+        try:
+            booking = await booking_service.confirm_booking_by_admin(
+                session=db,
+                booking_id=booking_id,
+                admin_id=current_user.id,
+                amount=body.amount,
+                method=body.method,
+                reference=body.reference,
+                notes=body.notes,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = BookingDetail.model_validate(booking)
+        await idem.complete(res, 200)
+        return res
 
 
 @app.post("/api/v1/admin/bookings/{booking_id}/cancel-pending", response_model=BookingDetail)
 async def admin_cancel_pending_booking_route(
     booking_id: uuid.UUID,
+    request: Request,
+    response: Response,
     body: AdminCancelPendingBookingRequest,
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> BookingDetail:
     """Releases a pending_payment slot immediately rather than waiting out
     HOLD_DURATION — see cancel_pending_booking's docstring in the service
     layer for why this matters more now that the hold is long/deal-
     dependent instead of a short checkout timer."""
-    booking = await booking_service.cancel_pending_booking(
-        session=db, booking_id=booking_id, actor_id=current_user.id, reason=body.reason
-    )
-    return BookingDetail.model_validate(booking)
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    async with idempotency(
+        idem_db, idem_key, current_user.id, f"admin_cancel_pending:{booking_id}", body
+    ) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return BookingDetail(**idem.response_body)
+
+        try:
+            booking = await booking_service.cancel_pending_booking(
+                session=db, booking_id=booking_id, actor_id=current_user.id, reason=body.reason
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = BookingDetail.model_validate(booking)
+        await idem.complete(res, 200)
+        return res
 
 
 @app.post("/api/v1/admin/bookings/sweep-expired-holds")
@@ -881,6 +1044,8 @@ async def submit_owner_verification_route(
     business_name: str | None = Form(default=None),
     identification_type: str | None = Form(default=None),
     identification_number: str | None = Form(default=None),
+    pan: str | None = Form(default=None),
+    gstin: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
     storage=Depends(get_private_file_storage),
@@ -905,6 +1070,8 @@ async def submit_owner_verification_route(
         business_name=business_name,
         identification_type=identification_type,
         identification_number=identification_number,
+        pan=pan,
+        gstin=gstin,
     )
     return OwnerVerificationResponse.model_validate(verification)
 
@@ -1189,6 +1356,7 @@ async def upload_venue_media_route(
     venue_id: uuid.UUID,
     image: UploadFile = File(...),
     is_cover: bool = Form(default=False),
+    duration: float | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role("owner", "admin")),
     storage=Depends(get_file_storage),
@@ -1202,6 +1370,7 @@ async def upload_venue_media_route(
         content_type=image.content_type,
         storage=storage,
         is_cover=is_cover,
+        duration=duration,
     )
     return VenueResponse.from_venue(venue)
 
@@ -1231,18 +1400,36 @@ async def list_inventory_units_route(
     venue_id: str,
     date_from: date_ | None = None,
     date_to: date_ | None = None,
+    include_all: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser | None = Depends(get_current_user_optional),
 ) -> list[InventoryUnitResponse]:
-    """A real gap found while starting frontend integration — POST (owner
-    creates slots) existed with no GET for anyone, including a browsing
-    customer, to actually see them. Same public-if-active/owner-admin-
-    preview-otherwise visibility rule as GET /venues/{id} — see
-    list_inventory_units_for_venue's docstring."""
+    """Guide 11 availability rules: returns bookable units for customers,
+    or all units for owner/admin with include_all=True."""
     units = await catalog_service.list_inventory_units_for_venue(
-        db, venue_id, current_user, date_from=date_from, date_to=date_to,
+        db, venue_id, current_user, date_from=date_from, date_to=date_to, include_all=include_all
     )
     return [InventoryUnitResponse.model_validate(u) for u in units]
+
+
+@app.get("/api/v1/venues/{venue_id}/availability", response_model=list[DateAvailabilityResponse])
+async def get_venue_availability_route(
+    venue_id: str,
+    from_date: date_ = Query(..., alias="from"),
+    to_date: date_ = Query(..., alias="to"),
+    purpose_id: uuid.UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+) -> list[DateAvailabilityResponse]:
+    results = await catalog_service.get_venue_availability(
+        session=db,
+        venue_id=venue_id,
+        date_from=from_date,
+        date_to=to_date,
+        purpose_id=purpose_id,
+        viewer=current_user,
+    )
+    return [DateAvailabilityResponse.model_validate(r) for r in results]
 
 @app.post("/api/v1/venues/{venue_id}/blocks", response_model=BlockResponse, status_code=201)
 async def create_venue_block(
@@ -1304,6 +1491,195 @@ async def reject_venue_route(
     return VenueResponse.from_venue(venue)
 
 
+# ---------------------------------------------------------------------------
+# Venue Rental Options
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/venues/{venue_id}/rental-options", response_model=list[VenueRentalOptionResponse])
+async def list_rental_options_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[VenueRentalOptionResponse]:
+    options = await catalog_service.list_rental_options(db, venue_id)
+    return [VenueRentalOptionResponse.model_validate(o) for o in options]
+
+
+@app.post("/api/v1/owner/venues/{venue_id}/rental-options", response_model=VenueRentalOptionResponse, status_code=201)
+async def create_rental_option_route(
+    venue_id: uuid.UUID,
+    body: VenueRentalOptionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenueRentalOptionResponse:
+    opt = await catalog_service.create_rental_option(
+        session=db,
+        venue_id=venue_id,
+        viewer=current_user,
+        data=body.model_dump(),
+    )
+    return VenueRentalOptionResponse.model_validate(opt)
+
+
+@app.patch("/api/v1/owner/venues/{venue_id}/rental-options/{option_id}", response_model=VenueRentalOptionResponse)
+@app.put("/api/v1/owner/venues/{venue_id}/rental-options/{option_id}", response_model=VenueRentalOptionResponse)
+async def update_rental_option_route(
+    venue_id: uuid.UUID,
+    option_id: uuid.UUID,
+    body: VenueRentalOptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenueRentalOptionResponse:
+    opt = await catalog_service.update_rental_option(
+        session=db,
+        venue_id=venue_id,
+        option_id=option_id,
+        viewer=current_user,
+        data=body.model_dump(exclude_unset=True),
+    )
+    return VenueRentalOptionResponse.model_validate(opt)
+
+
+@app.delete("/api/v1/owner/venues/{venue_id}/rental-options/{option_id}", status_code=204)
+async def delete_rental_option_route(
+    venue_id: uuid.UUID,
+    option_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+):
+    await catalog_service.delete_rental_option(
+        session=db,
+        venue_id=venue_id,
+        option_id=option_id,
+        viewer=current_user,
+    )
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Venue Purposes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/venues/{venue_id}/purposes", response_model=list[VenuePurposeResponse])
+async def list_venue_purposes_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+) -> list[VenuePurposeResponse]:
+    purposes = await catalog_service.list_purposes(db, venue_id, current_user)
+    return [VenuePurposeResponse.model_validate(p) for p in purposes]
+
+
+@app.get("/api/v1/owner/venues/{venue_id}/purposes", response_model=list[VenuePurposeResponse])
+async def list_owner_venue_purposes_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> list[VenuePurposeResponse]:
+    purposes = await catalog_service.list_purposes(db, venue_id, current_user)
+    return [VenuePurposeResponse.model_validate(p) for p in purposes]
+
+
+@app.post("/api/v1/owner/venues/{venue_id}/purposes", response_model=VenuePurposeResponse, status_code=201)
+async def create_venue_purpose_route(
+    venue_id: uuid.UUID,
+    body: VenuePurposeCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenuePurposeResponse:
+    purpose = await catalog_service.create_purpose(
+        session=db,
+        venue_id=venue_id,
+        viewer=current_user,
+        data=body.model_dump(),
+    )
+    return VenuePurposeResponse.model_validate(purpose)
+
+
+@app.patch("/api/v1/owner/venues/{venue_id}/purposes/{purpose_id}", response_model=VenuePurposeResponse)
+@app.put("/api/v1/owner/venues/{venue_id}/purposes/{purpose_id}", response_model=VenuePurposeResponse)
+async def update_venue_purpose_route(
+    venue_id: uuid.UUID,
+    purpose_id: uuid.UUID,
+    body: VenuePurposeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenuePurposeResponse:
+    purpose = await catalog_service.update_purpose(
+        session=db,
+        venue_id=venue_id,
+        purpose_id=purpose_id,
+        viewer=current_user,
+        data=body.model_dump(exclude_unset=True),
+    )
+    return VenuePurposeResponse.model_validate(purpose)
+
+
+@app.delete("/api/v1/owner/venues/{venue_id}/purposes/{purpose_id}", status_code=204)
+async def delete_venue_purpose_route(
+    venue_id: uuid.UUID,
+    purpose_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+):
+    await catalog_service.delete_purpose(
+        session=db,
+        venue_id=venue_id,
+        purpose_id=purpose_id,
+        viewer=current_user,
+    )
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/admin/purposes/pending", response_model=list[VenuePurposeResponse])
+async def list_pending_custom_purposes_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[VenuePurposeResponse]:
+    purposes = await catalog_service.list_pending_custom_purposes(db)
+    return [VenuePurposeResponse.model_validate(p) for p in purposes]
+
+
+@app.post("/api/v1/admin/purposes/{purpose_id}/approve", response_model=VenuePurposeResponse)
+async def approve_custom_purpose_route(
+    purpose_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> VenuePurposeResponse:
+    purpose = await catalog_service.moderate_custom_purpose(db, purpose_id, approved=True)
+    return VenuePurposeResponse.model_validate(purpose)
+
+
+@app.post("/api/v1/admin/purposes/{purpose_id}/reject", response_model=VenuePurposeResponse)
+async def reject_custom_purpose_route(
+    purpose_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> VenuePurposeResponse:
+    purpose = await catalog_service.moderate_custom_purpose(db, purpose_id, approved=False)
+    return VenuePurposeResponse.model_validate(purpose)
+
+
+# ---------------------------------------------------------------------------
+# Owner Dashboard
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/owner/overview", response_model=OwnerOverviewResponse)
+async def get_owner_overview_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> OwnerOverviewResponse:
+    return await owner_dashboard_service.get_owner_overview(db, current_user.id)
+
+
+@app.get("/api/v1/owner/venues/{venue_id}/stats", response_model=OwnerVenueStats)
+async def get_owner_venue_stats_route(
+    venue_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> OwnerVenueStats:
+    return await owner_dashboard_service.get_owner_venue_stats(db, venue_id, current_user.id)
+
+
 @app.get("/api/v1/admin/payouts", response_model=list[AdminPayoutView])
 async def list_payouts_for_admin_route(
     status: str | None = Query(default=None),
@@ -1325,27 +1701,82 @@ async def list_payouts_for_admin_route(
 @app.post("/api/v1/admin/payouts/run", response_model=PayoutDetail)
 async def run_payout_route(
     body: PayoutRunRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> PayoutDetail:
     """The owner payout ledger — HANDOFF.md §7's #1 remaining item after
     PHASE_C7_SUMMARY.md. See run_payout()'s docstring for Decision Point
     C-11's full reasoning on eligibility and what "gross" means here."""
-    payout = await payout_service.run_payout(
-        session=db, admin_id=current_user.id, owner_id=body.owner_id,
-        period_start=body.period_start, period_end=body.period_end,
-    )
-    return PayoutDetail.model_validate(payout)
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    async with idempotency(
+        idem_db, idem_key, current_user.id, f"admin_payout_run:{body.owner_id}", body
+    ) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return PayoutDetail(**idem.response_body)
+
+        try:
+            payout = await payout_service.run_payout(
+                session=db, admin_id=current_user.id, owner_id=body.owner_id,
+                period_start=body.period_start, period_end=body.period_end,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = PayoutDetail.model_validate(payout)
+        await idem.complete(res, 200)
+        return res
 
 
 @app.post("/api/v1/admin/payouts/{payout_id}/mark-paid", response_model=PayoutDetail)
 async def mark_payout_paid_route(
     payout_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    body: PayoutMarkPaidRequest = PayoutMarkPaidRequest(),
     db: AsyncSession = Depends(get_db),
+    idem_db: AsyncSession | None = Depends(get_idem_db),
     current_user: CurrentUser = Depends(require_role("admin")),
 ) -> PayoutDetail:
-    payout = await payout_service.mark_payout_paid(session=db, payout_id=payout_id, admin_id=current_user.id)
-    return PayoutDetail.model_validate(payout)
+    idem_key = request.headers.get("Idempotency-Key")
+    if getattr(settings, "idempotency_required", False) and not idem_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required for this operation")
+
+    async with idempotency(
+        idem_db, idem_key, current_user.id, f"admin_mark_payout_paid:{payout_id}", body
+    ) as idem:
+        if idem.is_replaying:
+            if idem.response_code and idem.response_code >= 400:
+                raise HTTPException(status_code=idem.response_code, detail=idem.response_body.get("detail", "Error"))
+            response.headers["Idempotent-Replayed"] = "true"
+            response.status_code = idem.response_code or 200
+            return PayoutDetail(**idem.response_body)
+
+        try:
+            payout = await payout_service.mark_payout_paid(
+                session=db,
+                payout_id=payout_id,
+                admin_id=current_user.id,
+                reference=body.reference,
+                bank_account_id=body.bank_account_id,
+            )
+        except HTTPException as e:
+            await idem.complete({"detail": e.detail}, e.status_code)
+            raise
+
+        res = PayoutDetail.model_validate(payout)
+        await idem.complete(res, 200)
+        return res
 
 
 @app.get("/api/v1/owner/payouts", response_model=list[PayoutDetail])
@@ -1355,6 +1786,71 @@ async def list_my_payouts_route(
 ) -> list[PayoutDetail]:
     payouts = await payout_service.list_payouts_for_owner(db, current_user.id)
     return [PayoutDetail.model_validate(p) for p in payouts]
+
+
+# ---------------------------------------------------------------------------
+# Owner Bank Accounts (Phase 1)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/owner/bank-accounts", response_model=OwnerBankAccountResponse, status_code=201)
+async def create_owner_bank_account_route(
+    body: OwnerBankAccountCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner")),
+) -> OwnerBankAccountResponse:
+    if body.is_primary:
+        existing_res = await db.execute(
+            select(OwnerBankAccount).where(
+                OwnerBankAccount.owner_id == current_user.id,
+                OwnerBankAccount.is_primary.is_(True)
+            )
+        )
+        for acc in existing_res.scalars().all():
+            acc.is_primary = False
+
+    bank_account = OwnerBankAccount(
+        owner_id=current_user.id,
+        account_holder_name=body.account_holder_name.strip(),
+        account_number=body.account_number.strip(),
+        ifsc_code=body.ifsc_code.strip().upper(),
+        bank_name=body.bank_name.strip() if body.bank_name else None,
+        upi_id=body.upi_id.strip() if body.upi_id else None,
+        is_verified=False,
+        is_primary=body.is_primary,
+    )
+    db.add(bank_account)
+    await db.commit()
+    await db.refresh(bank_account)
+    return OwnerBankAccountResponse.model_validate(bank_account)
+
+
+@app.get("/api/v1/owner/bank-accounts", response_model=list[OwnerBankAccountResponse])
+async def list_owner_bank_accounts_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner")),
+) -> list[OwnerBankAccountResponse]:
+    result = await db.execute(
+        select(OwnerBankAccount)
+        .where(OwnerBankAccount.owner_id == current_user.id)
+        .order_by(OwnerBankAccount.is_primary.desc(), OwnerBankAccount.created_at.desc())
+    )
+    accounts = result.scalars().all()
+    return [OwnerBankAccountResponse.model_validate(a) for a in accounts]
+
+
+@app.get("/api/v1/admin/owners/{owner_id}/bank-accounts", response_model=list[OwnerBankAccountResponse])
+async def list_admin_owner_bank_accounts_route(
+    owner_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[OwnerBankAccountResponse]:
+    result = await db.execute(
+        select(OwnerBankAccount)
+        .where(OwnerBankAccount.owner_id == owner_id)
+        .order_by(OwnerBankAccount.is_primary.desc(), OwnerBankAccount.created_at.desc())
+    )
+    accounts = result.scalars().all()
+    return [OwnerBankAccountResponse.model_validate(a) for a in accounts]
 
 
 @app.get("/api/v1/owner/bookings", response_model=list[BookingDetail])
@@ -1512,7 +2008,80 @@ async def process_admin_booking_action_route(
         decision=body.decision,
         decision_reason=body.decision_reason,
     )
+    db.add(
+        AuditLog(
+            actor_id=current_user.id,
+            action=f"booking_action.{body.decision}",
+            entity_type="booking_action_request",
+            entity_id=action_id,
+            extra_data={"booking_id": str(req.booking_id), "decision": body.decision, "reason": body.decision_reason},
+        )
+    )
+    await db.commit()
     return BookingActionRequestResponse.model_validate(req)
+
+
+# ---------------------------------------------------------------------------
+# Double-Entry Ledger & Reconciliation (Phase 1)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/ledger/reconcile", response_model=ReconciliationResponse)
+async def reconcile_ledger_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> ReconciliationResponse:
+    """Verifies double-entry balancing across all debits and credits."""
+    summary = await ledger_service.get_reconciliation_summary(db)
+    return ReconciliationResponse.model_validate(summary)
+
+
+@app.get("/api/v1/admin/ledger/entries", response_model=list[LedgerEntryResponse])
+async def list_ledger_entries_route(
+    account: str | None = Query(default=None),
+    entry_type: str | None = Query(default=None),
+    booking_id: uuid.UUID | None = Query(default=None),
+    payout_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[LedgerEntryResponse]:
+    """Inspect double-entry ledger records with optional filters."""
+    entries = await ledger_service.get_ledger_entries(
+        db,
+        account=account,
+        entry_type=entry_type,
+        booking_id=booking_id,
+        payout_id=payout_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [LedgerEntryResponse.model_validate(e) for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# Admin Refunds Audit & Review (Phase 1)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/refunds", response_model=list[RefundResponse])
+async def list_admin_refunds_route(
+    booking_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> list[RefundResponse]:
+    """List all monetary refund records with full audit linkage."""
+    stmt = select(Refund)
+    if booking_id:
+        stmt = stmt.where(Refund.booking_id == booking_id)
+    if status:
+        stmt = stmt.where(Refund.status == status)
+    stmt = stmt.order_by(Refund.created_at.desc()).limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    refunds = result.scalars().all()
+    return [RefundResponse.model_validate(r) for r in refunds]
 
 
 @app.get("/api/v1/admin/overview", response_model=PlatformOverview)
@@ -1860,6 +2429,9 @@ async def reorder_section_route(
 # ---------------------------------------------------------------------------
 
 @app.patch("/api/v1/venues/{venue_id}/images/{image_id}/cover", response_model=VenueMediaResponse)
+@app.put("/api/v1/venues/{venue_id}/images/{image_id}/cover", response_model=VenueMediaResponse)
+@app.patch("/api/v1/owner/venues/{venue_id}/media/{image_id}/set-cover", response_model=VenueMediaResponse)
+@app.put("/api/v1/owner/venues/{venue_id}/media/{image_id}/set-cover", response_model=VenueMediaResponse)
 async def set_cover_image_route(
     venue_id: uuid.UUID,
     image_id: uuid.UUID,
@@ -1873,6 +2445,39 @@ async def set_cover_image_route(
         viewer=current_user,
     )
     return VenueMediaResponse.model_validate(image)
+
+
+@app.post("/api/v1/owner/venues/{venue_id}/media/link", response_model=VenueMediaResponse, status_code=201)
+async def add_venue_video_link_route(
+    venue_id: uuid.UUID,
+    body: MediaLinkCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> VenueMediaResponse:
+    media = await catalog_service.add_venue_video_link(
+        session=db,
+        venue_id=venue_id,
+        viewer=current_user,
+        url=body.url,
+        thumbnail_url=body.thumbnail_url,
+    )
+    return VenueMediaResponse.model_validate(media)
+
+
+@app.put("/api/v1/owner/venues/{venue_id}/media/reorder", response_model=list[VenueMediaResponse])
+async def reorder_venue_media_route(
+    venue_id: uuid.UUID,
+    body: MediaReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("owner", "admin")),
+) -> list[VenueMediaResponse]:
+    media_items = await catalog_service.reorder_venue_media(
+        session=db,
+        venue_id=venue_id,
+        viewer=current_user,
+        ordered_ids=body.ordered_ids,
+    )
+    return [VenueMediaResponse.model_validate(m) for m in media_items]
 
 
 @app.delete("/api/v1/venues/{venue_id}", status_code=204)
@@ -1967,9 +2572,13 @@ async def list_admin_tickets_route(
 @app.post("/api/v1/support/tickets", response_model=TicketResponse, status_code=201)
 async def create_ticket_route(
     req: TicketCreateRequest,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TicketResponse:
+    ip = auth_service.get_client_ip(request)
+    await auth_service.check_rate_limit(db, f"ratelimit:ticket:user:{current_user.id}", max_attempts=10, window_seconds=60)
+    await auth_service.check_rate_limit(db, f"ratelimit:ticket:ip:{ip}", max_attempts=20, window_seconds=60)
     ticket = await support_service.create_ticket(
         db, current_user.id, **req.model_dump()
     )
@@ -2041,6 +2650,7 @@ async def add_comment_route(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TicketEventResponse:
+    await auth_service.check_rate_limit(db, f"ratelimit:comment:user:{current_user.id}", max_attempts=20, window_seconds=60)
     event = await support_service.add_comment(
         db, current_user.id, current_user.role, ticket_id, **req.model_dump()
     )
@@ -2286,3 +2896,114 @@ async def get_owner_analytics_route(
         owner_id=current_user.id
     )
     return await analytics_service.get_analytics_metrics(db, filter)
+
+
+# -----------------------------------------------------------------------------
+# Help Center & Contact Enquiries
+# -----------------------------------------------------------------------------
+from app.modules.help import service as help_service
+from app.schemas.help import (
+    HelpCategoryResponse,
+    HelpArticleSummary,
+    HelpArticleDetail,
+    HelpFeedbackRequest,
+    HelpFeedbackResponse,
+    ContactSubmitRequest,
+    ContactSubmitResponse,
+)
+
+@app.get("/api/v1/help/categories", response_model=list[HelpCategoryResponse])
+async def list_help_categories_route(
+    audience: str | None = None,
+    lang: str = "en",
+    db: AsyncSession = Depends(get_db),
+) -> list[HelpCategoryResponse]:
+    """Public — list active help categories with article counts."""
+    categories_with_counts = await help_service.list_categories(db, audience=audience, lang=lang)
+    return [
+        HelpCategoryResponse.from_category(item["category"], count=item["article_count"])
+        for item in categories_with_counts
+    ]
+
+@app.get("/api/v1/help/articles", response_model=list[HelpArticleSummary])
+async def list_help_articles_route(
+    audience: str | None = None,
+    category: str | None = None,
+    q: str | None = None,
+    lang: str = "en",
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+) -> list[HelpArticleSummary]:
+    """Public — search and filter published help articles."""
+    articles = await help_service.list_articles(
+        db, audience=audience, category_slug=category, query=q, lang=lang, limit=limit, offset=offset
+    )
+    return [HelpArticleSummary.from_article(a) for a in articles]
+
+@app.get("/api/v1/help/articles/{slug}", response_model=HelpArticleDetail)
+async def get_help_article_route(
+    slug: str,
+    lang: str = "en",
+    db: AsyncSession = Depends(get_db),
+) -> HelpArticleDetail:
+    """Public — retrieve full help article by slug, with section table of contents and related articles."""
+    article = await help_service.get_article_by_slug(db, slug, lang=lang)
+    if not article:
+        raise HTTPException(status_code=404, detail="Help article not found")
+    related = await help_service.get_related_articles(db, article, limit=3)
+    related_summaries = [HelpArticleSummary.from_article(r) for r in related]
+    category_resp = HelpCategoryResponse.from_category(article.category) if article.category else None
+    return HelpArticleDetail.from_article(article, category=category_resp, related=related_summaries)
+
+@app.post("/api/v1/help/articles/{article_id}/feedback", response_model=HelpFeedbackResponse)
+async def submit_help_feedback_route(
+    article_id: uuid.UUID,
+    req: HelpFeedbackRequest,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+) -> HelpFeedbackResponse:
+    """Public — submit helpfulness vote on an article or section."""
+    user_id = current_user.id if current_user else None
+    async with db.begin():
+        await help_service.submit_feedback(
+            db, article_id, helpful=req.helpful, section=req.section, user_id=user_id
+        )
+    return HelpFeedbackResponse(success=True, message="Feedback submitted successfully")
+
+@app.post("/api/v1/contact", response_model=ContactSubmitResponse)
+async def submit_contact_form_route(
+    req: ContactSubmitRequest,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+) -> ContactSubmitResponse:
+    """Public — submit contact form. If logged in, creates support ticket; if guest, creates guest enquiry."""
+    if current_user:
+        ticket = await support_service.create_ticket(
+            db,
+            current_user.id,
+            subject=req.subject,
+            description=req.message,
+            category="general",
+        )
+        return ContactSubmitResponse(
+            success=True,
+            ticket_id=str(ticket.id),
+            message="Your message has been received. Our team will review your support ticket.",
+        )
+    else:
+        async with db.begin():
+            enquiry = await help_service.create_guest_enquiry(
+                db,
+                name=req.name,
+                email=req.email,
+                phone=req.phone,
+                subject=req.subject,
+                message=req.message,
+            )
+        return ContactSubmitResponse(
+            success=True,
+            enquiry_id=str(enquiry.id),
+            message="Thank you for reaching out! We have received your message and will get back to you shortly.",
+        )
+

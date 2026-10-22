@@ -31,6 +31,87 @@ class VenueContentBlockResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class VenueRentalOptionResponse(BaseModel):
+    id: uuid.UUID
+    venue_id: uuid.UUID
+    mode: str
+    price: Decimal
+    open_time: time | None = None
+    close_time: time | None = None
+    slot_minutes: int | None = None
+    min_minutes: int | None = None
+    max_minutes: int | None = None
+    buffer_minutes: int = 0
+    enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class VenueRentalOptionCreate(BaseModel):
+    mode: Literal["hour", "half_day", "full_day"]
+    price: Decimal = Field(ge=0)
+    open_time: time | None = None
+    close_time: time | None = None
+    slot_minutes: int | None = None
+    min_minutes: int | None = None
+    max_minutes: int | None = None
+    buffer_minutes: int = 0
+    enabled: bool = True
+
+
+class VenueRentalOptionUpdate(BaseModel):
+    price: Decimal | None = Field(default=None, ge=0)
+    open_time: time | None = None
+    close_time: time | None = None
+    slot_minutes: int | None = None
+    min_minutes: int | None = None
+    max_minutes: int | None = None
+    buffer_minutes: int | None = None
+    enabled: bool | None = None
+
+
+class VenuePurposeResponse(BaseModel):
+    id: uuid.UUID
+    venue_id: uuid.UUID
+    use_case_id: uuid.UUID | None = None
+    custom_name: str | None = None
+    name: str | None = None
+    is_custom_approved: bool | None = None
+    description: str | None = None
+    max_guests: int | None = None
+    allowed_modes: list[str] | None = None
+    price_override: Decimal | None = None
+    rules: str | None = None
+    enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class VenuePurposeCreate(BaseModel):
+    use_case_id: uuid.UUID | None = None
+    custom_name: str | None = None
+    description: str | None = None
+    max_guests: int | None = None
+    allowed_modes: list[str] | None = None
+    price_override: Decimal | None = Field(default=None, ge=0)
+    rules: str | None = None
+    enabled: bool = True
+
+
+class VenuePurposeUpdate(BaseModel):
+    custom_name: str | None = None
+    description: str | None = None
+    max_guests: int | None = None
+    allowed_modes: list[str] | None = None
+    price_override: Decimal | None = Field(default=None, ge=0)
+    rules: str | None = None
+    enabled: bool | None = None
+
+
 class VenueCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     display_name: str | None = None
@@ -49,6 +130,8 @@ class VenueCreateRequest(BaseModel):
     capacity: int | None = Field(default=None, gt=0)
     amenity_names: list[str] | None = None
     content_blocks: list[VenueContentBlockCreate] | None = None
+    rental_options: list[VenueRentalOptionCreate] | None = None
+    purposes: list[VenuePurposeCreate] | None = None
     status: str | None = None
     save_as_draft: bool = False
 
@@ -82,6 +165,8 @@ class VenueUpdateRequest(BaseModel):
     base_price: Decimal | None = Field(default=None, ge=0)
     amenity_names: list[str] | None = None
     content_blocks: list[VenueContentBlockCreate] | None = None
+    rental_options: list[VenueRentalOptionCreate] | None = None
+    purposes: list[VenuePurposeCreate] | None = None
     status: str | None = None
 
 
@@ -106,6 +191,8 @@ class UseCaseResponse(BaseModel):
 class VenueMediaResponse(BaseModel):
     id: uuid.UUID
     url: str
+    media_type: str = "image"
+    thumbnail_url: str | None = None
     is_cover: bool
     sort_order: int
 
@@ -129,6 +216,8 @@ class VenueResponse(BaseModel):
     city: str
     state: str | None
     pincode: str | None
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
     capacity: int | None
     unit_type: str
     base_price: Decimal
@@ -137,9 +226,13 @@ class VenueResponse(BaseModel):
     suspension_reason: str | None
     pending_changes: dict | None = None
     avg_rating: Decimal
+    review_count: int = 0
     media: list[VenueMediaResponse] = []
     content_blocks: list[VenueContentBlockResponse] = []
+    rental_options: list[VenueRentalOptionResponse] = []
+    purposes: list[VenuePurposeResponse] = []
     amenities: list[str] = []
+    use_cases: list[str] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -155,6 +248,30 @@ class VenueResponse(BaseModel):
         media = state.dict.get("media") or []
         content_blocks = state.dict.get("content_blocks") or []
         amenities = state.dict.get("amenities") or []
+        raw_options = state.dict.get("rental_options") or []
+        raw_purposes = state.dict.get("purposes") or []
+        reviews = state.dict.get("reviews")
+        review_count = len(reviews) if reviews is not None else 0
+
+        purposes_out = []
+        for p in raw_purposes:
+            p_dict = {
+                "id": p.id,
+                "venue_id": p.venue_id,
+                "use_case_id": p.use_case_id,
+                "custom_name": p.custom_name,
+                "name": p.use_case.name if (getattr(p, "use_case", None) and p.use_case) else p.custom_name,
+                "is_custom_approved": p.is_custom_approved,
+                "description": p.description,
+                "max_guests": p.max_guests,
+                "allowed_modes": p.allowed_modes,
+                "price_override": p.price_override,
+                "rules": p.rules,
+                "enabled": p.enabled,
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            }
+            purposes_out.append(VenuePurposeResponse(**p_dict))
 
         return cls(
             id=venue.id,
@@ -173,6 +290,8 @@ class VenueResponse(BaseModel):
             city=venue.city,
             state=venue.state,
             pincode=venue.pincode,
+            latitude=getattr(venue, "latitude", None),
+            longitude=getattr(venue, "longitude", None),
             capacity=venue.capacity,
             unit_type=venue.unit_type,
             base_price=venue.base_price,
@@ -181,9 +300,13 @@ class VenueResponse(BaseModel):
             suspension_reason=venue.suspension_reason,
             pending_changes=getattr(venue, "pending_changes", None),
             avg_rating=venue.avg_rating,
+            review_count=review_count,
             media=[VenueMediaResponse.model_validate(i) for i in media],
             content_blocks=[VenueContentBlockResponse.model_validate(i) for i in content_blocks],
+            rental_options=[VenueRentalOptionResponse.model_validate(r) for r in raw_options],
+            purposes=purposes_out,
             amenities=[a.name for a in amenities],
+            use_cases=[uc.name for uc in use_cases] if use_cases else [],
             created_at=venue.created_at,
         )
 
@@ -217,6 +340,23 @@ class InventoryUnitResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class DateAvailabilityResponse(BaseModel):
+    date: date_
+    is_full_day_available: bool
+    hourly_slots_total: int
+    hourly_slots_available: int
+    available_rental_modes: list[str] = []
+
+
+class MediaLinkCreateRequest(BaseModel):
+    url: str = Field(min_length=1)
+    thumbnail_url: str | None = None
+
+
+class MediaReorderRequest(BaseModel):
+    ordered_ids: list[uuid.UUID]
 
 
 class VenueRejectRequest(BaseModel):

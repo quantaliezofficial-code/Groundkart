@@ -50,11 +50,11 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.config import settings
-from app.models.core import Review, AuditLog, Booking, BookingActionRequest, BookingEvent, InventoryUnit, Payment, Venue
+from app.models.core import Review, AuditLog, Booking, BookingActionRequest, BookingEvent, InventoryUnit, Payment, Venue, VenuePurpose
 from app.modules.core.outbox import create_outbox_event
 from app.modules.notifications.service import notify
 from app.modules.booking.domain import transition_booking_status
@@ -87,6 +87,10 @@ async def create_booking(
     guest_name: str | None = None,
     guest_email: str | None = None,
     guest_phone: str | None = None,
+    purpose_id: uuid.UUID | None = None,
+    rental_mode: str | None = None,
+    guest_count: int | None = None,
+    customer_notes: str | None = None,
 ) -> tuple[Booking, str | None]:
     """Returns (booking, raw_manage_token). raw_manage_token is None for an
     account checkout — only guest bookings get one. The caller (the
@@ -103,15 +107,6 @@ async def create_booking(
     if customer_id is None and not (guest_name and guest_email):
         raise HTTPException(status_code=422, detail="Provide a customer_id or guest details")
     if customer_id is not None and (guest_name or guest_email):
-        # Decision Point C-4 (see PHASE_C5_SUMMARY.md): not addressed by any
-        # doc — 05_App_Flow.md frames "logged in" vs "guest" as a fork
-        # decided by login state, not a field a request can set
-        # independently, so a request carrying BOTH a real customer_id (from
-        # an authenticated caller) AND guest fields is a state the product
-        # was never designed to have. Rejected rather than silently
-        # preferring one side, same philosophy as the check directly above
-        # it: an ambiguous request surfaces a client bug instead of guessing
-        # which the client "really" meant.
         raise HTTPException(
             status_code=422,
             detail="A logged-in booking cannot also include guest_name/guest_email",
@@ -151,24 +146,98 @@ async def create_booking(
             )
 
         hold_duration = timedelta(minutes=config.booking_hold_duration_minutes)
-        result = await session.execute(
+
+        # 1. Fetch initial unit to determine venue and bounds, locking it immediately
+        initial_res = await session.execute(
             select(InventoryUnit)
             .options(joinedload(InventoryUnit.venue))
             .where(InventoryUnit.id == inventory_unit_id)
-            .with_for_update(of=InventoryUnit)  # lock only the inventory row
+            .with_for_update(of=InventoryUnit)
         )
-        unit = result.scalar_one_or_none()
-
-        if unit is None or unit.status != "available":
+        unit = initial_res.scalar_one_or_none()
+        if unit is None:
+            raise HTTPException(status_code=404, detail="Slot not found")
+        if unit.status != "available":
+            if unit.status == "held":
+                # Check if this exact customer or guest already holds this unit in pending_payment (e.g. double click)
+                stmt = select(Booking).where(
+                    Booking.inventory_unit_id == unit.id,
+                    Booking.status == "pending_payment",
+                )
+                if customer_id is not None:
+                    stmt = stmt.where(Booking.customer_id == customer_id)
+                elif guest_email is not None:
+                    stmt = stmt.where(Booking.guest_email == guest_email)
+                    if guest_phone:
+                        stmt = stmt.where(Booking.guest_phone == guest_phone)
+                existing = (await session.execute(stmt)).scalar_one_or_none()
+                if existing:
+                    return existing, None
             raise HTTPException(status_code=409, detail="This slot is no longer available")
 
-        # FIX: Check for active maintenance blocks that overlap this slot.
-        # Previously create_booking ignored the Block table entirely, allowing
-        # customers to book slots the owner had explicitly blocked.
+        # Purpose validation & optional price override
+        base_price_override: Decimal | None = None
+        if purpose_id is not None:
+            purpose = (
+                await session.execute(
+                    select(VenuePurpose).where(
+                        VenuePurpose.id == purpose_id,
+                        VenuePurpose.venue_id == unit.venue_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not purpose or not purpose.enabled:
+                raise HTTPException(status_code=422, detail="Selected purpose is not offered by this venue")
+            if purpose.use_case_id is None and not purpose.is_custom_approved:
+                raise HTTPException(status_code=422, detail="Selected custom purpose is pending admin approval")
+            if rental_mode and purpose.allowed_modes and rental_mode not in purpose.allowed_modes:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Rental mode '{rental_mode}' is not allowed for this purpose",
+                )
+            if guest_count is not None:
+                if purpose.max_guests and guest_count > purpose.max_guests:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Guest count {guest_count} exceeds purpose maximum of {purpose.max_guests}",
+                    )
+                if unit.venue.capacity and guest_count > unit.venue.capacity:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Guest count {guest_count} exceeds venue capacity of {unit.venue.capacity}",
+                    )
+            if purpose.price_override is not None:
+                base_price_override = purpose.price_override
+
+        # 2. Lock other overlapping units for this venue in deterministic ID order
+        unit_start_ts = unit.starts_at or datetime.combine(unit.date, unit.start_time or time.min)
+        unit_end_ts = unit.ends_at or (datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date + timedelta(days=1), time.min))
+
+        overlap_query = (
+            select(InventoryUnit)
+            .where(
+                InventoryUnit.venue_id == unit.venue_id,
+                InventoryUnit.id != unit.id,
+                func.coalesce(InventoryUnit.starts_at, InventoryUnit.date + func.coalesce(InventoryUnit.start_time, time(0, 0))) < unit_end_ts,
+                func.coalesce(InventoryUnit.ends_at, InventoryUnit.date + timedelta(days=1)) > unit_start_ts,
+            )
+            .order_by(InventoryUnit.id.asc())
+            .with_for_update()
+        )
+        other_locked_units = list((await session.execute(overlap_query)).scalars().all())
+
+        # Check for any overlapping unit that is held or booked
+        for other in other_locked_units:
+            if other.status in ("held", "booked"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This slot conflicts with an existing reservation or booking for this venue",
+                )
+
+        # 3. Check for active maintenance blocks that overlap this slot.
         from app.models.core import Block
         unit_start = datetime.combine(unit.date, unit.start_time) if unit.start_time else datetime.combine(unit.date, time.min)
         unit_end = datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date, time.max)
-        # Make tz-aware for comparison with potentially tz-aware block datetimes
         unit_start_aware = unit_start.replace(tzinfo=VENUE_LOCAL_TZ)
         unit_end_aware = unit_end.replace(tzinfo=VENUE_LOCAL_TZ)
 
@@ -198,13 +267,17 @@ async def create_booking(
             manage_token_hash = hash_manage_token(raw_manage_token)
 
         from app.modules.booking.pricing_service import calculate_booking_price
-        price_snapshot = await calculate_booking_price(session, unit)
+        price_snapshot = await calculate_booking_price(session, unit, base_price_override=base_price_override)
 
         booking = Booking(
             customer_id=customer_id,
             guest_name=guest_name,
             guest_email=guest_email,
             guest_phone=guest_phone,
+            purpose_id=purpose_id,
+            rental_mode=rental_mode,
+            guest_count=guest_count,
+            customer_notes=customer_notes,
             manage_token_hash=manage_token_hash,
             venue_id=unit.venue_id,
             venue_name=unit.venue.name,
@@ -217,7 +290,13 @@ async def create_booking(
             pricing_snapshot=price_snapshot.to_dict(),
         )
         session.add(booking)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail="This slot was just booked by another user",
+            )
         
         session.add(BookingEvent(booking_id=booking.id, event_type="created", actor_type="customer" if customer_id else "guest", actor_id=customer_id))
         
@@ -450,6 +529,10 @@ async def confirm_booking_by_admin(
             },
         )
         session.add(payment)
+        await session.flush()
+
+        from app.modules.ledger import service as ledger_service
+        await ledger_service.record_payment_confirmation(session, payment, booking, admin_id)
 
         _apply_payment_confirmation(session, booking, config, admin_id, "admin")
 
@@ -661,41 +744,9 @@ async def flag_booking(
     return booking
 
 
-def _apply_customer_cancellation(
+async def _apply_customer_cancellation(
     session: AsyncSession, booking: Booking, reason: str | None, now: datetime, config, actor_id: uuid.UUID | None, actor_type: str | None
 ) -> tuple[Booking, Decimal, str]:
-    """Shared by cancel_booking_as_customer and cancel_booking_by_manage_token
-    — same shape as _apply_payment_confirmation being shared by the admin
-    and (dormant) webhook confirmation paths, so "how was this booking
-    reached" never causes the actual state transition to drift between the
-    two entry points. Caller must already hold the row lock (SELECT ...
-    FOR UPDATE) inside an open transaction, with inventory_unit and
-    payments eager-loaded, and must already have confirmed booking.status
-    == 'confirmed' before calling this.
-
-    Decision Point C-8 (flag for awareness — see the phase summary doc for
-    this slice, not the same tier as C-7/C-9 above it): this is atomic —
-    tier computed, booking cancelled, payment marked refunded, all in one
-    transaction — rather than a second admin-confirmed step mirroring
-    confirm_booking_by_admin's split from create_booking. Since Phase C6
-    removed Razorpay entirely, there is in principle no more of a real
-    gateway behind a refund than there is behind a payment collection, so a
-    case could be made either way. Went atomic specifically to match
-    flag_booking's existing, tested precedent (which has the same
-    property, and predates this decision) rather than introduce a second,
-    different refund-execution shape for the same underlying concept in
-    the same codebase. If the client's real offline process needs a
-    "confirm the money actually left the account" step, that's a small,
-    well-isolated follow-up — refund_amount is already tracked per-payment
-    (Decision Point C-9) — and would naturally pair with the still-unbuilt
-    owner payout ledger, not block this slice.
-
-    Always terminates at 'refunded', even when the computed refund is
-    ₹0 (the no-refund tier) — 05_App_Flow.md's state diagram has exactly
-    one modeled transition out of 'cancelled', to 'refunded' "per policy,"
-    and a policy that resolves to zero is still a policy that was applied,
-    not a different terminal state.
-    """
     fraction, tier = compute_refund_fraction(now, booking.inventory_unit, config)
 
     transition_booking_status(session, booking, "cancelled", actor_id, actor_type)
@@ -711,6 +762,26 @@ def _apply_customer_cancellation(
             payment.status = "refunded"
             payment.refund_amount = refund
             total_refund += refund
+
+            if refund > Decimal("0.00"):
+                from app.models.core import Refund
+                from app.modules.ledger import service as ledger_service
+                refund_obj = Refund(
+                    payment_id=payment.id,
+                    booking_id=booking.id,
+                    amount=refund,
+                    currency=payment.currency,
+                    reason=reason or f"Cancelled via tier {tier}",
+                    status="processed",
+                    mode="offline_manual",
+                    reference=f"REF-{uuid.uuid4().hex[:8].upper()}",
+                    requested_by_id=actor_id if actor_type == "customer" else None,
+                    processed_by_id=actor_id if actor_type == "admin" else None,
+                    processed_at=now,
+                )
+                session.add(refund_obj)
+                await session.flush()
+                await ledger_service.record_refund(session, refund_obj, payment, actor_id)
 
     transition_booking_status(session, booking, "refunded", actor_id, actor_type)
 
@@ -773,7 +844,7 @@ async def cancel_booking_as_customer(
             )
 
         now = datetime.now(timezone.utc)
-        booking, refund, tier = _apply_customer_cancellation(session, booking, reason, now, config, customer_id, "customer")
+        booking, refund, tier = await _apply_customer_cancellation(session, booking, reason, now, config, customer_id, "customer")
         if refund > 0:
             session.add(BookingEvent(booking_id=booking.id, event_type="refund_created", actor_type="customer", actor_id=customer_id))
         return booking, refund, tier
@@ -810,7 +881,7 @@ async def cancel_booking_by_manage_token(
             )
 
         now = datetime.now(timezone.utc)
-        booking, refund, tier = _apply_customer_cancellation(session, booking, reason, now, config, None, "guest")
+        booking, refund, tier = await _apply_customer_cancellation(session, booking, reason, now, config, None, "guest")
         if refund > 0:
             session.add(BookingEvent(booking_id=booking.id, event_type="refund_created", actor_type="guest", actor_id=None))
         return booking, refund, tier
@@ -1078,6 +1149,7 @@ async def process_booking_action_request(
                 joinedload(BookingActionRequest.booking).joinedload(Booking.inventory_unit), 
                 joinedload(BookingActionRequest.booking).selectinload(Booking.payments)
             ).where(BookingActionRequest.id == action_request_id)
+            .with_for_update(of=BookingActionRequest)
         )
         req = result.scalar_one_or_none()
         if not req:
@@ -1104,7 +1176,7 @@ async def process_booking_action_request(
             booking = req.booking
             if booking.status in ["confirmed", "upcoming", "under_admin_review"]:
                 if req.requested_by_type in ["customer", "guest"]:
-                    _apply_customer_cancellation(session, booking, req.reason, now, config, admin_id, "admin")
+                    await _apply_customer_cancellation(session, booking, req.reason, now, config, admin_id, "admin")
                 elif req.requested_by_type == "owner":
                     transition_booking_status(session, booking, "cancelled", admin_id, "admin")
                     booking.cancellation_reason = req.reason
@@ -1115,6 +1187,24 @@ async def process_booking_action_request(
                         if payment.status == "success":
                             payment.status = "refunded"
                             payment.refund_amount = payment.amount
+                            from app.models.core import Refund
+                            from app.modules.ledger import service as ledger_service
+                            refund_obj = Refund(
+                                payment_id=payment.id,
+                                booking_id=booking.id,
+                                amount=payment.amount,
+                                currency=payment.currency,
+                                reason=req.reason or "Owner cancellation approved by admin",
+                                status="processed",
+                                mode="offline_manual",
+                                reference=f"REF-{uuid.uuid4().hex[:8].upper()}",
+                                requested_by_id=req.requested_by_user_id,
+                                processed_by_id=admin_id,
+                                processed_at=now,
+                            )
+                            session.add(refund_obj)
+                            await session.flush()
+                            await ledger_service.record_refund(session, refund_obj, payment, admin_id)
                     transition_booking_status(session, booking, "refunded", admin_id, "admin")
 
         elif decision == "rejected":

@@ -111,5 +111,7 @@ class Settings(BaseSettings):
     # confirmed business number — same env-configurable treatment as the
     # other placeholders above.
     hold_sweep_interval_minutes: int = 5
+    idempotency_required: bool = False
+    idempotency_retention_days: int = 7
 
 settings = Settings()
