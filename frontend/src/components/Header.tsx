@@ -128,7 +128,7 @@ function NotificationBell() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ type: 'spring', bounce: 0.3, duration: 0.6 }}
-            className="absolute right-0 top-full mt-3 max-h-[420px] w-80 overflow-y-auto rounded-2xl bg-chalk py-2 shadow-2xl ring-1 ring-ink/10 z-50"
+            className="absolute right-0 top-full mt-3 max-h-[420px] w-80 overflow-y-auto rounded-2xl bg-chalk py-2 shadow-2xl ring-1 ring-ink/10 z-50 custom-scrollbar overscroll-contain"
             data-lenis-prevent
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-ink/5">

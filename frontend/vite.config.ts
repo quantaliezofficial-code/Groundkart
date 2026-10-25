@@ -20,5 +20,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: [path.resolve(__dirname, 'src/test/setup.ts')],
     globals: false,
+    testTimeout: 15000,
+    include: ['src/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
   },
 });

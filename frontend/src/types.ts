@@ -41,6 +41,7 @@ export interface Venue {
   id: string;
   slug?: string;
   name: string;
+  displayName?: string;
   city: string;
   district: string;
   distanceKm?: number;
@@ -64,7 +65,19 @@ export interface Venue {
   capacityGroup: '1-5' | '6-10' | '11-20' | '20+';
   isFullyBookedToday?: boolean;
   isFastFill?: boolean;
+  rentalOptions?: any[];
+  purposes?: any[];
+  contentBlocks?: any[];
+  media?: any[];
+  latitude?: number;
+  longitude?: number;
+  useCases?: string[];
+  address?: string;
+  createdAt?: string;
 }
+
+export type VenueSortOption = 'recommended' | 'newest' | 'price_asc' | 'price_desc' | 'rating_desc';
+
 
 /** One real, bookable slot for a venue — a date+time-range the customer can actually pick, sourced from the real inventory_units list. */
 export interface VenueSlot {

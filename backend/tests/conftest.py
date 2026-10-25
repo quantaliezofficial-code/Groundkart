@@ -50,8 +50,9 @@ async def clean_tables(test_engine):
                     await conn.execute(
                         text(
                             "TRUNCATE ticket_events, support_tickets, "
-                            "blocks, venue_media, venue_amenities, amenities, audit_logs, "
-                            "owner_verifications, refresh_tokens, login_rate_limits, payments, "
+                            "help_search_log, help_feedback, help_article_revisions, help_articles, help_categories, guest_enquiries, "
+                            "blocks, venue_media, venue_rental_options, venue_purposes, venue_amenities, amenities, audit_logs, "
+                            "ledger_entries, refunds, owner_bank_accounts, owner_verifications, refresh_tokens, login_rate_limits, payments, "
                             "payouts, bookings, booking_events, booking_action_requests, notifications, reviews, "
                             "inventory_units, categories, venue_types, use_cases, venue_use_cases, venues, users, idempotency_keys, outbox_events, jobs, pricing_rules CASCADE"
                         )
@@ -64,7 +65,8 @@ async def clean_tables(test_engine):
                             "cancellation_full_refund_hours = 48, "
                             "cancellation_partial_refund_hours = 24, "
                             "cancellation_partial_refund_percent = 50, "
-                            "platform_commission_percent = 10"
+                            "platform_commission_percent = 10, "
+                            "payout_holdback_days = 0"
                         )
                     )
                 break

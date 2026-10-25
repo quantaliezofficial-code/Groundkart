@@ -168,7 +168,14 @@ export default function HomepageTab() {
           <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5 space-y-5">
             {/* Venue Selection */}
             <div className="space-y-3">
-              <label className="font-sans text-sm font-medium text-ink block">1. Select Venue</label>
+              <div className="flex items-center justify-between">
+                <label className="font-sans text-sm font-medium text-ink block">1. Select Venue</label>
+                {!venuesLoading && availableVenues.length > 0 && (
+                  <span className="font-sans text-xs text-on-surface-variant">
+                    {availableVenues.length} available
+                  </span>
+                )}
+              </div>
               
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
@@ -181,7 +188,11 @@ export default function HomepageTab() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 max-h-[240px] overflow-y-auto no-scrollbar pt-1">
+              <div 
+                data-lenis-prevent
+                aria-label="Available venues list"
+                className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto custom-scrollbar overscroll-contain pr-1.5 pt-1 pb-1"
+              >
                 {venuesLoading ? (
                   <div className="col-span-2 py-8 text-center text-sm text-on-surface-variant">Loading venues...</div>
                 ) : availableVenues.length === 0 ? (
@@ -193,6 +204,7 @@ export default function HomepageTab() {
                     return (
                       <button
                         key={v.id}
+                        type="button"
                         onClick={() => setSelectedVenueId(v.id)}
                         className={`relative flex flex-col text-left overflow-hidden rounded-xl border transition-all ${
                           isSelected 

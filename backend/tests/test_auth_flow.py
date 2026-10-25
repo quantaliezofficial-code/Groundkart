@@ -205,6 +205,46 @@ async def test_forgot_password_flow(client):
     assert "If an account exists" in non_existent.json()["message"]
 
 
+async def test_signup_validation_email_and_phone(client):
+    # 1. Invalid email without domain
+    resp = await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Bad Email", "email": "invalidemail", "password": "password123", "phone": "9876543210"},
+    )
+    assert resp.status_code == 422
+
+    # 2. Invalid email missing @
+    resp = await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Bad Email", "email": "ashleyleon.gmail.com", "password": "password123", "phone": "9876543210"},
+    )
+    assert resp.status_code == 422
+
+    # 3. Invalid phone too short (< 10 digits)
+    resp = await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Short Phone", "email": "testshort@example.com", "password": "password123", "phone": "12345"},
+    )
+    assert resp.status_code == 422
+
+    # 4. Valid gmail signup succeeds
+    unique_gmail = f"user_{uuid.uuid4().hex[:6]}@gmail.com"
+    resp = await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Gmail User", "email": unique_gmail, "password": "password123", "phone": f"98{uuid.uuid4().int % 100000000:08d}"},
+    )
+    assert resp.status_code == 201
+
+    # 5. Valid custom domain signup succeeds
+    unique_custom = f"user_{uuid.uuid4().hex[:6]}@mycompany.org"
+    resp = await client.post(
+        "/api/v1/auth/signup",
+        json={"name": "Custom Domain User", "email": unique_custom, "password": "password123", "phone": f"97{uuid.uuid4().int % 100000000:08d}"},
+    )
+    assert resp.status_code == 201
+
+
+
 
 
 

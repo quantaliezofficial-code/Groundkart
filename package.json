@@ -1,0 +1,35 @@
+{
+  "name": "groundkart",
+  "version": "1.0.0",
+  "description": "GroundKart - Sports Venue & Ground Booking Platform",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quantaliezofficial-code/Groundkart.git"
+  },
+  "keywords": [
+    "ground-booking",
+    "venue-booking",
+    "sports-facility",
+    "fastapi",
+    "react"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/quantaliezofficial-code/Groundkart/issues"
+  },
+  "homepage": "https://github.com/quantaliezofficial-code/Groundkart#readme",
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1"
+  }
+}

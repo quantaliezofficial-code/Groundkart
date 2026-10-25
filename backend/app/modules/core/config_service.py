@@ -21,7 +21,8 @@ async def get_system_config(session: AsyncSession) -> SystemConfiguration:
             cancellation_full_refund_hours=48,
             cancellation_partial_refund_hours=24,
             cancellation_partial_refund_percent=50,
-            platform_commission_percent=10
+            platform_commission_percent=10,
+            payout_holdback_days=3,
         )
         session.add(config)
         await session.flush()
@@ -53,6 +54,7 @@ async def update_system_config(
                 cancellation_partial_refund_hours=24,
                 cancellation_partial_refund_percent=50,
                 platform_commission_percent=10,
+                payout_holdback_days=3,
             )
             session.add(config)
             await session.flush()
@@ -64,6 +66,7 @@ async def update_system_config(
             "cancellation_partial_refund_hours": config.cancellation_partial_refund_hours,
             "cancellation_partial_refund_percent": config.cancellation_partial_refund_percent,
             "platform_commission_percent": config.platform_commission_percent,
+            "payout_holdback_days": config.payout_holdback_days,
         }
 
         new_full = updates.get("cancellation_full_refund_hours") if updates.get("cancellation_full_refund_hours") is not None else config.cancellation_full_refund_hours
@@ -87,6 +90,7 @@ async def update_system_config(
             "cancellation_partial_refund_hours": config.cancellation_partial_refund_hours,
             "cancellation_partial_refund_percent": config.cancellation_partial_refund_percent,
             "platform_commission_percent": config.platform_commission_percent,
+            "payout_holdback_days": config.payout_holdback_days,
         }
 
         session.add(

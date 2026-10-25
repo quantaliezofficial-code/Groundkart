@@ -1,0 +1,120 @@
+{
+  "test_run_timestamp": "2026-10-22T12:20:00Z",
+  "environment": {
+    "os": "Windows",
+    "python": "3.14.0",
+    "database": "PostgreSQL 16",
+    "node": "v24.13.1",
+    "test_runner": "pytest 9.1.1 + vitest 3.2.7"
+  },
+  "summary": {
+    "total_adversarial_tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "blocked": 0,
+    "pre_fix_failures_reproduced": 6
+  },
+  "results": [
+    {
+      "issue_id": "ADV-01",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_1a_guest_rapid_double_submission_same_key",
+      "category": "Mandatory Scenario 1: Rapid Double-Click & Repeated Submission",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "PostgreSQL unique constraint uq_idemp_key_actor_op permitted duplicate keys when actor_id IS NULL, completely bypassing guest idempotency.",
+      "fix_applied": "Created partial unique index uq_idemp_key_null_actor_op on (key, operation) WHERE actor_id IS NULL in migration g1_idempotency_guard.",
+      "evidence": "2 idempotency records originally created; now exactly 1 created, concurrent request replayed."
+    },
+    {
+      "issue_id": "ADV-02",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_1b_guest_sequential_retry_returns_original_booking",
+      "category": "Mandatory Scenario 1: Rapid Double-Click & Repeated Submission",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "Guest sequential retry did not match existing key due to NULL actor_id, re-attempted hold and failed with 409 'Slot unavailable'.",
+      "fix_applied": "Partial unique index uq_idemp_key_null_actor_op forces IntegrityError on replay, triggering safe response retrieval from idempotency cache.",
+      "evidence": "Original response replayed with identical booking_id and status 201."
+    },
+    {
+      "issue_id": "ADV-03",
+      "test_name": "frontend/src/components/ReviewPay.test.tsx::rapid double click triggers onSubmitBooking only once and attaches idempotencyKey",
+      "category": "Mandatory Scenario 1: Rapid Double-Click UI Guard",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "ReviewPay.tsx lacked synchronous submission lock and never attached Idempotency-Key header to booking requests.",
+      "fix_applied": "Added submittingRef synchronous guard in ReviewPay.tsx and wired stable UUID Idempotency-Key through bookingsApi.create.",
+      "evidence": "Triple click invokes onSubmitBooking exactly once with generated idempotencyKey string."
+    },
+    {
+      "issue_id": "ADV-04",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_2a_booking_timeout_retry_recovers_state",
+      "category": "Mandatory Scenario 2: Network Timeout After Server Success",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "Client simulated dropped connection; retry without partial index threw 409 slot conflict instead of returning existing held reservation.",
+      "fix_applied": "Idempotent response retrieval unblocks on existing committed key, replaying original 201 BookingCreateResponse.",
+      "evidence": "data1['booking_id'] == data2['booking_id'], data1['amount'] == data2['amount']."
+    },
+    {
+      "issue_id": "ADV-05",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_2b_admin_confirm_payment_idempotency_on_retry",
+      "category": "Mandatory Scenario 2: Network Timeout (Payment Confirmation)",
+      "pre_fix_status": "PASSED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "N/A - verified that payment confirmation cannot create multiple Payment rows or duplicate ledger entries on repeat.",
+      "fix_applied": "Transaction boundary verifies single source of truth in payments table.",
+      "evidence": "Exactly 1 Payment record in DB after multiple confirm requests."
+    },
+    {
+      "issue_id": "ADV-06",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_3a_concurrent_admin_booking_action_approval_no_double_refund",
+      "category": "Mandatory Scenario 3: Concurrent Requests for Same Operation",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "process_booking_action_request queried BookingActionRequest without with_for_update(); concurrent approvals both executed and doubled refunds.",
+      "fix_applied": "Added with_for_update(of=BookingActionRequest) to serialize action processing.",
+      "evidence": "Both approvals originally succeeded with 2 refunds in DB; post-fix exactly 1 succeeds, second gets 409, exactly 1 refund in DB."
+    },
+    {
+      "issue_id": "ADV-07",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_3b_concurrent_signup_same_phone_no_500_crash",
+      "category": "Mandatory Scenario 3: Concurrent Requests for Same Operation",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "Concurrent signup requests both passed time-of-check query; second request crashed with unhandled 500 DB IntegrityError.",
+      "fix_applied": "Wrapped signup transaction in try/except IntegrityError and returned standard 409 Conflict.",
+      "evidence": "Response codes [201, 409], zero 500 errors."
+    },
+    {
+      "issue_id": "ADV-08",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_4a_two_users_compete_same_slot_one_winner",
+      "category": "Mandatory Scenario 4: Two Users Compete for Same Resource",
+      "pre_fix_status": "PASSED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "N/A - verified that row locking and uq_active_booking_per_unit prevent double allocation.",
+      "fix_applied": "Verified SELECT FOR UPDATE row locking and partial unique index backstop.",
+      "evidence": "Exactly 1 win (201), exactly 1 loss (409), exactly 1 booking in DB."
+    },
+    {
+      "issue_id": "ADV-09",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_5a_duplicate_payment_webhook_quietly_idempotent",
+      "category": "Mandatory Scenario 5: Duplicate Payment Webhooks & Background Jobs",
+      "pre_fix_status": "PASSED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "N/A - verified quiet idempotency in dormant webhook transition helper.",
+      "fix_applied": "Confirmed booking status check short-circuits re-confirmation.",
+      "evidence": "confirmed_at timestamp identical across deliveries."
+    },
+    {
+      "issue_id": "ADV-10",
+      "test_name": "backend/tests/test_adversarial_scenarios.py::test_scenario_5b_worker_crash_recovery_stale_running_jobs",
+      "category": "Mandatory Scenario 5: Duplicate Payment Webhooks & Background Jobs",
+      "pre_fix_status": "FAILED",
+      "post_fix_status": "PASSED",
+      "failure_reason": "Worker lacked stale job reclaim logic; jobs abandoned in 'running' status after container crash were lost permanently.",
+      "fix_applied": "Implemented reclaim_stale_running_jobs() in app/modules/jobs/worker.py.",
+      "evidence": "Stale job reclaimed back to 'pending' with incremented attempt counter and logged reason."
+    }
+  ]
+}

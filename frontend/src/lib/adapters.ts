@@ -110,6 +110,7 @@ export function adaptVenue(v: ApiVenue): Venue {
     latitude: v.latitude ? Number(v.latitude) : undefined,
     longitude: v.longitude ? Number(v.longitude) : undefined,
     address: v.address,
+    createdAt: v.created_at,
     useCases: (v.use_cases && v.use_cases.length > 0) ? v.use_cases : (v.purposes && v.purposes.length > 0 ? v.purposes.map((p: any) => p.name || p.custom_name).filter(Boolean) : undefined),
   };
 }

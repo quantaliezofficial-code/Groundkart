@@ -1,0 +1,64 @@
+sequenceDiagram
+    autonumber
+    actor Customer as Customer / Guest
+    participant Frontend as Frontend UI (React)
+    participant API as FastAPI Backend
+    participant Engine as Booking Engine
+    participant DB as PostgreSQL DB
+    participant Ledger as Ledger Service
+    actor Admin as Admin Operator
+
+    %% Section 1: Customer Booking Flow
+    Note over Customer, DB: 1. Booking Creation & Concurrency Hold
+    Customer->>Frontend: Browse Venue & Select Slot/Unit
+    Frontend->>API: POST /api/v1/bookings (inventory_unit_id, details)
+    API->>Engine: create_booking(inventory_unit_id)
+    Engine->>DB: SELECT unit FOR UPDATE (Lock slot row)
+    alt Slot is Available
+        Engine->>DB: INSERT into bookings (status='pending_payment')
+        Engine->>DB: UPDATE inventory_units SET status='held' (expires in 10m)
+        Engine->>DB: INSERT into booking_events (action='created')
+        Engine-->>API: (Booking, raw_manage_token if guest)
+        API-->>Frontend: 201 Created (Booking details, expires_in=600s)
+        Frontend-->>Customer: Show Review & Pay Screen (Countdown Timer)
+    else Slot Already Held or Booked
+        Engine-->>API: 409 Conflict ("Unit already held or booked")
+        API-->>Frontend: Error Response
+        Frontend-->>Customer: Display "Slot unavailable" Alert
+    end
+
+    %% Section 2: Offline Payment & Confirmation
+    Note over Customer, Admin: 2. Offline Payment & Admin Confirmation
+    Customer->>Customer: Completes Bank Transfer / UPI Offline
+    Admin->>Frontend: Open Admin Bookings Tab
+    Admin->>API: POST /api/v1/admin/bookings/{id}/confirm-payment
+    API->>Engine: confirm_booking_by_admin(booking_id)
+    Engine->>DB: UPDATE bookings SET status='confirmed'
+    Engine->>DB: UPDATE inventory_units SET status='booked'
+    Engine->>DB: INSERT into payments (amount, commission, status='succeeded')
+    Engine->>Ledger: record_payment_confirmation()
+    Ledger->>DB: INSERT ledger_entries (Debit customer_funds_held, Credit owner_payable, Credit platform_commission)
+    Engine->>DB: INSERT into outbox_events (type='booking_confirmed')
+    API-->>Frontend: 200 OK (Booking Confirmed)
+    Frontend-->>Admin: Show Green Confirmed Status
+
+    %% Section 3: Customer Cancellation & Tiered Refund
+    Note over Customer, Ledger: 3. Customer Cancellation & Automated Refund
+    Customer->>Frontend: Click "Cancel Booking" in My Bookings
+    Frontend->>API: POST /api/v1/bookings/{id}/cancel
+    API->>Engine: cancel_booking_as_customer()
+    Engine->>Engine: Calculate Proximity to Slot Start Time
+    alt Hours >= 48 Hours
+        Note over Engine: Full Refund Tier (100% refund, 0% penalty)
+    else Hours >= 24 Hours
+        Note over Engine: Partial Refund Tier (50% refund, 50% penalty)
+    else Hours < 24 Hours
+        Note over Engine: No Refund Tier (0% refund, 100% penalty)
+    end
+    Engine->>DB: UPDATE bookings SET status='cancelled'
+    Engine->>DB: UPDATE inventory_units SET status='available'
+    Engine->>DB: INSERT into refunds (amount, refund_tier, status='completed')
+    Engine->>Ledger: record_refund()
+    Ledger->>DB: INSERT ledger_entries (Balanced debit/credit reversal)
+    API-->>Frontend: 200 OK (Refund tier & amount)
+    Frontend-->>Customer: Show Toast ("Booking cancelled. Refund: XX%")

@@ -15,7 +15,10 @@ class RefundAssessmentService:
     async def assess_refund_for_action(session: AsyncSession, action_id: uuid.UUID) -> dict:
         result = await session.execute(
             select(BookingActionRequest)
-            .options(joinedload(BookingActionRequest.booking).joinedload(Booking.inventory_unit), selectinload(BookingActionRequest.booking.payments))
+            .options(
+                joinedload(BookingActionRequest.booking).joinedload(Booking.inventory_unit),
+                joinedload(BookingActionRequest.booking).selectinload(Booking.payments),
+            )
             .where(BookingActionRequest.id == action_id)
         )
         req = result.scalar_one_or_none()

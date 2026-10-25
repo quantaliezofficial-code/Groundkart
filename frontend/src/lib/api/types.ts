@@ -920,4 +920,90 @@ export interface OwnerVenueStats {
   active_rental_options_count?: number;
 }
 
+// ---- Database Studio & Analytics Types ----------------------------------
+
+export interface ApiTableCatalogItem {
+  table_name: string;
+  row_count: number;
+  total_size: string;
+  table_size: string;
+  index_size: string;
+  columns_count: number;
+}
+
+export interface ApiDatabaseStats {
+  db_connected: boolean;
+  database_name: string;
+  postgres_version: string;
+  alembic_version: string | null;
+  database_size: string;
+  active_connections: number;
+  cache_hit_ratio: number;
+  total_tables: number;
+  total_rows: number;
+  tables: ApiTableCatalogItem[];
+}
+
+export interface ApiColumnMetadata {
+  name: string;
+  data_type: string;
+  is_nullable: boolean;
+  is_primary_key: boolean;
+}
+
+export interface ApiTableData {
+  table_name: string;
+  columns: ApiColumnMetadata[];
+  total_rows: number;
+  limit: number;
+  offset: number;
+  rows: Record<string, any>[];
+}
+
+export interface ApiSafeQueryResponse {
+  columns: string[];
+  rows: Record<string, any>[];
+  row_count: number;
+  duration_ms: number;
+  truncated: boolean;
+}
+
+export interface ApiDailyBookingMetric {
+  day: string;
+  bookings_count: number;
+  gmv: number;
+}
+
+export interface ApiStatusCountMetric {
+  status: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ApiRoleCountMetric {
+  role: string;
+  count: number;
+}
+
+export interface ApiTopVenueMetric {
+  id: string;
+  name: string;
+  bookings_count: number;
+  gmv: number;
+}
+
+export interface ApiDatabaseAnalytics {
+  days: number;
+  total_bookings: number;
+  total_gmv: number;
+  average_booking_value: number;
+  active_venues_count: number;
+  bookings_trend: ApiDailyBookingMetric[];
+  booking_status_distribution: ApiStatusCountMetric[];
+  user_roles_distribution: ApiRoleCountMetric[];
+  venue_status_distribution: ApiStatusCountMetric[];
+  top_venues: ApiTopVenueMetric[];
+}
+
+
 

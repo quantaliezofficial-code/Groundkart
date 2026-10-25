@@ -1,0 +1,3661 @@
+{
+  "meta": {
+    "dataset_name": "GroundKart demo venue dataset",
+    "version": "1.0",
+    "purpose": "Dummy data to see how venues, owners, bookings and reviews look in the app. All people, businesses, phone numbers, addresses and coordinates are fictional or approximate. DEV / DEMO USE ONLY.",
+    "guard": "Seeding scripts must refuse to run when ENVIRONMENT is production.",
+    "demo_password_for_all_demo_users": "Demo@2026!",
+    "email_domain_for_demo_users": "groundkart.demo",
+    "seed_tag": "demo-seed-v1",
+    "dates_note": "All dates are relative to the day the seed script runs (offset_days from today). Never hard-code calendar dates.",
+    "legacy_category_values": [
+      "sports",
+      "banquet_hall",
+      "farmhouse",
+      "corporate",
+      "community_hall"
+    ],
+    "unit_type_values": [
+      "hour",
+      "half_day",
+      "full_day"
+    ],
+    "content_block_types": [
+      "Text",
+      "Text + Image",
+      "Image + Text",
+      "Image Gallery",
+      "Video",
+      "Feature Grid",
+      "Highlights",
+      "FAQ",
+      "Quote",
+      "Callout",
+      "Checklist",
+      "Venue Story",
+      "Suitable For",
+      "Things to Know",
+      "Rules"
+    ],
+    "content_block_settings_convention": {
+      "FAQ": {
+        "items": [
+          {
+            "q": "question",
+            "a": "answer"
+          }
+        ]
+      },
+      "Highlights / Checklist / Feature Grid / Suitable For / Things to Know / Rules": {
+        "items": [
+          "short text",
+          "..."
+        ]
+      },
+      "Venue Story / Text / Quote / Callout": "use the body field; settings may be empty"
+    },
+    "field_rules": {
+      "name": "1-255 chars, unique across the dataset",
+      "display_name": "friendlier public name, may equal name",
+      "tagline": "one line, up to 90 characters",
+      "description": "80-130 words, plain language, no real brand names",
+      "pincode": "6 digits",
+      "capacity": "positive integer (guests for events, players for sports)",
+      "base_price": "number, rupees, price of the primary unit_type",
+      "amenities": "at least 6 names per venue",
+      "content_blocks": "at least 4 per venue",
+      "images": "exactly 5 per venue, exactly one is_cover true",
+      "reviews": "at least 3 per active venue"
+    }
+  },
+  "taxonomy_additions": {
+    "note": "Existing seeded values: categories Sports & Fitness, Weddings & Events, Corporate; venue types Football Turf, Banquet Hall, Farmhouse, Meeting Room, Community Hall; use cases Wedding, Meeting, Casual Game. Insert the rest with ON CONFLICT DO NOTHING. venue_types has no unique constraint on (category_id, name), so check for an existing row before inserting.",
+    "categories": [
+      "Sports & Fitness",
+      "Weddings & Events",
+      "Corporate"
+    ],
+    "venue_types": [
+      {
+        "category": "Sports & Fitness",
+        "name": "Football Turf"
+      },
+      {
+        "category": "Sports & Fitness",
+        "name": "Box Cricket Arena"
+      },
+      {
+        "category": "Sports & Fitness",
+        "name": "Cricket Ground"
+      },
+      {
+        "category": "Sports & Fitness",
+        "name": "Badminton Court"
+      },
+      {
+        "category": "Sports & Fitness",
+        "name": "Padel and Pickleball Court"
+      },
+      {
+        "category": "Sports & Fitness",
+        "name": "Swimming Pool"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Banquet Hall"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Farmhouse"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Community Hall"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Party Lawn"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Rooftop Terrace"
+      },
+      {
+        "category": "Weddings & Events",
+        "name": "Heritage Venue"
+      },
+      {
+        "category": "Corporate",
+        "name": "Meeting Room"
+      },
+      {
+        "category": "Corporate",
+        "name": "Conference Hall"
+      },
+      {
+        "category": "Corporate",
+        "name": "Photo and Video Studio"
+      }
+    ],
+    "use_cases": [
+      "Wedding",
+      "Reception",
+      "Engagement",
+      "Haldi and Mehendi",
+      "Birthday Party",
+      "Kitty Party",
+      "Religious Function",
+      "Pool Party",
+      "Corporate Event",
+      "Meeting",
+      "Conference",
+      "Training and Workshop",
+      "Photoshoot",
+      "Cricket Match",
+      "Football Match",
+      "Badminton",
+      "Padel and Pickleball",
+      "Casual Game",
+      "Fitness Class",
+      "Live Music and Concert",
+      "Exhibition and Pop-up"
+    ]
+  },
+  "image_spec": {
+    "width": 1600,
+    "height": 1000,
+    "format": "jpeg"
+  },
+  "owners": [
+    {
+      "ref": "owner_anita",
+      "name": "Anita Srivastava",
+      "phone": "9000010001",
+      "email": "anita.srivastava@groundkart.demo",
+      "business_name": "Srivastava Events and Hospitality",
+      "about": "Runs three event venues in Lucknow for over 12 years."
+    },
+    {
+      "ref": "owner_imran",
+      "name": "Imran Qureshi",
+      "phone": "9000010002",
+      "email": "imran.qureshi@groundkart.demo",
+      "business_name": "Qureshi Sports Ventures",
+      "about": "Sports facility operator with turf, courts and a pool."
+    },
+    {
+      "ref": "owner_neha",
+      "name": "Neha Bajpai",
+      "phone": "9000010003",
+      "email": "neha.bajpai@groundkart.demo",
+      "business_name": "Bajpai Workspaces",
+      "about": "Offers conference and co-working rooms for teams and trainers."
+    },
+    {
+      "ref": "owner_gopal",
+      "name": "Gopal Das Agarwal",
+      "phone": "9000010004",
+      "email": "gopal.agarwal@groundkart.demo",
+      "business_name": "Agarwal Samaj Trust Hall",
+      "about": "Manages a community hall for family functions."
+    },
+    {
+      "ref": "owner_meera",
+      "name": "Meera Rathore",
+      "phone": "9000010005",
+      "email": "meera.rathore@groundkart.demo",
+      "business_name": "Rathore Spaces Pvt Ltd",
+      "about": "Lists unusual spaces in Jaipur, Mumbai, Bengaluru and Gurugram."
+    }
+  ],
+  "customers": [
+    {
+      "ref": "cust_arjun",
+      "name": "Arjun Kumar",
+      "phone": "9000020001",
+      "email": "arjun.kumar@groundkart.demo"
+    },
+    {
+      "ref": "cust_priya",
+      "name": "Priya Verma",
+      "phone": "9000020002",
+      "email": "priya.verma@groundkart.demo"
+    },
+    {
+      "ref": "cust_rohit",
+      "name": "Rohit Mishra",
+      "phone": "9000020003",
+      "email": "rohit.mishra@groundkart.demo"
+    },
+    {
+      "ref": "cust_sana",
+      "name": "Sana Fatima",
+      "phone": "9000020004",
+      "email": "sana.fatima@groundkart.demo"
+    },
+    {
+      "ref": "cust_vikram",
+      "name": "Vikram Singh",
+      "phone": "9000020005",
+      "email": "vikram.singh@groundkart.demo"
+    },
+    {
+      "ref": "cust_deepa",
+      "name": "Deepa Nair",
+      "phone": "9000020006",
+      "email": "deepa.nair@groundkart.demo"
+    },
+    {
+      "ref": "cust_karan",
+      "name": "Karan Malhotra",
+      "phone": "9000020007",
+      "email": "karan.malhotra@groundkart.demo"
+    },
+    {
+      "ref": "cust_ayesha",
+      "name": "Ayesha Khan",
+      "phone": "9000020008",
+      "email": "ayesha.khan@groundkart.demo"
+    },
+    {
+      "ref": "cust_manish",
+      "name": "Manish Tiwari",
+      "phone": "9000020009",
+      "email": "manish.tiwari@groundkart.demo"
+    },
+    {
+      "ref": "cust_shreya",
+      "name": "Shreya Banerjee",
+      "phone": "9000020010",
+      "email": "shreya.banerjee@groundkart.demo"
+    }
+  ],
+  "venues": [
+    {
+      "ref": "v_gomti_greens",
+      "owner_ref": "owner_anita",
+      "target_status": "active",
+      "featured_on_homepage": true,
+      "name": "Gomti Greens Multi-Purpose Lawn",
+      "display_name": "Gomti Greens Lawn",
+      "tagline": "One big green lawn for weddings, cricket days and birthday parties",
+      "legacy_category": "farmhouse",
+      "category": "Weddings & Events",
+      "venue_type": "Party Lawn",
+      "use_cases": [
+        "Wedding",
+        "Reception",
+        "Haldi and Mehendi",
+        "Birthday Party",
+        "Corporate Event",
+        "Cricket Match"
+      ],
+      "unit_type": "full_day",
+      "base_price": 65000,
+      "address": "Plot 14, Vipul Khand Road, Gomti Nagar Extension",
+      "locality": "Gomti Nagar Extension",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226010",
+      "latitude": 26.8467,
+      "longitude": 81.0182,
+      "capacity": 800,
+      "capacity_note": "800 standing, 500 seated at round tables, 300 for a cricket match with spectators",
+      "opening_hours": "6:00 AM to midnight",
+      "description": "A fenced two-acre lawn that changes with your plan. Friday to Sunday it hosts weddings and receptions with a built-in stage, mandap area and warm string lighting. On weekday mornings and evenings the same grass becomes a proper cricket pitch with a boundary rope and a covered pavilion. A separate green room, clean washrooms and a service entrance keep the day running smoothly. Parking holds about 120 cars, and a generator covers the whole lawn. Our team is on site from morning until the last guest leaves, and we can recommend trusted decorators, caterers and tent suppliers if you need them. Site visits are welcome.",
+      "amenities": [
+        "Free Parking",
+        "Power Backup",
+        "Stage",
+        "Mandap Setup",
+        "Green Room",
+        "Washrooms",
+        "Garden Seating",
+        "Sound System",
+        "DJ Allowed",
+        "Outside Catering Allowed",
+        "CCTV",
+        "Wheelchair Access",
+        "Drinking Water"
+      ],
+      "rental_options": [
+        {
+          "mode": "full_day",
+          "price": 65000,
+          "weekend_price": 85000,
+          "note": "Wedding, reception, party. 6 AM to midnight."
+        },
+        {
+          "mode": "hour",
+          "price": 2000,
+          "note": "Cricket match, practice or small gathering. Weekdays, minimum 2 hours. Not yet supported by the app; show it in the description for now."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Wedding",
+          "max_guests": 800,
+          "note": "Stage, mandap and decor area included. Muhurat timings are respected."
+        },
+        {
+          "use_case": "Cricket Match",
+          "max_guests": 300,
+          "note": "Boundary rope, two sets of stumps and a roller are included."
+        },
+        {
+          "use_case": "Birthday Party",
+          "max_guests": 200,
+          "note": "Use half of the lawn for a lower setup cost."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 48 hours before the event, 50 percent within 24 to 48 hours, none after.",
+        "deposit": "Refundable security deposit of 10000 rupees for weddings.",
+        "noise": "Music allowed until 11 PM.",
+        "alcohol": "Allowed for private events with the owner's permission."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "A lawn with two lives",
+          "enabled": true,
+          "body": "We built Gomti Greens for families who wanted space without a hotel bill. During wedding season the lawn is dressed in flowers and lights. Between functions we keep the grass smooth and the boundary marked so local clubs can play on weekday evenings. One property, many happy days."
+        },
+        {
+          "type": "Highlights",
+          "title": "Why people book us",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Two acres of fenced, level lawn",
+              "Built-in stage and mandap area",
+              "Parking for 120 cars",
+              "Full power backup",
+              "Separate green room and washrooms",
+              "Cricket pitch with pavilion on weekdays"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weddings and receptions",
+              "Haldi and mehendi",
+              "Birthday and anniversary parties",
+              "Corporate picnics",
+              "Cricket matches and club practice"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Before you book",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weddings are booked as a full day, 6 AM to midnight",
+              "Outside caterers and decorators are welcome",
+              "Music must stop by 11 PM",
+              "A refundable deposit is taken for weddings"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions we hear often",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can we bring our own caterer?",
+                "a": "Yes. Our kitchen area has water and power for outside caterers."
+              },
+              {
+                "q": "Is there a rain plan?",
+                "a": "We can put up a waterproof tent for an extra charge. Ask us two days before the event."
+              },
+              {
+                "q": "Can I visit before booking?",
+                "a": "Yes, any day between 10 AM and 6 PM. Call ahead so we can show you the setup."
+              }
+            ]
+          }
+        },
+        {
+          "type": "Image Gallery",
+          "title": "Photos from recent events",
+          "enabled": true
+        }
+      ],
+      "images": [
+        {
+          "file": "gomti-greens-lawn-golden-hour.jpg",
+          "caption": "The main lawn at golden hour",
+          "is_cover": true,
+          "image_prompt": "Wide shot of a large manicured green lawn in India at golden hour with warm string lights and a decorated stage in the distance. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FFB300"
+          ]
+        },
+        {
+          "file": "gomti-greens-wedding-stage.jpg",
+          "caption": "Wedding stage and mandap",
+          "is_cover": false,
+          "image_prompt": "A flower-decorated wedding stage and mandap on a green lawn in the evening, empty chairs in rows. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FFB300"
+          ]
+        },
+        {
+          "file": "gomti-greens-evening-lights.jpg",
+          "caption": "Evening lighting",
+          "is_cover": false,
+          "image_prompt": "Lawn at dusk with hundreds of warm string lights overhead and round dining tables set up. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FFB300"
+          ]
+        },
+        {
+          "file": "gomti-greens-cricket-day.jpg",
+          "caption": "Cricket pitch on weekdays",
+          "is_cover": false,
+          "image_prompt": "A cricket pitch with boundary rope and small pavilion on a green lawn in the morning, no players. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FFB300"
+          ]
+        },
+        {
+          "file": "gomti-greens-seating.jpg",
+          "caption": "Garden seating area",
+          "is_cover": false,
+          "image_prompt": "Shaded garden seating area with cane chairs and potted plants at the edge of a lawn. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FFB300"
+          ]
+        }
+      ],
+      "video": {
+        "title": "Walk through the lawn",
+        "duration_seconds": 40,
+        "note": "Optional. Only upload if the app can tell videos from images. Otherwise skip and record in the display gap report."
+      },
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 60,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "mode": "full_day",
+            "price": 65000
+          },
+          {
+            "days": [
+              "Sat",
+              "Sun"
+            ],
+            "mode": "full_day",
+            "price": 85000
+          }
+        ],
+        "blackout_offsets": [
+          12,
+          13
+        ]
+      }
+    },
+    {
+      "ref": "v_nawabi_mahal",
+      "owner_ref": "owner_anita",
+      "target_status": "active",
+      "featured_on_homepage": true,
+      "name": "Nawabi Mahal Banquet and Lawn",
+      "display_name": "Nawabi Mahal",
+      "tagline": "Air-conditioned banquet with a pillared lawn for grand Lucknow weddings",
+      "legacy_category": "banquet_hall",
+      "category": "Weddings & Events",
+      "venue_type": "Banquet Hall",
+      "use_cases": [
+        "Wedding",
+        "Reception",
+        "Engagement",
+        "Corporate Event"
+      ],
+      "unit_type": "full_day",
+      "base_price": 85000,
+      "address": "12, Sitapur Road, Near Aliganj Crossing",
+      "locality": "Aliganj",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226024",
+      "latitude": 26.8967,
+      "longitude": 80.9433,
+      "capacity": 600,
+      "capacity_note": "400 in the hall, 200 more on the attached lawn",
+      "opening_hours": "8:00 AM to midnight",
+      "description": "Nawabi Mahal pairs a fully air-conditioned banquet hall with a pillared lawn, so guests can move between the two during the evening. The hall has chandeliers, a raised stage and a separate bridal suite with its own entrance. Our in-house team handles decor, lighting and service, and you can also bring your own caterer for a small fee. There are twelve guest rooms upstairs for family members travelling from out of town. Our manager walks you through the full plan during a free site visit, including menu tasting, seating layouts and a day-of timeline, so nothing is left to chance.",
+      "amenities": [
+        "Air Conditioning",
+        "Power Backup",
+        "Free Parking",
+        "Valet Parking",
+        "Bridal Suite",
+        "Stage",
+        "Catering Kitchen",
+        "Sound System",
+        "Rooms for Guests",
+        "Washrooms",
+        "CCTV",
+        "Wheelchair Access"
+      ],
+      "rental_options": [
+        {
+          "mode": "full_day",
+          "price": 85000,
+          "weekend_price": 110000,
+          "note": "Hall plus lawn, 10 AM to 1 AM next day."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Wedding",
+          "max_guests": 600,
+          "note": "Hall and lawn together."
+        },
+        {
+          "use_case": "Engagement",
+          "max_guests": 250,
+          "note": "Hall only, lawn optional."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 30 days before the event, 50 percent 15 to 30 days, none after.",
+        "deposit": "Refundable security deposit of 25000 rupees.",
+        "noise": "Music until midnight inside the hall, 10 PM on the lawn.",
+        "alcohol": "Allowed in the hall with a valid event permit."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "Built for big family functions",
+          "enabled": true,
+          "body": "Our family has hosted weddings in this neighbourhood for twenty years. We designed Nawabi Mahal around how Lucknow families celebrate: many relatives, many rituals, and long evenings that move between inside and outside."
+        },
+        {
+          "type": "Highlights",
+          "title": "What is included",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Fully air-conditioned hall",
+              "Pillared lawn for the baraat and photos",
+              "Private bridal suite",
+              "12 guest rooms for family",
+              "In-house decor and lighting team",
+              "Parking for 150 cars"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weddings of 300 to 600 guests",
+              "Engagement and ring ceremony",
+              "Receptions and anniversaries",
+              "Large corporate dinners"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "House rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "No fireworks inside the property",
+              "Music must stop by midnight",
+              "Decor material must be removed by the next morning",
+              "Open flame only in the lawn"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Common questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Is outside catering allowed?",
+                "a": "Yes, for a kitchen use fee. Our own catering team is also available."
+              },
+              {
+                "q": "Do you provide decor?",
+                "a": "Yes. Packages start at 40000 rupees and you can also bring your own decorator."
+              },
+              {
+                "q": "How many rooms are included?",
+                "a": "Four rooms are included in the weekend price. More can be added."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "nawabi-mahal-hall-chandeliers.jpg",
+          "caption": "The main banquet hall",
+          "is_cover": true,
+          "image_prompt": "Interior of a large Indian banquet hall with chandeliers, round tables set with white linen and a raised stage at the end. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#6A1B9A",
+            "#E1BEE7",
+            "#FFD54F"
+          ]
+        },
+        {
+          "file": "nawabi-mahal-entrance.jpg",
+          "caption": "Grand entrance",
+          "is_cover": false,
+          "image_prompt": "Illuminated ornate entrance of an Indian banquet venue at dusk with arched doorway and marigold garlands. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#6A1B9A",
+            "#E1BEE7",
+            "#FFD54F"
+          ]
+        },
+        {
+          "file": "nawabi-mahal-lawn.jpg",
+          "caption": "Pillared lawn",
+          "is_cover": false,
+          "image_prompt": "Evening lawn with white pillars, fairy lights and tables, adjacent to a banquet building. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#6A1B9A",
+            "#E1BEE7",
+            "#FFD54F"
+          ]
+        },
+        {
+          "file": "nawabi-mahal-bridal-suite.jpg",
+          "caption": "Bridal suite",
+          "is_cover": false,
+          "image_prompt": "Elegant bridal dressing room with a large mirror, sofa and soft warm lighting. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#6A1B9A",
+            "#E1BEE7",
+            "#FFD54F"
+          ]
+        },
+        {
+          "file": "nawabi-mahal-guest-room.jpg",
+          "caption": "Guest room",
+          "is_cover": false,
+          "image_prompt": "Clean air-conditioned hotel-style room with two beds and wooden furniture. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#6A1B9A",
+            "#E1BEE7",
+            "#FFD54F"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 3,
+        "horizon_days": 75,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu"
+            ],
+            "mode": "full_day",
+            "price": 85000
+          },
+          {
+            "days": [
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "full_day",
+            "price": 110000
+          }
+        ],
+        "blackout_offsets": [
+          20,
+          21,
+          22
+        ]
+      }
+    },
+    {
+      "ref": "v_mango_grove",
+      "owner_ref": "owner_anita",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Mango Grove Farmhouse",
+      "display_name": "Mango Grove Farmhouse",
+      "tagline": "Orchard farmhouse with a pool, for weekend parties and intimate weddings",
+      "legacy_category": "farmhouse",
+      "category": "Weddings & Events",
+      "venue_type": "Farmhouse",
+      "use_cases": [
+        "Wedding",
+        "Birthday Party",
+        "Pool Party",
+        "Photoshoot",
+        "Haldi and Mehendi"
+      ],
+      "unit_type": "full_day",
+      "base_price": 55000,
+      "address": "Village Bhauapur, Sultanpur Road",
+      "locality": "Sultanpur Road",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226025",
+      "latitude": 26.76,
+      "longitude": 81.05,
+      "capacity": 300,
+      "capacity_note": "300 on the lawn, 60 around the pool",
+      "opening_hours": "24 hours for overnight stays",
+      "description": "Set among mango and guava trees about forty minutes from the city centre, this farmhouse gives you privacy and fresh air. There is a clean swimming pool, a covered dining area, a bonfire space and six bedrooms for overnight guests. It works well for small weddings, haldi functions and birthday weekends. The caretaker family lives on site and helps with setup, and the quiet surroundings mean you can play music without upsetting neighbours. Breakfast on the morning after your event can be arranged with the caretaker family, and a driver can be booked for guests who prefer not to drive back at night.",
+      "amenities": [
+        "Swimming Pool",
+        "Bonfire Area",
+        "Rooms for Guests",
+        "Free Parking",
+        "Power Backup",
+        "Garden Seating",
+        "Catering Kitchen",
+        "Sound System",
+        "DJ Allowed",
+        "Outside Catering Allowed",
+        "Drinking Water",
+        "First Aid"
+      ],
+      "rental_options": [
+        {
+          "mode": "full_day",
+          "price": 55000,
+          "weekend_price": 70000,
+          "note": "10 AM to 10 AM next day with overnight stay."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Pool Party",
+          "max_guests": 60,
+          "note": "Lifeguard on request."
+        },
+        {
+          "use_case": "Wedding",
+          "max_guests": 300,
+          "note": "Best for intimate ceremonies."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 7 days before, 50 percent within 3 to 7 days, none after.",
+        "deposit": "Refundable deposit of 15000 rupees.",
+        "noise": "Music allowed until 1 AM, the property is far from homes.",
+        "alcohol": "Allowed for private groups."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "A quiet place to celebrate",
+          "enabled": true,
+          "body": "Mango Grove started as our family orchard. When friends asked to borrow it for birthdays, we added a pool, a dining pavilion and a few rooms. Today it is a calm weekend escape that is still run by the same family."
+        },
+        {
+          "type": "Highlights",
+          "title": "What you get",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Orchard setting with shaded lawns",
+              "Private swimming pool",
+              "6 bedrooms, sleeps 18",
+              "Bonfire and open-air seating",
+              "Caretaker on site",
+              "Ample parking"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Good to know",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Allow 40 minutes of travel from the city centre",
+              "Mobile network is good, but auto services are limited at night",
+              "Pool timing is 8 AM to 8 PM",
+              "Mosquito repellents are provided"
+            ]
+          }
+        },
+        {
+          "type": "Checklist",
+          "title": "Bring with you",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Swimwear and towels",
+              "Your own decor items",
+              "Any special dietary supplies",
+              "Valid ID for all overnight guests"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can we stay overnight?",
+                "a": "Yes. Six bedrooms are included and extra mattresses can be arranged."
+              },
+              {
+                "q": "Is a lifeguard available?",
+                "a": "Yes, for 1500 rupees per event. Please request it when you book."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "mango-grove-orchard-lawn.jpg",
+          "caption": "Lawn under the mango trees",
+          "is_cover": true,
+          "image_prompt": "Green lawn dotted with mango trees and a covered pavilion in soft morning light, India. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#558B2F",
+            "#DCEDC8",
+            "#FF7043"
+          ]
+        },
+        {
+          "file": "mango-grove-pool.jpg",
+          "caption": "The swimming pool",
+          "is_cover": false,
+          "image_prompt": "Clean rectangular swimming pool in a garden surrounded by trees and loungers, daytime. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#558B2F",
+            "#DCEDC8",
+            "#FF7043"
+          ]
+        },
+        {
+          "file": "mango-grove-bonfire.jpg",
+          "caption": "Bonfire area",
+          "is_cover": false,
+          "image_prompt": "Circle of cane chairs around a firepit at dusk in a garden. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#558B2F",
+            "#DCEDC8",
+            "#FF7043"
+          ]
+        },
+        {
+          "file": "mango-grove-dining.jpg",
+          "caption": "Covered dining area",
+          "is_cover": false,
+          "image_prompt": "Open-sided dining pavilion with long wooden tables and hanging lamps. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#558B2F",
+            "#DCEDC8",
+            "#FF7043"
+          ]
+        },
+        {
+          "file": "mango-grove-bedroom.jpg",
+          "caption": "Farmhouse bedroom",
+          "is_cover": false,
+          "image_prompt": "Simple bright bedroom with double bed, white linen and a window overlooking trees. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#558B2F",
+            "#DCEDC8",
+            "#FF7043"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 2,
+        "horizon_days": 60,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu"
+            ],
+            "mode": "full_day",
+            "price": 55000
+          },
+          {
+            "days": [
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "full_day",
+            "price": 70000
+          }
+        ],
+        "blackout_offsets": [
+          7
+        ]
+      }
+    },
+    {
+      "ref": "v_skyline_terrace",
+      "owner_ref": "owner_anita",
+      "target_status": "pending_review",
+      "featured_on_homepage": false,
+      "name": "Skyline Terrace Lounge",
+      "display_name": "Skyline Terrace",
+      "tagline": "Rooftop with city lights for birthdays, engagements and small receptions",
+      "legacy_category": "banquet_hall",
+      "category": "Weddings & Events",
+      "venue_type": "Rooftop Terrace",
+      "use_cases": [
+        "Birthday Party",
+        "Engagement",
+        "Corporate Event",
+        "Photoshoot"
+      ],
+      "unit_type": "half_day",
+      "base_price": 30000,
+      "address": "Rooftop, Phoenix Plaza Annexe, Vibhuti Khand",
+      "locality": "Vibhuti Khand",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226010",
+      "latitude": 26.856,
+      "longitude": 81.012,
+      "capacity": 120,
+      "capacity_note": "120 standing, 80 seated",
+      "opening_hours": "Afternoon 12 PM to 5 PM, evening 6 PM to 11 PM",
+      "description": "A tenth-floor terrace with a glass railing, a small bar counter and a lounge corner. Evenings are the highlight: the city lights up around you and the open sky does most of the decorating. We offer two half-day slots, afternoon and evening, so you pay only for what you need. A service lift, a covered area for rain and a prep kitchen make it practical as well as pretty. We keep bookings to one event at a time, which means a quiet entrance, a dedicated lift and plenty of time for setup before your guests arrive.",
+      "amenities": [
+        "Service Lift",
+        "Bar Counter",
+        "Sound System",
+        "Air Conditioning",
+        "Washrooms",
+        "Power Backup",
+        "Covered Area",
+        "Valet Parking",
+        "CCTV",
+        "Wheelchair Access"
+      ],
+      "rental_options": [
+        {
+          "mode": "half_day",
+          "price": 30000,
+          "weekend_price": 38000,
+          "note": "Afternoon 12 PM to 5 PM or evening 6 PM to 11 PM."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Birthday Party",
+          "max_guests": 120,
+          "note": "Cake table and DJ corner available."
+        },
+        {
+          "use_case": "Engagement",
+          "max_guests": 100,
+          "note": "Ring ceremony stage available on request."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 7 days before, none after.",
+        "deposit": "Refundable deposit of 8000 rupees.",
+        "noise": "Music until 10:30 PM because of neighbouring flats.",
+        "alcohol": "Allowed with a licensed bartender."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "Sky, city and a little privacy",
+          "enabled": true,
+          "body": "We converted an unused rooftop into an event terrace so people could celebrate above the noise. It is intimate by design, never crowded, and always booked one event at a time."
+        },
+        {
+          "type": "Highlights",
+          "title": "Highlights",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Tenth-floor city views",
+              "Glass railing and open sky",
+              "Bar counter and lounge corner",
+              "Covered area for rain",
+              "Service lift for easy setup"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Birthday and anniversary parties",
+              "Engagement and small receptions",
+              "Brand launches and team parties",
+              "Photoshoots at sunset"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "House rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "No open flames or fireworks",
+              "Music off by 10:30 PM",
+              "Maximum 120 guests at one time",
+              "Decor must not be fixed with nails"
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "skyline-terrace-evening-view.jpg",
+          "caption": "Terrace at blue hour",
+          "is_cover": true,
+          "image_prompt": "Rooftop terrace at blue hour with glass railing, lounge sofas and city lights in the background, India. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#283593",
+            "#C5CAE9",
+            "#FF4081"
+          ]
+        },
+        {
+          "file": "skyline-terrace-lounge.jpg",
+          "caption": "Lounge corner",
+          "is_cover": false,
+          "image_prompt": "Cozy rooftop lounge corner with sofas, low tables and warm lamps. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#283593",
+            "#C5CAE9",
+            "#FF4081"
+          ]
+        },
+        {
+          "file": "skyline-terrace-bar.jpg",
+          "caption": "Bar counter",
+          "is_cover": false,
+          "image_prompt": "Compact rooftop bar counter with stools and string lights in the evening. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#283593",
+            "#C5CAE9",
+            "#FF4081"
+          ]
+        },
+        {
+          "file": "skyline-terrace-party-setup.jpg",
+          "caption": "Party setup",
+          "is_cover": false,
+          "image_prompt": "Rooftop party setup with balloons, a cake table and standing tables, no people. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#283593",
+            "#C5CAE9",
+            "#FF4081"
+          ]
+        },
+        {
+          "file": "skyline-terrace-daytime.jpg",
+          "caption": "Daytime view",
+          "is_cover": false,
+          "image_prompt": "Open terrace in bright daylight with potted plants and a skyline of buildings. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#283593",
+            "#C5CAE9",
+            "#FF4081"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 5,
+        "horizon_days": 30,
+        "rules": [
+          {
+            "days": [
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "half_day",
+            "price": 30000
+          }
+        ],
+        "blackout_offsets": []
+      },
+      "demo_note": "Leave this venue in pending_review to show the admin approval queue and the owner dashboard stage."
+    },
+    {
+      "ref": "v_shanti_bhavan",
+      "owner_ref": "owner_gopal",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Shanti Bhavan Community Hall",
+      "display_name": "Shanti Bhavan",
+      "tagline": "Affordable family hall with a kitchen, near Alambagh bus terminal",
+      "legacy_category": "community_hall",
+      "category": "Weddings & Events",
+      "venue_type": "Community Hall",
+      "use_cases": [
+        "Wedding",
+        "Birthday Party",
+        "Kitty Party",
+        "Religious Function"
+      ],
+      "unit_type": "full_day",
+      "base_price": 22000,
+      "address": "45, Pratap Nagar Road, Alambagh",
+      "locality": "Alambagh",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226005",
+      "latitude": 26.81,
+      "longitude": 80.9,
+      "capacity": 250,
+      "capacity_note": "250 seated in rows, 180 at round tables",
+      "opening_hours": "7:00 AM to 11:00 PM",
+      "description": "A simple, well-kept hall run by a community trust to make family functions affordable. The main hall has ceiling fans and coolers, a small stage and a full kitchen with a courtyard where food can be cooked on site. It suits pujas, kitty parties, birthday celebrations and modest weddings. The location is a short walk from the bus terminal, which helps relatives who travel by public transport. Proceeds go back into maintaining the building and supporting local community programmes, so every booking helps keep the hall affordable for the next family.",
+      "amenities": [
+        "Ceiling Fans",
+        "Air Coolers",
+        "Catering Kitchen",
+        "Stage",
+        "Washrooms",
+        "Power Backup",
+        "Drinking Water",
+        "Courtyard",
+        "Free Parking",
+        "Wheelchair Access"
+      ],
+      "rental_options": [
+        {
+          "mode": "full_day",
+          "price": 22000,
+          "weekend_price": 28000,
+          "note": "7 AM to 11 PM."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Religious Function",
+          "max_guests": 250,
+          "note": "Vegetarian kitchen only on request."
+        },
+        {
+          "use_case": "Kitty Party",
+          "max_guests": 80,
+          "note": "Half hall setup possible."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 15 days before, 50 percent within 7 to 15 days.",
+        "deposit": "Refundable deposit of 5000 rupees.",
+        "noise": "Music until 10 PM.",
+        "alcohol": "Not allowed on the premises."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "Run by the community, for the community",
+          "enabled": true,
+          "body": "The hall was built by a local trust and is managed by volunteers. Rents are kept low so that families can hold functions without borrowing money."
+        },
+        {
+          "type": "Highlights",
+          "title": "What families like",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Low, transparent pricing",
+              "Full kitchen and courtyard",
+              "Easy public transport access",
+              "Stage and sound connection",
+              "Clean washrooms"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "House rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "No alcohol or smoking inside",
+              "Music must stop by 10 PM",
+              "Decor must not damage the walls",
+              "Hall must be vacated by 11 PM"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can we cook on site?",
+                "a": "Yes, the kitchen and courtyard are included. Bring your own cooks and gas cylinders."
+              },
+              {
+                "q": "Are chairs and tables provided?",
+                "a": "Up to 250 chairs and 25 round tables are included in the rent."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "shanti-bhavan-hall.jpg",
+          "caption": "Main hall set for a function",
+          "is_cover": true,
+          "image_prompt": "Simple Indian community hall interior with rows of chairs, a small stage with a floral backdrop and ceiling fans. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00695C",
+            "#B2DFDB",
+            "#FFCA28"
+          ]
+        },
+        {
+          "file": "shanti-bhavan-entrance.jpg",
+          "caption": "Front entrance",
+          "is_cover": false,
+          "image_prompt": "Front of a modest community hall building in an Indian city with a painted gate and a banner area, daytime. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00695C",
+            "#B2DFDB",
+            "#FFCA28"
+          ]
+        },
+        {
+          "file": "shanti-bhavan-kitchen.jpg",
+          "caption": "Community kitchen",
+          "is_cover": false,
+          "image_prompt": "Large clean community kitchen with steel counters, big cooking vessels and a gas range. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00695C",
+            "#B2DFDB",
+            "#FFCA28"
+          ]
+        },
+        {
+          "file": "shanti-bhavan-courtyard.jpg",
+          "caption": "Courtyard",
+          "is_cover": false,
+          "image_prompt": "Open courtyard with tables set up for a meal under a cloth canopy, India. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00695C",
+            "#B2DFDB",
+            "#FFCA28"
+          ]
+        },
+        {
+          "file": "shanti-bhavan-stage.jpg",
+          "caption": "Stage",
+          "is_cover": false,
+          "image_prompt": "Small stage with a decorated backdrop and marigold garlands inside a hall. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00695C",
+            "#B2DFDB",
+            "#FFCA28"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 60,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "mode": "full_day",
+            "price": 22000
+          },
+          {
+            "days": [
+              "Sat",
+              "Sun"
+            ],
+            "mode": "full_day",
+            "price": 28000
+          }
+        ],
+        "blackout_offsets": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "ref": "v_awadh_sports_arena",
+      "owner_ref": "owner_imran",
+      "target_status": "active",
+      "featured_on_homepage": true,
+      "name": "Awadh Sports Arena - Turf and Box Cricket",
+      "display_name": "Awadh Sports Arena",
+      "tagline": "Floodlit turf for football and box cricket, open from 6 AM to midnight",
+      "legacy_category": "sports",
+      "category": "Sports & Fitness",
+      "venue_type": "Football Turf",
+      "use_cases": [
+        "Football Match",
+        "Cricket Match",
+        "Casual Game",
+        "Corporate Event"
+      ],
+      "unit_type": "hour",
+      "base_price": 1200,
+      "address": "Sector 7, Jankipuram Extension",
+      "locality": "Jankipuram",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226021",
+      "latitude": 26.925,
+      "longitude": 80.94,
+      "capacity": 22,
+      "capacity_note": "Up to 22 players on the full turf, 12 in the box cricket cage",
+      "opening_hours": "6:00 AM to midnight",
+      "description": "Two professional-quality artificial turf pitches with bright LED floodlights, so you can play safely after dark. One pitch is a full 7-a-side football field and the other is a netted box cricket cage. Bookings are by the hour, with changing rooms, drinking water and a small cafeteria for after the game. Shoes with studs are not needed because the turf is soft and shock absorbing. Regular teams can reserve fixed weekly slots, and we host friendly tournaments every month where new groups are welcome to join and meet other players.",
+      "amenities": [
+        "Stadium Lighting",
+        "Locker Rooms",
+        "Free Parking",
+        "Drinking Water",
+        "Cafeteria",
+        "Scoreboard",
+        "First Aid",
+        "CCTV",
+        "Shower",
+        "Washrooms",
+        "High-Speed WiFi"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 1200,
+          "weekend_price": 1600,
+          "note": "Peak evening hours 6 PM to 10 PM cost 400 rupees more."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Football Match",
+          "max_guests": 22,
+          "note": "7-a-side goals and balls included."
+        },
+        {
+          "use_case": "Cricket Match",
+          "max_guests": 12,
+          "note": "Box cricket cage with bat and ball on request."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 24 hours before, none after.",
+        "deposit": "None for regular bookings.",
+        "noise": "No restriction.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "Built by players",
+          "enabled": true,
+          "body": "We were frustrated with muddy grounds and cancelled matches, so we built a turf that works in any weather and in any hour. Today more than forty teams play here every week."
+        },
+        {
+          "type": "Highlights",
+          "title": "What you get",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Soft artificial turf, safe for knees",
+              "LED floodlights for night games",
+              "Separate netted box cricket cage",
+              "Locker rooms and showers",
+              "Free parking for 60 vehicles"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Playing rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Non-marking sports shoes only",
+              "No food on the turf",
+              "Keep to your booked time so the next team can start",
+              "Smoking is not allowed"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Common questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Do you provide a ball?",
+                "a": "Yes, football and cricket balls are free. Bats can be rented for 100 rupees."
+              },
+              {
+                "q": "Can we play in the rain?",
+                "a": "Yes, the turf drains quickly. We reschedule only for thunderstorms."
+              },
+              {
+                "q": "Is there a referee?",
+                "a": "We can arrange a referee for 500 rupees per match."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "awadh-arena-turf-night.jpg",
+          "caption": "Turf under floodlights",
+          "is_cover": true,
+          "image_prompt": "Artificial football turf at night under bright LED floodlights, empty, with goalposts and white lines. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#1565C0",
+            "#BBDEFB",
+            "#76FF03"
+          ]
+        },
+        {
+          "file": "awadh-arena-box-cricket.jpg",
+          "caption": "Box cricket cage",
+          "is_cover": false,
+          "image_prompt": "Netted box cricket cage with green turf and stumps at dusk. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#1565C0",
+            "#BBDEFB",
+            "#76FF03"
+          ]
+        },
+        {
+          "file": "awadh-arena-locker-room.jpg",
+          "caption": "Locker room",
+          "is_cover": false,
+          "image_prompt": "Clean changing room with wooden benches and lockers. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#1565C0",
+            "#BBDEFB",
+            "#76FF03"
+          ]
+        },
+        {
+          "file": "awadh-arena-cafeteria.jpg",
+          "caption": "Cafeteria",
+          "is_cover": false,
+          "image_prompt": "Small sports cafeteria with plastic tables and a snack counter. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#1565C0",
+            "#BBDEFB",
+            "#76FF03"
+          ]
+        },
+        {
+          "file": "awadh-arena-entrance.jpg",
+          "caption": "Arena entrance",
+          "is_cover": false,
+          "image_prompt": "Entrance gate of a sports turf facility with a floodlight pole and parked scooters. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#1565C0",
+            "#BBDEFB",
+            "#76FF03"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 21,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "06:00",
+                "09:00"
+              ],
+              [
+                "17:00",
+                "23:00"
+              ]
+            ],
+            "price": 1200
+          },
+          {
+            "days": [
+              "Sat",
+              "Sun"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "06:00",
+                "12:00"
+              ],
+              [
+                "16:00",
+                "23:00"
+              ]
+            ],
+            "price": 1600
+          }
+        ],
+        "blackout_offsets": [],
+        "note": "One-hour slots, one unit per hour per day. Maximum 200 units per API call."
+      }
+    },
+    {
+      "ref": "v_smash_point",
+      "owner_ref": "owner_imran",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Smash Point Badminton Courts",
+      "display_name": "Smash Point Badminton",
+      "tagline": "Four wooden-floor courts with coaching on weekends",
+      "legacy_category": "sports",
+      "category": "Sports & Fitness",
+      "venue_type": "Badminton Court",
+      "use_cases": [
+        "Badminton",
+        "Casual Game",
+        "Fitness Class"
+      ],
+      "unit_type": "hour",
+      "base_price": 400,
+      "address": "88, Sector C, Indira Nagar",
+      "locality": "Indira Nagar",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226016",
+      "latitude": 26.876,
+      "longitude": 80.999,
+      "capacity": 8,
+      "capacity_note": "Per court, 4 players for doubles",
+      "opening_hours": "5:30 AM to 10:30 PM",
+      "description": "Four indoor badminton courts with proper wooden flooring, high ceilings and glare-free lighting. Courts are booked by the hour and you can bring your own racquets or rent ours. On weekend mornings a certified coach runs group sessions for beginners and school children. The hall is well ventilated with industrial fans and has a clean water point and a small shoe-change area. Our desk team can match you with partners at your level on request, and school groups receive discounted rates on weekday afternoons when the courts are quiet.",
+      "amenities": [
+        "Wooden Flooring",
+        "Industrial Fans",
+        "Drinking Water",
+        "Racquet Rental",
+        "Coaching Available",
+        "Washrooms",
+        "Free Parking",
+        "Shoe Change Area",
+        "CCTV"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 400,
+          "weekend_price": 500,
+          "note": "Per court per hour. Coaching sessions are priced separately."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Badminton",
+          "max_guests": 8,
+          "note": "Shuttles are sold at the desk."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 12 hours before.",
+        "deposit": "None.",
+        "noise": "No restriction.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "Why players like it",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Four courts with true wooden floors",
+              "Glare-free LED lighting",
+              "Weekend coaching for kids and beginners",
+              "Racquet and shuttle rental"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Court rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Non-marking indoor shoes only",
+              "Arrive 5 minutes early to avoid losing time",
+              "Food and drinks only outside the court area",
+              "Report any floor damage to the desk"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Good to know",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weekday evenings fill up fast, book 3 days ahead",
+              "Coaches are certified by the state association",
+              "Lockers are available for 20 rupees"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can I book more than one court?",
+                "a": "Yes, book each court as a separate slot. Tournaments can be arranged on request."
+              },
+              {
+                "q": "Do you sell shuttles?",
+                "a": "Yes, feather and nylon shuttles are available at the desk."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "smash-point-courts.jpg",
+          "caption": "Four courts in a row",
+          "is_cover": true,
+          "image_prompt": "Interior of an indoor badminton hall with four courts, wooden floor, bright even lighting, nets up. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#E65100",
+            "#FFE0B2",
+            "#00BCD4"
+          ]
+        },
+        {
+          "file": "smash-point-court-closeup.jpg",
+          "caption": "Court close-up",
+          "is_cover": false,
+          "image_prompt": "Close view of a badminton court net and white boundary lines on a polished wooden floor. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#E65100",
+            "#FFE0B2",
+            "#00BCD4"
+          ]
+        },
+        {
+          "file": "smash-point-reception.jpg",
+          "caption": "Reception desk",
+          "is_cover": false,
+          "image_prompt": "Small reception desk in a sports hall with racquets and shuttle tubes on shelves. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#E65100",
+            "#FFE0B2",
+            "#00BCD4"
+          ]
+        },
+        {
+          "file": "smash-point-coaching.jpg",
+          "caption": "Weekend coaching area",
+          "is_cover": false,
+          "image_prompt": "Empty badminton court set up with cones and shuttle baskets for a coaching drill. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#E65100",
+            "#FFE0B2",
+            "#00BCD4"
+          ]
+        },
+        {
+          "file": "smash-point-entrance.jpg",
+          "caption": "Entrance",
+          "is_cover": false,
+          "image_prompt": "Front entrance of an indoor sports hall with glass doors and a sign area. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#E65100",
+            "#FFE0B2",
+            "#00BCD4"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 21,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "06:00",
+                "09:00"
+              ],
+              [
+                "17:00",
+                "22:00"
+              ]
+            ],
+            "price": 400
+          }
+        ],
+        "blackout_offsets": []
+      }
+    },
+    {
+      "ref": "v_blue_lagoon",
+      "owner_ref": "owner_imran",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Blue Lagoon Pool and Party Deck",
+      "display_name": "Blue Lagoon Pool Deck",
+      "tagline": "Private pool, shaded deck and DJ corner for birthday and pool parties",
+      "legacy_category": "sports",
+      "category": "Sports & Fitness",
+      "venue_type": "Swimming Pool",
+      "use_cases": [
+        "Pool Party",
+        "Birthday Party",
+        "Fitness Class"
+      ],
+      "unit_type": "half_day",
+      "base_price": 8000,
+      "address": "Plot 3, Faizabad Road, Near Matiyari Chauraha",
+      "locality": "Faizabad Road",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226028",
+      "latitude": 26.892,
+      "longitude": 81.02,
+      "capacity": 60,
+      "capacity_note": "40 in the water, 60 on the deck",
+      "opening_hours": "Morning 8 AM to 1 PM, evening 3 PM to 8 PM",
+      "description": "A clean, filtered pool with a shallow kids' section, a shaded deck, loungers and a corner for a DJ or speaker. You book either the morning or the afternoon block and have the whole pool to yourselves. A trained lifeguard is always present, and hot showers and changing rooms keep things comfortable. It is popular for children's birthdays, family get-togethers and friends' pool days. Water is changed and tested every morning, the deck is cleaned between bookings, and our staff will help with cake cutting, music and decoration placement if you ask.",
+      "amenities": [
+        "Swimming Pool",
+        "Lifeguard",
+        "Changing Rooms",
+        "Shower",
+        "Sound System",
+        "Drinking Water",
+        "Loungers",
+        "Washrooms",
+        "Free Parking",
+        "First Aid"
+      ],
+      "rental_options": [
+        {
+          "mode": "half_day",
+          "price": 8000,
+          "weekend_price": 11000,
+          "note": "Morning or afternoon block, private use."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Pool Party",
+          "max_guests": 60,
+          "note": "Food can be brought in or ordered from the cafe."
+        },
+        {
+          "use_case": "Birthday Party",
+          "max_guests": 50,
+          "note": "Cake and decor allowed on the deck."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 3 days before, 50 percent within 24 to 72 hours.",
+        "deposit": "Refundable deposit of 3000 rupees.",
+        "noise": "Music until 8 PM.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "Highlights",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Private use of the entire pool",
+              "Shallow area for young children",
+              "Trained lifeguard on duty",
+              "Shaded deck with loungers",
+              "Hot showers and changing rooms"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Pool rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Swimwear is compulsory in the water",
+              "No glass bottles near the pool",
+              "Children under 12 must be accompanied by an adult",
+              "Alcohol is not allowed"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Good to know",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Water is filtered and tested daily",
+              "Please bring your own towels",
+              "Rain days can be rescheduled free of charge"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can we bring food from outside?",
+                "a": "Yes, snacks and cake are fine. Cooking on the deck is not allowed."
+              },
+              {
+                "q": "How deep is the pool?",
+                "a": "From 3 feet in the kids' area to 5.5 feet at the deep end."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "blue-lagoon-pool.jpg",
+          "caption": "The pool in the morning",
+          "is_cover": true,
+          "image_prompt": "Clear blue rectangular swimming pool with a shaded deck and loungers in bright morning light. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#0277BD",
+            "#B3E5FC",
+            "#FFEB3B"
+          ]
+        },
+        {
+          "file": "blue-lagoon-deck.jpg",
+          "caption": "Party deck",
+          "is_cover": false,
+          "image_prompt": "Wooden deck with loungers, umbrellas and a speaker corner beside a pool. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#0277BD",
+            "#B3E5FC",
+            "#FFEB3B"
+          ]
+        },
+        {
+          "file": "blue-lagoon-kids-area.jpg",
+          "caption": "Shallow kids area",
+          "is_cover": false,
+          "image_prompt": "Shallow section of a pool with steps and a few colourful floats, no people. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#0277BD",
+            "#B3E5FC",
+            "#FFEB3B"
+          ]
+        },
+        {
+          "file": "blue-lagoon-showers.jpg",
+          "caption": "Showers and changing rooms",
+          "is_cover": false,
+          "image_prompt": "Clean outdoor shower area and wooden changing room doors. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#0277BD",
+            "#B3E5FC",
+            "#FFEB3B"
+          ]
+        },
+        {
+          "file": "blue-lagoon-evening.jpg",
+          "caption": "Evening glow",
+          "is_cover": false,
+          "image_prompt": "Pool at dusk with underwater lights turned on and warm lamps around the deck. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#0277BD",
+            "#B3E5FC",
+            "#FFEB3B"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 2,
+        "horizon_days": 35,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "mode": "half_day",
+            "price": 8000
+          },
+          {
+            "days": [
+              "Sat",
+              "Sun"
+            ],
+            "mode": "half_day",
+            "price": 11000
+          }
+        ],
+        "blackout_offsets": [
+          9,
+          10
+        ]
+      }
+    },
+    {
+      "ref": "v_capital_conference",
+      "owner_ref": "owner_neha",
+      "target_status": "active",
+      "featured_on_homepage": true,
+      "name": "The Capital Conference Hub",
+      "display_name": "Capital Conference Hub",
+      "tagline": "A central conference hall with projector, mics and lunch service",
+      "legacy_category": "corporate",
+      "category": "Corporate",
+      "venue_type": "Conference Hall",
+      "use_cases": [
+        "Conference",
+        "Training and Workshop",
+        "Corporate Event",
+        "Meeting"
+      ],
+      "unit_type": "half_day",
+      "base_price": 18000,
+      "address": "3rd Floor, Capital Tower, Rana Pratap Marg, Hazratganj",
+      "locality": "Hazratganj",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226001",
+      "latitude": 26.85,
+      "longitude": 80.94,
+      "capacity": 120,
+      "capacity_note": "120 theatre style, 70 classroom style, 48 in U-shape",
+      "opening_hours": "8:00 AM to 8:00 PM",
+      "description": "A bright, fully air-conditioned conference hall on the third floor of a central building, five minutes from the main shopping street. The hall has a 4K projector, two wireless microphones, a podium and high-speed internet, plus a breakout room and a pantry for tea breaks. Pick the morning or afternoon half-day block or book both for a full day. Lunch and snack packages are available from our catering partner. Seating layouts can be changed on request, and our team is happy to set up registration desks, banners and a coffee station so your event feels well organised from the first minute.",
+      "amenities": [
+        "Projector",
+        "Wireless Microphones",
+        "Air Conditioning",
+        "High-Speed WiFi",
+        "Whiteboard",
+        "Tea and Coffee",
+        "Power Backup",
+        "Breakout Room",
+        "Valet Parking",
+        "Wheelchair Access",
+        "Washrooms",
+        "CCTV"
+      ],
+      "rental_options": [
+        {
+          "mode": "half_day",
+          "price": 18000,
+          "note": "Morning 8 AM to 1 PM, afternoon 2 PM to 8 PM. Both blocks make a full day at 32000."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Conference",
+          "max_guests": 120,
+          "note": "Theatre seating with stage."
+        },
+        {
+          "use_case": "Training and Workshop",
+          "max_guests": 60,
+          "note": "Classroom seating with tables."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 7 days before, 50 percent within 3 to 7 days.",
+        "deposit": "None.",
+        "noise": "Indoor use only.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "Made for working days",
+          "enabled": true,
+          "body": "We started by renting meeting rooms to our own clients. As demand grew we built a proper hall with good sound, steady internet and a pantry that never runs out of tea."
+        },
+        {
+          "type": "Feature Grid",
+          "title": "Equipment included",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "4K projector and screen",
+              "2 wireless microphones",
+              "Podium and whiteboards",
+              "High-speed fibre internet",
+              "Breakout room",
+              "Tea and coffee station"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Seminars and conferences",
+              "Corporate training days",
+              "Product launches",
+              "Board meetings and town halls"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Before you book",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Setup access begins 30 minutes before your block",
+              "Seating layout can be changed for free",
+              "Catering partner needs 2 days notice",
+              "No smoking inside the building"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Is lunch included?",
+                "a": "No. Lunch packages start at 350 rupees per person and can be added at booking."
+              },
+              {
+                "q": "Can we get a technician?",
+                "a": "A technician is on site during every booking at no extra cost."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "capital-hub-hall-theatre.jpg",
+          "caption": "Conference hall, theatre layout",
+          "is_cover": true,
+          "image_prompt": "Modern conference hall with rows of chairs, a projector screen and a podium, bright even lighting. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#37474F",
+            "#CFD8DC",
+            "#26C6DA"
+          ]
+        },
+        {
+          "file": "capital-hub-hall-classroom.jpg",
+          "caption": "Classroom layout",
+          "is_cover": false,
+          "image_prompt": "Same style hall arranged with rectangular tables and chairs for a training session. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#37474F",
+            "#CFD8DC",
+            "#26C6DA"
+          ]
+        },
+        {
+          "file": "capital-hub-breakout.jpg",
+          "caption": "Breakout room",
+          "is_cover": false,
+          "image_prompt": "Small meeting room with a round table, six chairs and a whiteboard. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#37474F",
+            "#CFD8DC",
+            "#26C6DA"
+          ]
+        },
+        {
+          "file": "capital-hub-pantry.jpg",
+          "caption": "Tea and coffee pantry",
+          "is_cover": false,
+          "image_prompt": "Clean office pantry with a tea station, cups and a small counter. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#37474F",
+            "#CFD8DC",
+            "#26C6DA"
+          ]
+        },
+        {
+          "file": "capital-hub-reception.jpg",
+          "caption": "Reception",
+          "is_cover": false,
+          "image_prompt": "Corporate reception area with a desk, sofa and plants. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#37474F",
+            "#CFD8DC",
+            "#26C6DA"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 45,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat"
+            ],
+            "mode": "half_day",
+            "price": 18000
+          }
+        ],
+        "blackout_offsets": [
+          14
+        ]
+      }
+    },
+    {
+      "ref": "v_cowork_atelier",
+      "owner_ref": "owner_neha",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Cowork Atelier Meeting Rooms",
+      "display_name": "Cowork Atelier",
+      "tagline": "Quiet 10-seat meeting rooms by the hour, with fast internet",
+      "legacy_category": "corporate",
+      "category": "Corporate",
+      "venue_type": "Meeting Room",
+      "use_cases": [
+        "Meeting",
+        "Training and Workshop",
+        "Casual Game"
+      ],
+      "unit_type": "hour",
+      "base_price": 600,
+      "address": "Office 204, Sapphire Arcade, Vibhuti Khand",
+      "locality": "Vibhuti Khand",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "pincode": "226010",
+      "latitude": 26.8555,
+      "longitude": 81.0135,
+      "capacity": 10,
+      "capacity_note": "10 around the table, 4 in the small room",
+      "opening_hours": "9:00 AM to 8:00 PM, Monday to Saturday",
+      "description": "Two glass-walled meeting rooms inside a calm co-working space. They are set up for client calls, interviews, small workshops and planning sessions. Each room has a screen, a whiteboard wall and strong WiFi. You pay by the hour and tea and coffee are included. Visitors are welcomed at reception so your guests never wander around looking for you. Visitors are greeted by name at reception, and monthly members can reserve rooms in advance at lower rates, which many freelancers and small agencies prefer to renting an office.",
+      "amenities": [
+        "High-Speed WiFi",
+        "Air Conditioning",
+        "Display Screen",
+        "Whiteboard",
+        "Tea and Coffee",
+        "Power Backup",
+        "Reception Support",
+        "Washrooms",
+        "Free Parking"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 600,
+          "note": "Large room. Small room is 350 rupees per hour."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Meeting",
+          "max_guests": 10,
+          "note": "Video call ready with camera on request."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 4 hours before.",
+        "deposit": "None.",
+        "noise": "Quiet space, no loud music.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "What is included",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Glass-walled private rooms",
+              "55-inch display with HDMI cable",
+              "Whiteboard wall and markers",
+              "Tea and coffee all day",
+              "Reception for visitors"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Client meetings",
+              "Interviews and panel rounds",
+              "Team planning sessions",
+              "Small training workshops"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "House rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Keep conversations at a normal volume",
+              "Food from outside is fine in the room",
+              "Leave the room tidy for the next team"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "What is the minimum booking?",
+                "a": "One hour. You can extend if the next slot is free."
+              },
+              {
+                "q": "Can I bring a laptop projector?",
+                "a": "You can, but a screen with HDMI is already included."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "cowork-atelier-large-room.jpg",
+          "caption": "Large meeting room",
+          "is_cover": true,
+          "image_prompt": "Glass-walled meeting room with a long wooden table, ten chairs and a wall-mounted screen. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#4E342E",
+            "#D7CCC8",
+            "#80CBC4"
+          ]
+        },
+        {
+          "file": "cowork-atelier-small-room.jpg",
+          "caption": "Small room",
+          "is_cover": false,
+          "image_prompt": "Compact meeting room with four chairs and a whiteboard wall. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#4E342E",
+            "#D7CCC8",
+            "#80CBC4"
+          ]
+        },
+        {
+          "file": "cowork-atelier-lounge.jpg",
+          "caption": "Co-working lounge",
+          "is_cover": false,
+          "image_prompt": "Open co-working lounge with desks and plants, soft daylight. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#4E342E",
+            "#D7CCC8",
+            "#80CBC4"
+          ]
+        },
+        {
+          "file": "cowork-atelier-pantry.jpg",
+          "caption": "Tea pantry",
+          "is_cover": false,
+          "image_prompt": "Small office pantry with a coffee machine and glass jars. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#4E342E",
+            "#D7CCC8",
+            "#80CBC4"
+          ]
+        },
+        {
+          "file": "cowork-atelier-reception.jpg",
+          "caption": "Reception",
+          "is_cover": false,
+          "image_prompt": "Tidy reception desk with a plant and a visitor sofa. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#4E342E",
+            "#D7CCC8",
+            "#80CBC4"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 21,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "09:00",
+                "19:00"
+              ]
+            ],
+            "price": 600
+          }
+        ],
+        "blackout_offsets": []
+      }
+    },
+    {
+      "ref": "v_aravali_turf",
+      "owner_ref": "owner_meera",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Aravali Heights Football Turf",
+      "display_name": "Aravali Heights Turf",
+      "tagline": "Full-size 9-a-side turf with floodlights near Golf Course Extension",
+      "legacy_category": "sports",
+      "category": "Sports & Fitness",
+      "venue_type": "Football Turf",
+      "use_cases": [
+        "Football Match",
+        "Casual Game",
+        "Corporate Event"
+      ],
+      "unit_type": "hour",
+      "base_price": 2200,
+      "address": "Sector 56, Near Golf Course Extension Road",
+      "locality": "Sector 56",
+      "city": "Gurugram",
+      "state": "Haryana",
+      "pincode": "122011",
+      "latitude": 28.421,
+      "longitude": 77.107,
+      "capacity": 18,
+      "capacity_note": "9 players per side",
+      "opening_hours": "6:00 AM to 1:00 AM",
+      "description": "A full-size 9-a-side turf tucked behind a quiet residential area, with strong floodlights and a clean spectator area. The surface is FIFA-quality grade artificial grass that is kind to joints. Corporate teams use it for after-work league nights, and school teams book it on weekends. Parking is easy and there is a small canteen serving tea, sandwiches and cold drinks. Teams can book a regular weekly slot at a discount, and we keep a small first-aid kit, ice packs and drinking water ready for every match so you can focus on the game.",
+      "amenities": [
+        "Stadium Lighting",
+        "Free Parking",
+        "Locker Rooms",
+        "Drinking Water",
+        "Canteen",
+        "Spectator Seating",
+        "First Aid",
+        "CCTV",
+        "Climate Control"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 2200,
+          "weekend_price": 2800,
+          "note": "Per hour, whole turf."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Football Match",
+          "max_guests": 18,
+          "note": "Bibs and a match ball are provided."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 24 hours before.",
+        "deposit": "None.",
+        "noise": "No restriction.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "Highlights",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Full-size 9-a-side pitch",
+              "Strong LED floodlights",
+              "Spectator seating",
+              "Locker rooms and canteen"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weekly office league nights",
+              "School and college team practice",
+              "Friendly matches between societies",
+              "Birthday football"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Playing rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Non-marking shoes only",
+              "No smoking",
+              "Leave on time so the next group can start"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Do you provide bibs?",
+                "a": "Yes, two sets of coloured bibs and one match ball."
+              },
+              {
+                "q": "Can we bring a coach?",
+                "a": "Yes, coaches are welcome at no extra charge."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "aravali-turf-night.jpg",
+          "caption": "Turf under lights",
+          "is_cover": true,
+          "image_prompt": "Football turf at night under bright floodlights with white lines and a goal, apartments in the background. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FF5722"
+          ]
+        },
+        {
+          "file": "aravali-turf-day.jpg",
+          "caption": "Turf in daylight",
+          "is_cover": false,
+          "image_prompt": "Bright green artificial football pitch in daylight with spectator seating on one side. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FF5722"
+          ]
+        },
+        {
+          "file": "aravali-turf-canteen.jpg",
+          "caption": "Canteen",
+          "is_cover": false,
+          "image_prompt": "Small outdoor canteen counter with a menu board and plastic chairs. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FF5722"
+          ]
+        },
+        {
+          "file": "aravali-turf-lockers.jpg",
+          "caption": "Locker area",
+          "is_cover": false,
+          "image_prompt": "Row of steel lockers and benches in a changing room. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FF5722"
+          ]
+        },
+        {
+          "file": "aravali-turf-entrance.jpg",
+          "caption": "Entrance",
+          "is_cover": false,
+          "image_prompt": "Entrance gate with floodlight poles and a parked car, evening. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#2E7D32",
+            "#C8E6C9",
+            "#FF5722"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 14,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "06:00",
+                "09:00"
+              ],
+              [
+                "18:00",
+                "24:00"
+              ]
+            ],
+            "price": 2200
+          },
+          {
+            "days": [
+              "Sat",
+              "Sun"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "06:00",
+                "12:00"
+              ],
+              [
+                "16:00",
+                "24:00"
+              ]
+            ],
+            "price": 2800
+          }
+        ],
+        "blackout_offsets": []
+      }
+    },
+    {
+      "ref": "v_amber_courtyard",
+      "owner_ref": "owner_meera",
+      "target_status": "active",
+      "featured_on_homepage": true,
+      "name": "Amber Heritage Courtyard Haveli",
+      "display_name": "Amber Haveli Courtyard",
+      "tagline": "A restored haveli courtyard for royal-style weddings and photoshoots",
+      "legacy_category": "banquet_hall",
+      "category": "Weddings & Events",
+      "venue_type": "Heritage Venue",
+      "use_cases": [
+        "Wedding",
+        "Reception",
+        "Photoshoot",
+        "Engagement"
+      ],
+      "unit_type": "full_day",
+      "base_price": 120000,
+      "address": "Near Amer Fort Road, Kunda Village",
+      "locality": "Amer",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "pincode": "302028",
+      "latitude": 26.9855,
+      "longitude": 75.8513,
+      "capacity": 400,
+      "capacity_note": "400 in the courtyard, 150 inside the main sitting hall",
+      "opening_hours": "9:00 AM to 1:00 AM",
+      "description": "A carefully restored haveli with a stone-paved courtyard, painted arches and a rooftop with views of the hills. The courtyard holds your ceremony and dinner, while the carved sitting hall and the quiet upper terrace are ideal for the bridal party and photography. Our heritage team looks after the building and your event, and we limit bookings to one at a time so the property stays yours for the whole day. A dedicated coordinator stays with you from the first visit to the last guest, helping with approvals, vendor timings and any small surprises along the way.",
+      "amenities": [
+        "Heritage Architecture",
+        "Rooftop Terrace",
+        "Bridal Suite",
+        "Power Backup",
+        "Parking",
+        "Rooms for Guests",
+        "Stage",
+        "Sound System",
+        "Catering Kitchen",
+        "Washrooms",
+        "CCTV",
+        "Outside Catering Allowed"
+      ],
+      "rental_options": [
+        {
+          "mode": "full_day",
+          "price": 120000,
+          "weekend_price": 150000,
+          "note": "One event per day, 9 AM to 1 AM."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Wedding",
+          "max_guests": 400,
+          "note": "Peak season December to February."
+        },
+        {
+          "use_case": "Photoshoot",
+          "max_guests": 40,
+          "note": "Pre-wedding shoots, half-day rate on request."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 45 days before, 50 percent 20 to 45 days, none after.",
+        "deposit": "Refundable deposit of 50000 rupees.",
+        "noise": "Music until 11 PM in the courtyard.",
+        "alcohol": "Allowed in the courtyard with a permit."
+      },
+      "content_blocks": [
+        {
+          "type": "Venue Story",
+          "title": "A home that became a venue",
+          "enabled": true,
+          "body": "This haveli belonged to a merchant family for six generations. After years of restoration, we opened its courtyard to celebrations, with care to keep the paint, stone and woodwork exactly as they should be."
+        },
+        {
+          "type": "Highlights",
+          "title": "Why couples choose it",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Stone courtyard with painted arches",
+              "Rooftop with hill views",
+              "Private bridal suite",
+              "Rooms for 24 guests",
+              "One event per day, never shared"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Destination weddings",
+              "Pre-wedding photoshoots",
+              "Intimate receptions",
+              "Cultural evenings"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Heritage rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "No nails, tape or adhesive on walls",
+              "No fireworks or open flame outside the lit area",
+              "Only approved decorators may use the building",
+              "Music stops at 11 PM in the courtyard"
+            ]
+          }
+        },
+        {
+          "type": "Quote",
+          "title": "From a recent couple",
+          "enabled": true,
+          "body": "We were worried a heritage building would feel restrictive. The team made it feel like our own home for the weekend."
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Can we bring our own decorator?",
+                "a": "Yes, after sharing their plan so our heritage team can approve it."
+              },
+              {
+                "q": "Is it good for photoshoots on non-wedding days?",
+                "a": "Yes. We offer half-day shoot bookings on weekdays at a lower rate."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "amber-haveli-courtyard.jpg",
+          "caption": "Main courtyard",
+          "is_cover": true,
+          "image_prompt": "Stone-paved haveli courtyard in Rajasthan with painted arches, a central fountain and warm sunset light. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#BF360C",
+            "#FFCCBC",
+            "#FFD600"
+          ]
+        },
+        {
+          "file": "amber-haveli-arches.jpg",
+          "caption": "Painted arches",
+          "is_cover": false,
+          "image_prompt": "Detail of ornate painted arches and carved wooden doors in a heritage haveli. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#BF360C",
+            "#FFCCBC",
+            "#FFD600"
+          ]
+        },
+        {
+          "file": "amber-haveli-terrace.jpg",
+          "caption": "Rooftop terrace",
+          "is_cover": false,
+          "image_prompt": "Rooftop terrace of a haveli at golden hour with hill silhouettes in the distance. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#BF360C",
+            "#FFCCBC",
+            "#FFD600"
+          ]
+        },
+        {
+          "file": "amber-haveli-wedding-setup.jpg",
+          "caption": "Wedding setup",
+          "is_cover": false,
+          "image_prompt": "Courtyard set for a wedding dinner with marigold decor, low tables and lanterns, no people. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#BF360C",
+            "#FFCCBC",
+            "#FFD600"
+          ]
+        },
+        {
+          "file": "amber-haveli-bridal-room.jpg",
+          "caption": "Bridal suite",
+          "is_cover": false,
+          "image_prompt": "Heritage-style room with a mirror frame, carved bed and warm lights. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#BF360C",
+            "#FFCCBC",
+            "#FFD600"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 7,
+        "horizon_days": 90,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu"
+            ],
+            "mode": "full_day",
+            "price": 120000
+          },
+          {
+            "days": [
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "full_day",
+            "price": 150000
+          }
+        ],
+        "blackout_offsets": [
+          30,
+          31,
+          32
+        ]
+      }
+    },
+    {
+      "ref": "v_bandra_loft",
+      "owner_ref": "owner_meera",
+      "target_status": "active",
+      "featured_on_homepage": false,
+      "name": "Bandra Loft Photo and Video Studio",
+      "display_name": "Bandra Loft Studio",
+      "tagline": "North-light loft studio with cyclorama wall, for shoots and workshops",
+      "legacy_category": "corporate",
+      "category": "Corporate",
+      "venue_type": "Photo and Video Studio",
+      "use_cases": [
+        "Photoshoot",
+        "Training and Workshop",
+        "Meeting",
+        "Exhibition and Pop-up"
+      ],
+      "unit_type": "hour",
+      "base_price": 1800,
+      "address": "2nd Floor, Perry Cross Lane, Bandra West",
+      "locality": "Bandra West",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400050",
+      "latitude": 19.0596,
+      "longitude": 72.8295,
+      "capacity": 25,
+      "capacity_note": "25 for a workshop, 12 for a shoot crew",
+      "opening_hours": "8:00 AM to 10:00 PM",
+      "description": "A loft studio with tall windows on the north side, so you get soft daylight all morning. A white cyclorama wall, a brick backdrop and a small lifestyle set are ready to use. There is a makeup room, wardrobe racks and a lounge area for clients. Many of our bookings are product and fashion shoots, but the room also works well for small workshops and pop-up sales. Equipment such as light stands, softboxes and backdrop paper can be added on request, and a house assistant is available to help with setup and cleanup for a small fee.",
+      "amenities": [
+        "Natural Light",
+        "Cyclorama Wall",
+        "Makeup Room",
+        "Wardrobe Racks",
+        "Air Conditioning",
+        "High-Speed WiFi",
+        "Power Backup",
+        "Lighting Kit Rental",
+        "Washrooms",
+        "Lounge Area"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 1800,
+          "weekend_price": 2200,
+          "note": "Minimum 2 hours. Lighting kit is 1500 rupees extra."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Photoshoot",
+          "max_guests": 12,
+          "note": "Includes cyclorama wall and brick backdrop."
+        },
+        {
+          "use_case": "Training and Workshop",
+          "max_guests": 25,
+          "note": "Chairs and a projector on request."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 48 hours before.",
+        "deposit": "Refundable deposit of 3000 rupees.",
+        "noise": "Normal studio sound.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "What you get",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "North-facing daylight",
+              "White cyclorama and brick backdrop",
+              "Makeup room and wardrobe racks",
+              "Client lounge",
+              "Lighting kit rental"
+            ]
+          }
+        },
+        {
+          "type": "Suitable For",
+          "title": "Great for",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Fashion and product shoots",
+              "Video interviews and podcasts",
+              "Small workshops",
+              "Pop-up sales"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Good to know",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Best natural light is 9 AM to 1 PM",
+              "Access to the studio is by stairs only",
+              "Cyclorama must be left clean after use"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Do you provide a photographer?",
+                "a": "No. We rent the space and equipment only, but can introduce local photographers."
+              },
+              {
+                "q": "Can I bring my own lights?",
+                "a": "Yes. Please inform us so we can plan your power load."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "bandra-loft-main-studio.jpg",
+          "caption": "Main studio",
+          "is_cover": true,
+          "image_prompt": "Bright loft photo studio with tall windows, white cyclorama wall and polished concrete floor. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#212121",
+            "#F5F5F5",
+            "#FFAB40"
+          ]
+        },
+        {
+          "file": "bandra-loft-brick-set.jpg",
+          "caption": "Brick backdrop set",
+          "is_cover": false,
+          "image_prompt": "Exposed brick wall with a vintage chair and a plant, studio lighting off. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#212121",
+            "#F5F5F5",
+            "#FFAB40"
+          ]
+        },
+        {
+          "file": "bandra-loft-makeup-room.jpg",
+          "caption": "Makeup room",
+          "is_cover": false,
+          "image_prompt": "Makeup room with a lit mirror, a chair and a rack of brushes. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#212121",
+            "#F5F5F5",
+            "#FFAB40"
+          ]
+        },
+        {
+          "file": "bandra-loft-lounge.jpg",
+          "caption": "Client lounge",
+          "is_cover": false,
+          "image_prompt": "Small lounge with a sofa, coffee table and a window. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#212121",
+            "#F5F5F5",
+            "#FFAB40"
+          ]
+        },
+        {
+          "file": "bandra-loft-wardrobe.jpg",
+          "caption": "Wardrobe area",
+          "is_cover": false,
+          "image_prompt": "Wardrobe racks with garments in neutral colours and a full-length mirror. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#212121",
+            "#F5F5F5",
+            "#FFAB40"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 21,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "09:00",
+                "18:00"
+              ]
+            ],
+            "price": 1800
+          }
+        ],
+        "blackout_offsets": []
+      }
+    },
+    {
+      "ref": "v_koramangala_padel",
+      "owner_ref": "owner_meera",
+      "target_status": "rejected",
+      "rejection_reason": "Please add at least three clear photos of the courts and upload proof of your business registration. The address and the pincode do not match. Please correct them and submit again.",
+      "featured_on_homepage": false,
+      "name": "Koramangala Padel and Pickleball Courts",
+      "display_name": "Koramangala Padel Club",
+      "tagline": "Two glass-wall padel courts and one pickleball court",
+      "legacy_category": "sports",
+      "category": "Sports & Fitness",
+      "venue_type": "Padel and Pickleball Court",
+      "use_cases": [
+        "Padel and Pickleball",
+        "Casual Game",
+        "Fitness Class"
+      ],
+      "unit_type": "hour",
+      "base_price": 1500,
+      "address": "5th Block, Near Sony Signal, Koramangala",
+      "locality": "Koramangala",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560034",
+      "latitude": 12.9352,
+      "longitude": 77.6245,
+      "capacity": 8,
+      "capacity_note": "4 players per padel court, 4 on the pickleball court",
+      "opening_hours": "6:00 AM to 11:00 PM",
+      "description": "Two glass-wall padel courts and one dedicated pickleball court in a covered, well-lit hall. Racquets and balls can be rented at the desk, and a coach is available for beginner clinics. The hall has fans and a good drainage system, so rain never stops a game. A small cafe next door serves coffee and light snacks. Beginners are welcome: a short coaching session helps you understand the walls and scoring, and our desk can match you with partners at a similar level on busy evenings.",
+      "amenities": [
+        "Covered Courts",
+        "Stadium Lighting",
+        "Racquet Rental",
+        "Coaching Available",
+        "Drinking Water",
+        "Cafe",
+        "Locker Rooms",
+        "Free Parking",
+        "CCTV"
+      ],
+      "rental_options": [
+        {
+          "mode": "hour",
+          "price": 1500,
+          "weekend_price": 1900,
+          "note": "Per court per hour."
+        }
+      ],
+      "purposes": [
+        {
+          "use_case": "Padel and Pickleball",
+          "max_guests": 8,
+          "note": "Beginner clinics on Saturday mornings."
+        }
+      ],
+      "policies": {
+        "cancellation": "Full refund 12 hours before.",
+        "deposit": "None.",
+        "noise": "Normal sports noise.",
+        "alcohol": "Not allowed."
+      },
+      "content_blocks": [
+        {
+          "type": "Highlights",
+          "title": "Highlights",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Two padel courts with glass walls",
+              "One pickleball court",
+              "Covered and floodlit",
+              "Racquet rental and coaching"
+            ]
+          }
+        },
+        {
+          "type": "Rules",
+          "title": "Court rules",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Court shoes only",
+              "No outside coaching without permission",
+              "Wipe the court after heavy rain"
+            ]
+          }
+        },
+        {
+          "type": "Things to Know",
+          "title": "Good to know",
+          "enabled": true,
+          "settings": {
+            "items": [
+              "Weekend evenings book out quickly",
+              "Padel racquets are available at the desk",
+              "Parking is limited to 20 cars"
+            ]
+          }
+        },
+        {
+          "type": "FAQ",
+          "title": "Questions",
+          "enabled": true,
+          "settings": {
+            "items": [
+              {
+                "q": "Is padel hard for beginners?",
+                "a": "No. Most people enjoy a full rally on their first day with a short coaching session."
+              }
+            ]
+          }
+        }
+      ],
+      "images": [
+        {
+          "file": "koramangala-padel-court.jpg",
+          "caption": "Padel court",
+          "is_cover": true,
+          "image_prompt": "Covered padel court with glass walls and a net, bright overhead lighting. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00838F",
+            "#B2EBF2",
+            "#FF6E40"
+          ]
+        },
+        {
+          "file": "koramangala-pickleball.jpg",
+          "caption": "Pickleball court",
+          "is_cover": false,
+          "image_prompt": "Indoor pickleball court with blue surface, net and lines. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00838F",
+            "#B2EBF2",
+            "#FF6E40"
+          ]
+        },
+        {
+          "file": "koramangala-desk.jpg",
+          "caption": "Reception desk",
+          "is_cover": false,
+          "image_prompt": "Racquet rack and a small desk at a sports facility. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00838F",
+            "#B2EBF2",
+            "#FF6E40"
+          ]
+        },
+        {
+          "file": "koramangala-cafe.jpg",
+          "caption": "Cafe next door",
+          "is_cover": false,
+          "image_prompt": "Small cafe counter with coffee machine and pastries. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00838F",
+            "#B2EBF2",
+            "#FF6E40"
+          ]
+        },
+        {
+          "file": "koramangala-exterior.jpg",
+          "caption": "Exterior",
+          "is_cover": false,
+          "image_prompt": "Exterior view of a covered sports hall on a city street, evening. Photorealistic, natural light, no text, no people's faces, no logos.",
+          "placeholder_palette": [
+            "#00838F",
+            "#B2EBF2",
+            "#FF6E40"
+          ]
+        }
+      ],
+      "availability": {
+        "start_offset_days": 1,
+        "horizon_days": 14,
+        "rules": [
+          {
+            "days": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "mode": "hour",
+            "windows": [
+              [
+                "07:00",
+                "09:00"
+              ],
+              [
+                "18:00",
+                "22:00"
+              ]
+            ],
+            "price": 1500
+          }
+        ],
+        "blackout_offsets": []
+      },
+      "demo_note": "Admin should reject this venue with the rejection_reason so the owner dashboard shows a rejected listing with a reason. Do not create inventory units until it is approved."
+    }
+  ],
+  "reviews": [
+    {
+      "venue_ref": "v_gomti_greens",
+      "customer_ref": "cust_priya",
+      "rating": 5,
+      "content": "Hosted our haldi and mehendi here. The lawn looked beautiful in the evening and the caretaker team helped with every small thing. Parking was never a problem."
+    },
+    {
+      "venue_ref": "v_gomti_greens",
+      "customer_ref": "cust_rohit",
+      "rating": 4,
+      "content": "Played a corporate cricket day on the weekday pitch. Ground was well kept and the pavilion was a nice touch. Washrooms could be a little cleaner."
+    },
+    {
+      "venue_ref": "v_gomti_greens",
+      "customer_ref": "cust_sana",
+      "rating": 5,
+      "content": "Booked it for my sister's reception with about 450 guests. Plenty of space, good lighting and the generator never failed. Highly recommended."
+    },
+    {
+      "venue_ref": "v_gomti_greens",
+      "customer_ref": "cust_karan",
+      "rating": 4,
+      "content": "Great value for such a big lawn. Check the rain plan before booking, we had to add a tent at the last minute."
+    },
+    {
+      "venue_ref": "v_nawabi_mahal",
+      "customer_ref": "cust_deepa",
+      "rating": 5,
+      "content": "The hall and lawn worked together perfectly for our wedding. Bridal suite was spacious and the staff was patient with all our rituals."
+    },
+    {
+      "venue_ref": "v_nawabi_mahal",
+      "customer_ref": "cust_ayesha",
+      "rating": 4,
+      "content": "Beautiful chandeliers and good air conditioning. Decor packages are a bit expensive but the quality is good."
+    },
+    {
+      "venue_ref": "v_nawabi_mahal",
+      "customer_ref": "cust_manish",
+      "rating": 5,
+      "content": "Guest rooms were very useful for our relatives from Kanpur. Parking for 150 cars really helps on a wedding day."
+    },
+    {
+      "venue_ref": "v_mango_grove",
+      "customer_ref": "cust_vikram",
+      "rating": 5,
+      "content": "Perfect weekend away for my birthday. The pool was clean, the bonfire area was lovely and the caretaker cooked a great breakfast."
+    },
+    {
+      "venue_ref": "v_mango_grove",
+      "customer_ref": "cust_shreya",
+      "rating": 4,
+      "content": "Quiet and green. The drive takes a while at night, so plan transport in advance. Rooms are simple but comfortable."
+    },
+    {
+      "venue_ref": "v_mango_grove",
+      "customer_ref": "cust_arjun",
+      "rating": 4,
+      "content": "We shot a pre-wedding video here and the orchard light in the morning was gorgeous. Would book again."
+    },
+    {
+      "venue_ref": "v_shanti_bhavan",
+      "customer_ref": "cust_manish",
+      "rating": 4,
+      "content": "Very fair price for a full day. Kitchen and courtyard made our puja lunch easy to manage. Hall needs a fresh coat of paint."
+    },
+    {
+      "venue_ref": "v_shanti_bhavan",
+      "customer_ref": "cust_deepa",
+      "rating": 5,
+      "content": "Booked for a kitty party. The staff was kind and everything was clean. The location near the bus terminal suited our guests."
+    },
+    {
+      "venue_ref": "v_shanti_bhavan",
+      "customer_ref": "cust_priya",
+      "rating": 3,
+      "content": "Good for the price but the coolers are noisy in the afternoon. Bring extra fans if you have a big crowd."
+    },
+    {
+      "venue_ref": "v_awadh_sports_arena",
+      "customer_ref": "cust_arjun",
+      "rating": 5,
+      "content": "Best turf in the area. Lights are bright, the surface is soft, and the staff is on time. Our Sunday group plays here every week."
+    },
+    {
+      "venue_ref": "v_awadh_sports_arena",
+      "customer_ref": "cust_rohit",
+      "rating": 5,
+      "content": "Box cricket cage is excellent. Ball goes back to the bowler nicely and the scoreboard is a good touch."
+    },
+    {
+      "venue_ref": "v_awadh_sports_arena",
+      "customer_ref": "cust_vikram",
+      "rating": 4,
+      "content": "Great experience. Evening slots book out fast, so reserve early. Cafeteria could have more snacks."
+    },
+    {
+      "venue_ref": "v_awadh_sports_arena",
+      "customer_ref": "cust_karan",
+      "rating": 4,
+      "content": "Clean changing rooms and free parking. Peak hour rates are slightly high but worth it for the quality."
+    },
+    {
+      "venue_ref": "v_smash_point",
+      "customer_ref": "cust_shreya",
+      "rating": 5,
+      "content": "Floor is smooth and the lighting does not glare. My daughter joined the weekend coaching and has improved a lot."
+    },
+    {
+      "venue_ref": "v_smash_point",
+      "customer_ref": "cust_ayesha",
+      "rating": 4,
+      "content": "Good courts and a friendly desk team. It gets warm in summer evenings, so bring a towel."
+    },
+    {
+      "venue_ref": "v_smash_point",
+      "customer_ref": "cust_manish",
+      "rating": 4,
+      "content": "Reasonable price per hour and clear booking system. Racquet rental is handy when friends forget theirs."
+    },
+    {
+      "venue_ref": "v_blue_lagoon",
+      "customer_ref": "cust_sana",
+      "rating": 5,
+      "content": "Hosted my son's birthday here. The shallow area was perfect for the little ones and the lifeguard was attentive."
+    },
+    {
+      "venue_ref": "v_blue_lagoon",
+      "customer_ref": "cust_deepa",
+      "rating": 4,
+      "content": "Clean pool and a nice shaded deck. Music had to stop by 8 PM which was fine for us."
+    },
+    {
+      "venue_ref": "v_blue_lagoon",
+      "customer_ref": "cust_rohit",
+      "rating": 4,
+      "content": "Good place for a friends' pool day. Showers were hot and the changing rooms were clean."
+    },
+    {
+      "venue_ref": "v_capital_conference",
+      "customer_ref": "cust_rohit",
+      "rating": 5,
+      "content": "Our two-day training ran without a single technical problem. Projector, mics and internet were solid, and the technician stayed throughout."
+    },
+    {
+      "venue_ref": "v_capital_conference",
+      "customer_ref": "cust_priya",
+      "rating": 5,
+      "content": "Central location and a very professional setup. Lunch from their partner was tasty and on time."
+    },
+    {
+      "venue_ref": "v_capital_conference",
+      "customer_ref": "cust_arjun",
+      "rating": 4,
+      "content": "Good hall for our product launch. Parking is tight, so ask guests to carpool or use valet."
+    },
+    {
+      "venue_ref": "v_capital_conference",
+      "customer_ref": "cust_ayesha",
+      "rating": 5,
+      "content": "We have booked it three times for investor meetings. Always clean, quiet and well managed."
+    },
+    {
+      "venue_ref": "v_cowork_atelier",
+      "customer_ref": "cust_karan",
+      "rating": 5,
+      "content": "Perfect for interviews. Quiet room, great WiFi and the reception welcomed our candidates well."
+    },
+    {
+      "venue_ref": "v_cowork_atelier",
+      "customer_ref": "cust_shreya",
+      "rating": 4,
+      "content": "Compact but well equipped. The whiteboard wall was handy for our planning session."
+    },
+    {
+      "venue_ref": "v_cowork_atelier",
+      "customer_ref": "cust_vikram",
+      "rating": 4,
+      "content": "Booked the small room for a client call. No distractions and tea was free. Easy to extend our slot."
+    },
+    {
+      "venue_ref": "v_aravali_turf",
+      "customer_ref": "cust_arjun",
+      "rating": 5,
+      "content": "Our office football league plays here every Thursday. Pitch is in great shape and the floodlights are strong."
+    },
+    {
+      "venue_ref": "v_aravali_turf",
+      "customer_ref": "cust_sana",
+      "rating": 4,
+      "content": "Good facilities and fair pricing for Gurugram. Parking is easy. The canteen menu could be longer."
+    },
+    {
+      "venue_ref": "v_aravali_turf",
+      "customer_ref": "cust_manish",
+      "rating": 4,
+      "content": "Clean turf and professional staff. Weekend slots go quickly."
+    },
+    {
+      "venue_ref": "v_amber_courtyard",
+      "customer_ref": "cust_shreya",
+      "rating": 5,
+      "content": "We got married here and every photo looks like a painting. The heritage team was thoughtful and kept the day on schedule."
+    },
+    {
+      "venue_ref": "v_amber_courtyard",
+      "customer_ref": "cust_ayesha",
+      "rating": 5,
+      "content": "The rooftop at sunset was unforgettable. Rooms for family were comfortable and the staff was warm."
+    },
+    {
+      "venue_ref": "v_amber_courtyard",
+      "customer_ref": "cust_karan",
+      "rating": 4,
+      "content": "Beautiful building and a unique setting. The no-nails rule means decor takes planning, but it is worth it."
+    },
+    {
+      "venue_ref": "v_bandra_loft",
+      "customer_ref": "cust_priya",
+      "rating": 5,
+      "content": "Great light and an easy cyclorama wall. Booked for a product shoot and we finished ahead of time."
+    },
+    {
+      "venue_ref": "v_bandra_loft",
+      "customer_ref": "cust_vikram",
+      "rating": 4,
+      "content": "Good studio for the price in Bandra. Stairs only, so plan for heavy equipment."
+    },
+    {
+      "venue_ref": "v_bandra_loft",
+      "customer_ref": "cust_deepa",
+      "rating": 5,
+      "content": "Lovely daylight and a very helpful team. The makeup room made our long shoot much easier."
+    }
+  ],
+  "booking_scenarios": [
+    {
+      "id": "b1",
+      "customer_ref": "cust_arjun",
+      "venue_ref": "v_awadh_sports_arena",
+      "target": {
+        "min_offset_days": 2,
+        "start_time": "18:00"
+      },
+      "action": "confirm_payment",
+      "payment": {
+        "method": "upi",
+        "reference": "DEMO-UPI-0001"
+      },
+      "shows": "Confirmed upcoming hourly booking"
+    },
+    {
+      "id": "b2",
+      "customer_ref": "cust_priya",
+      "venue_ref": "v_gomti_greens",
+      "target": {
+        "min_offset_days": 14,
+        "weekday": "Sat"
+      },
+      "action": "confirm_payment",
+      "payment": {
+        "method": "bank_transfer",
+        "reference": "DEMO-NEFT-0002"
+      },
+      "shows": "Confirmed full-day wedding booking"
+    },
+    {
+      "id": "b3",
+      "customer_ref": "cust_rohit",
+      "venue_ref": "v_capital_conference",
+      "target": {
+        "min_offset_days": 5
+      },
+      "action": "leave_held",
+      "shows": "Awaiting payment (held) booking"
+    },
+    {
+      "id": "b4",
+      "customer_ref": "cust_sana",
+      "venue_ref": "v_blue_lagoon",
+      "target": {
+        "min_offset_days": 6
+      },
+      "action": "confirm_then_customer_cancel",
+      "payment": {
+        "method": "cash",
+        "reference": "DEMO-CASH-0004"
+      },
+      "shows": "Cancelled booking with a refund"
+    },
+    {
+      "id": "b5",
+      "customer_ref": "cust_vikram",
+      "venue_ref": "v_smash_point",
+      "target": {
+        "min_offset_days": 1,
+        "start_time": "18:00"
+      },
+      "action": "leave_held",
+      "shows": "Second held booking"
+    },
+    {
+      "id": "b6",
+      "customer_ref": "cust_deepa",
+      "venue_ref": "v_nawabi_mahal",
+      "target": {
+        "min_offset_days": 21,
+        "weekday": "Sun"
+      },
+      "action": "confirm_payment",
+      "payment": {
+        "method": "cash",
+        "reference": "DEMO-CASH-0006"
+      },
+      "shows": "High-value weekend wedding booking"
+    },
+    {
+      "id": "b7",
+      "customer_ref": "cust_karan",
+      "venue_ref": "v_cowork_atelier",
+      "target": {
+        "min_offset_days": 2,
+        "start_time": "10:00"
+      },
+      "action": "confirm_payment",
+      "payment": {
+        "method": "upi",
+        "reference": "DEMO-UPI-0007"
+      },
+      "shows": "Small hourly meeting booking"
+    },
+    {
+      "id": "b8",
+      "guest": {
+        "name": "Rakesh Gupta",
+        "phone": "9000030001",
+        "email": "rakesh.gupta@groundkart.demo"
+      },
+      "venue_ref": "v_shanti_bhavan",
+      "target": {
+        "min_offset_days": 9
+      },
+      "action": "leave_held",
+      "shows": "Guest (no account) booking"
+    }
+  ],
+  "homepage": {
+    "featured_refs": [
+      "v_gomti_greens",
+      "v_nawabi_mahal",
+      "v_awadh_sports_arena",
+      "v_capital_conference",
+      "v_amber_courtyard"
+    ],
+    "note": "If a placement table exists (see scripts/seed_placements.py), feature these venues. Otherwise skip."
+  }
+}

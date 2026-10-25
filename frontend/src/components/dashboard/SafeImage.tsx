@@ -10,11 +10,11 @@ export function SafeImage({
   src, 
   alt, 
   className = '', 
-  containerClassName = '',
+  containerClassName = 'w-full h-full',
   fallbackText = 'Image unavailable',
   ...props 
 }: SafeImageProps) {
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(src ? 'loading' : 'error');
 
   useEffect(() => {
     if (!src) {
@@ -24,22 +24,31 @@ export function SafeImage({
 
     setStatus('loading');
     const img = new Image();
-    img.src = src;
+    if (props.referrerPolicy) {
+      img.referrerPolicy = props.referrerPolicy;
+    }
     img.onload = () => setStatus('success');
     img.onerror = () => setStatus('error');
-  }, [src]);
+    img.src = src;
+
+    if (img.complete && img.naturalWidth > 0) {
+      setStatus('success');
+    }
+  }, [src, props.referrerPolicy]);
 
   return (
     <div className={`relative overflow-hidden bg-surface-container ${containerClassName}`}>
       {status === 'loading' && (
-        <div className="absolute inset-0 shimmer" />
+        <div className="absolute inset-0 shimmer pointer-events-none" />
       )}
       
-      {status === 'success' && src && (
+      {src && (
         <img 
           src={src} 
           alt={alt} 
-          className={`h-full w-full object-cover transition-opacity duration-300 ${className}`} 
+          className={`h-full w-full object-cover transition-opacity duration-300 ${status === 'loading' ? 'opacity-0' : status === 'error' ? 'hidden' : 'opacity-100'} ${className}`} 
+          onLoad={() => setStatus('success')}
+          onError={() => setStatus('error')}
           {...props} 
         />
       )}

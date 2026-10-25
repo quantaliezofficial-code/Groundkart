@@ -12,7 +12,7 @@
  * shortcut.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ownerApi, type OwnerBookingsParams } from '../lib/api/owner';
+import { ownerApi, getAnalytics, type OwnerBookingsParams } from '../lib/api/owner';
 import type { InventoryUnitCreateRequest, VenueCreateRequest, VenueUpdateRequest } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
 
@@ -107,3 +107,38 @@ export function useSubmitVerification() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['owner-verification'] }),
   });
 }
+
+export function useOwnerOverview() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['owner-overview'],
+    queryFn: () => ownerApi.getOverview(),
+    enabled: Boolean(user),
+  });
+}
+
+export function useOwnerVenueStats(venueId: string | undefined) {
+  return useQuery({
+    queryKey: ['owner-venue-stats', venueId],
+    queryFn: () => ownerApi.getVenueStats(venueId!),
+    enabled: Boolean(venueId),
+  });
+}
+
+export function useOwnerAnalytics(params?: { start_date?: string; end_date?: string; venue_id?: string }) {
+  const { user } = useAuth();
+  const defaultStartDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const defaultEndDate = new Date().toISOString().split('T')[0];
+  const queryParams = {
+    start_date: params?.start_date || defaultStartDate,
+    end_date: params?.end_date || defaultEndDate,
+    venue_id: params?.venue_id,
+  };
+
+  return useQuery({
+    queryKey: ['owner-analytics', queryParams],
+    queryFn: () => getAnalytics(queryParams),
+    enabled: Boolean(user),
+  });
+}
+

@@ -15,7 +15,9 @@ const SPACE_ENVIRONMENTS = [
 ];
 
 export default function IdentityStep({ data, update }: Props) {
-  const [showInternalName, setShowInternalName] = useState(Boolean(data.name && data.name !== data.display_name));
+  const [showInternalName, setShowInternalName] = useState(
+    Boolean((data.name && data.name !== data.display_name) || (data as any).show_internal_name)
+  );
 
   // Keep name synced with display_name by default if not set separately
   const handleDisplayNameChange = (val: string) => {
@@ -25,11 +27,17 @@ export default function IdentityStep({ data, update }: Props) {
     });
   };
 
+  const handleToggleInternalName = () => {
+    const nextVal = !showInternalName;
+    setShowInternalName(nextVal);
+    update({ show_internal_name: nextVal } as any);
+  };
+
   return (
     <div className="space-y-8 flex flex-col animation-fade-in">
       <div>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pitch/10 text-pitch text-xs font-semibold mb-3">
-          <Sparkles className="w-3.5 h-3.5" /> Step 1: Space Identity
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-marigold/15 text-pitch text-xs font-bold border border-marigold/30 mb-3">
+          <Sparkles className="w-3.5 h-3.5 text-pitch" /> Step 1: Space Identity
         </div>
         <h2 className="text-2xl font-display font-semibold text-ink mb-1.5">Tell us about your venue</h2>
         <p className="text-on-surface-variant text-sm">
@@ -46,7 +54,7 @@ export default function IdentityStep({ data, update }: Props) {
             type="text"
             value={data.display_name || data.name || ''}
             onChange={(e) => handleDisplayNameChange(e.target.value)}
-            className="w-full rounded-xl border border-surface-container-highest px-4 py-3 text-ink focus:outline-none focus:ring-2 focus:ring-pitch transition-all"
+            className="w-full rounded-xl border border-surface-container-highest px-4 py-3 text-ink focus:outline-none focus:ring-2 focus:ring-marigold/70 focus:border-pitch transition-all"
             placeholder="e.g. Skyline Arena, Royal Palms Banquet, Apex Conference Hub"
             required
           />
@@ -64,7 +72,7 @@ export default function IdentityStep({ data, update }: Props) {
               type="text"
               value={data.tagline || ''}
               onChange={(e) => update({ tagline: e.target.value.slice(0, 60) })}
-              className="w-full rounded-xl border border-surface-container-highest px-4 py-3 text-ink focus:outline-none focus:ring-2 focus:ring-pitch transition-all pr-16"
+              className="w-full rounded-xl border border-surface-container-highest px-4 py-3 text-ink focus:outline-none focus:ring-2 focus:ring-marigold/70 focus:border-pitch transition-all pr-16"
               placeholder="e.g. Where celebrations feel effortless & grand"
               maxLength={60}
             />
@@ -89,9 +97,9 @@ export default function IdentityStep({ data, update }: Props) {
                   type="button"
                   key={env.id}
                   onClick={() => update({ ...data, space_environment: env.id } as any)}
-                  className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
                     isSelected
-                      ? 'border-pitch bg-primary-container/10 ring-1 ring-pitch text-pitch font-medium'
+                      ? 'border-pitch bg-emerald-50/70 ring-2 ring-pitch/20 text-pitch font-medium shadow-xs'
                       : 'border-surface-container-highest hover:border-pitch/50 hover:bg-mist text-ink'
                   }`}
                 >
@@ -113,7 +121,7 @@ export default function IdentityStep({ data, update }: Props) {
           <textarea
             value={data.description || ''}
             onChange={(e) => update({ description: e.target.value })}
-            className="w-full rounded-xl border border-surface-container-highest p-4 text-ink focus:outline-none focus:ring-2 focus:ring-pitch min-h-[140px] text-sm leading-relaxed"
+            className="w-full rounded-xl border border-surface-container-highest p-4 text-ink focus:outline-none focus:ring-2 focus:ring-marigold/70 focus:border-pitch min-h-[140px] text-sm leading-relaxed"
             placeholder="Share what makes this space standout. Mention the vibe, lighting, acoustics, ideal events, accessibility, or equipment provided..."
           />
           <div className="mt-2.5 p-3 rounded-lg bg-mist border border-surface-container flex items-start gap-2.5 text-xs text-on-surface-variant">
@@ -127,7 +135,7 @@ export default function IdentityStep({ data, update }: Props) {
         <div className="pt-2 border-t border-surface-container">
           <button
             type="button"
-            onClick={() => setShowInternalName(!showInternalName)}
+            onClick={handleToggleInternalName}
             className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-ink transition-colors"
           >
             {showInternalName ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

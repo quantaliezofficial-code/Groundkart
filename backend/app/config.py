@@ -58,6 +58,19 @@ class Settings(BaseSettings):
                     raise ValueError(
                         f"In production, CORS origins must not contain localhost or 127.0.0.1: got '{origin}'"
                     )
+            # Storage validation in production
+            if self.storage_backend == "s3":
+                if not self.s3_bucket_name:
+                    raise ValueError(
+                        "In production with STORAGE_BACKEND='s3', S3_BUCKET_NAME must be configured."
+                    )
+            elif self.storage_backend == "local":
+                if self.uploads_dir.startswith("/tmp") or self.uploads_dir.startswith("\\tmp"):
+                    import logging
+                    logging.getLogger("uvicorn.error").warning(
+                        "PRODUCTION STORAGE WARNING: UPLOADS_DIR is set to a temporary folder ('%s'). In containerized production, files will be lost on container restart. Configure persistent storage or S3.",
+                        self.uploads_dir,
+                    )
         return self
 
     storage_backend: str = "local"  # "local" or "s3"

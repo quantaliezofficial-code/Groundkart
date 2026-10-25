@@ -4,8 +4,13 @@ import { generateBreadcrumbSchema } from '../lib/schema';
 import { Mail, Phone, MapPin, Clock, MessageSquare, CheckCircle } from 'lucide-react';
 import { SITE_NAME, absUrl, SUPPORT_EMAIL, PARTNERS_EMAIL } from '../lib/site';
 
+import { api, ApiError } from '../lib/api/client';
+
 export default function Contact() {
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [responseMessage, setResponseMessage] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
@@ -16,9 +21,30 @@ export default function Contact() {
     { name: 'Contact Us', path: '/contact' },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post<{ success: boolean; message: string }>('/api/v1/contact', {
+        name,
+        email,
+        subject,
+        message,
+      });
+      setResponseMessage(res.message);
+      setSubmitted(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.detail);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to submit message. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -124,11 +150,13 @@ export default function Contact() {
                 </div>
                 <h3 className="font-display text-2xl font-bold text-ink">Message Received</h3>
                 <p className="font-sans text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
-                  Thank you for reaching out, {name}. A member of our support team will review your inquiry and respond within 24 hours.
+                  {responseMessage || `Thank you for reaching out, ${name}. A member of our support team will review your inquiry and respond within 24 hours.`}
                 </p>
                 <button
                   onClick={() => {
                     setSubmitted(false);
+                    setResponseMessage(null);
+                    setError(null);
                     setName('');
                     setEmail('');
                     setSubject('');
@@ -142,6 +170,12 @@ export default function Contact() {
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
                 <h2 className="font-display text-2xl font-bold text-ink mb-2">Send an Inquiry</h2>
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-sans">
+                    {error}
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="contact-name" className="block text-xs font-bold uppercase font-sans text-ink mb-1">
@@ -205,9 +239,10 @@ export default function Contact() {
 
                 <button
                   type="submit"
-                  className="w-full bg-pitch hover:bg-[#15462E] text-chalk font-sans font-bold py-3 rounded-xl text-sm transition shadow-sm active:scale-[0.98] cursor-pointer"
+                  disabled={loading}
+                  className="w-full bg-pitch hover:bg-[#15462E] disabled:opacity-60 text-chalk font-sans font-bold py-3 rounded-xl text-sm transition shadow-sm active:scale-[0.98] cursor-pointer"
                 >
-                  Submit Inquiry
+                  {loading ? 'Sending...' : 'Submit Inquiry'}
                 </button>
               </form>
             )}

@@ -15,6 +15,11 @@ class PayoutRunRequest(BaseModel):
     period_end: date
 
 
+class PayoutMarkPaidRequest(BaseModel):
+    reference: str | None = None
+    bank_account_id: uuid.UUID | None = None
+
+
 class PayoutDetail(BaseModel):
     """Shared response shape for all three payout routes — run, mark-paid,
     and the owner's list view. commission_amount + net_amount always
@@ -28,6 +33,9 @@ class PayoutDetail(BaseModel):
     commission_amount: Decimal
     net_amount: Decimal
     status: str
+    payout_reference: str | None = None
+    bank_account_id: uuid.UUID | None = None
     paid_at: datetime | None
 
     model_config = {"from_attributes": True}
+

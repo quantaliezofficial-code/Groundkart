@@ -1,5 +1,6 @@
 import React from 'react';
 import { ListingFormData } from './ListingBuilder';
+import { UnitType } from '../../../lib/api/types';
 import { CircleDollarSign, Clock, Calendar, Check, ShieldCheck, ArrowRight } from 'lucide-react';
 
 interface Props {
@@ -8,7 +9,13 @@ interface Props {
   venueId?: string | null;
 }
 
-const UNIT_OPTIONS = [
+interface UnitOption {
+  value: UnitType;
+  label: string;
+  desc: string;
+}
+
+const UNIT_OPTIONS: UnitOption[] = [
   { value: 'hour', label: 'Per Hour', desc: 'Ideal for sports turfs, meetings, photography studios' },
   { value: 'half_day', label: 'Per Half Day (4-6 hrs)', desc: 'Ideal for workshops, seminars, morning/evening sessions' },
   { value: 'full_day', label: 'Per Day / Full Event', desc: 'Ideal for banquets, weddings, parties, full-day tournaments' },
@@ -51,7 +58,7 @@ export default function PricingStep({ data, update }: Props) {
                 <button
                   type="button"
                   key={opt.value}
-                  onClick={() => update({ unit_type: opt.value as any })}
+                  onClick={() => update({ unit_type: opt.value })}
                   className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     isSelected
                       ? 'border-pitch bg-primary-container/15 ring-2 ring-pitch text-pitch font-medium shadow-xs'
@@ -127,12 +134,12 @@ export default function PricingStep({ data, update }: Props) {
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
             {OPERATING_DAY_OPTIONS.map((dayOpt) => {
-              const isSelected = ((data as any).operating_days || 'all') === dayOpt.id;
+              const isSelected = (data.operating_days || 'all') === dayOpt.id;
               return (
                 <button
                   type="button"
                   key={dayOpt.id}
-                  onClick={() => update({ ...data, operating_days: dayOpt.id } as any)}
+                  onClick={() => update({ operating_days: dayOpt.id })}
                   className={`p-3 rounded-xl border text-xs font-semibold text-center transition-all ${
                     isSelected
                       ? 'border-pitch bg-pitch text-chalk shadow-xs'
@@ -152,8 +159,8 @@ export default function PricingStep({ data, update }: Props) {
               </label>
               <input
                 type="time"
-                value={(data as any).open_time || '06:00'}
-                onChange={(e) => update({ ...data, open_time: e.target.value } as any)}
+                value={data.open_time || '06:00'}
+                onChange={(e) => update({ open_time: e.target.value })}
                 className="w-full rounded-xl border border-surface-container-highest px-3.5 py-2.5 text-sm bg-chalk text-ink focus:outline-none focus:ring-2 focus:ring-pitch"
               />
             </div>
@@ -163,8 +170,8 @@ export default function PricingStep({ data, update }: Props) {
               </label>
               <input
                 type="time"
-                value={(data as any).close_time || '23:00'}
-                onChange={(e) => update({ ...data, close_time: e.target.value } as any)}
+                value={data.close_time || '23:00'}
+                onChange={(e) => update({ close_time: e.target.value })}
                 className="w-full rounded-xl border border-surface-container-highest px-3.5 py-2.5 text-sm bg-chalk text-ink focus:outline-none focus:ring-2 focus:ring-pitch"
               />
             </div>

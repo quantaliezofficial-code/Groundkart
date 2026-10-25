@@ -1,25 +1,47 @@
 import GroundSelect from './ui/GroundSelect';
 import { DashboardShell, MetricCard, SafeImage, EmptyState, StatusBadge as DashboardStatusBadge } from './dashboard';
-import { Home, CalendarDays, Wallet, LayoutGrid, Plus, ShieldCheck, Activity, Building2, LifeBuoy } from 'lucide-react';
 import {
+  Activity,
   AlertCircle,
-    ChevronLeft,
+  AlertTriangle,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Download,
   Flag,
-    Loader2,
+  Home,
+  Layers,
+  LayoutGrid,
+  LifeBuoy,
+  Loader2,
   MapPin,
-    RefreshCw,
-    } from 'lucide-react';
+  Plus,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-import { useOwnerBookings, useOwnerPayouts, useOwnerVenues, useOwnerVerification, useSubmitVerification } from '../hooks/useOwner';
+import {
+  useOwnerAnalytics,
+  useOwnerBookings,
+  useOwnerOverview,
+  useOwnerPayouts,
+  useOwnerVenues,
+  useOwnerVerification,
+  useSubmitVerification,
+} from '../hooks/useOwner';
 import { ApiError } from '../lib/api/client';
 import type { ApiBookingDetail, ApiOwnerVerification, ApiPayout, ApiVenue } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
 import ListingBuilder from './owner/listing-builder/ListingBuilder';
 import OwnerCalendar from './owner/calendar/OwnerCalendar';
 import SupportTickets from './SupportTickets';
+import VenueWorkspace from './owner/VenueWorkspace';
 
 type Tab = 'Overview' | 'Listings' | 'Calendars' | 'Payouts' | 'Support' | 'Account';
 
@@ -214,22 +236,36 @@ function OwnerOnboardingGate() {
 // ---------------------------------------------------------------------------
 // Full dashboard — only reachable once user.role === 'owner'.
 // ---------------------------------------------------------------------------
+const OWNER_TAB_STORAGE_KEY = 'groundkart_owner_active_tab';
+
 function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
-    const saved = sessionStorage.getItem('initialOwnerTab') as Tab;
-    if (saved) {
+    const initialSaved = sessionStorage.getItem('initialOwnerTab') as Tab;
+    if (initialSaved) {
       sessionStorage.removeItem('initialOwnerTab');
+      return initialSaved;
+    }
+    const saved = sessionStorage.getItem(OWNER_TAB_STORAGE_KEY) as Tab;
+    if (saved && ['Overview', 'Listings', 'Calendars', 'Payouts', 'Support', 'Account'].includes(saved)) {
       return saved;
     }
     return 'Overview';
   });
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    try {
+      sessionStorage.setItem(OWNER_TAB_STORAGE_KEY, tab);
+    } catch {}
+  };
   const [modalVenue, setModalVenue] = useState<ApiVenue | null | 'new'>(null);
+  const [selectedWorkspaceVenue, setSelectedWorkspaceVenue] = useState<ApiVenue | null>(null);
 
   React.useEffect(() => {
     const handleNavigate = (e: Event) => {
       const customEvent = e as CustomEvent<Tab>;
       if (customEvent.detail) {
-        setActiveTab(customEvent.detail);
+        handleTabChange(customEvent.detail);
       }
     };
     window.addEventListener('navigate-owner-tab', handleNavigate);
@@ -240,25 +276,31 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const { data: bookings = [], isLoading: bookingsLoading } = useOwnerBookings();
   const { data: payouts = [], isLoading: payoutsLoading } = useOwnerPayouts();
   const { data: verification } = useOwnerVerification();
+  const { data: overview, isLoading: overviewLoading } = useOwnerOverview();
+  const { data: analytics, isLoading: analyticsLoading } = useOwnerAnalytics();
   const { user, logout } = useAuth();
 
-  const activeVenuesCount = venues.filter(v => v.status === 'active').length;
-  const pendingRequestsCount = bookings.filter(b => b.status === 'pending_payment').length;
-  const totalEarnings = payouts.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.net_amount), 0);
+  const handleManageVenue = (v: ApiVenue) => {
+    if (!v || !v.id) {
+      setModalVenue('new');
+    } else {
+      setSelectedWorkspaceVenue(v);
+    }
+  };
 
   const navItems = [
-    { id: 'Overview', label: 'Overview', icon: Activity, onClick: () => setActiveTab('Overview' as Tab) },
-    { id: 'Listings', label: 'Listings', icon: LayoutGrid, onClick: () => setActiveTab('Listings') },
-    { id: 'Calendars', label: 'Bookings', icon: CalendarDays, onClick: () => setActiveTab('Calendars') },
-    { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => setActiveTab('Payouts') },
-    { id: 'Support', label: 'Support Tickets', icon: LifeBuoy, onClick: () => setActiveTab('Support') },
-    { id: 'Account', label: 'Account', icon: ShieldCheck, onClick: () => setActiveTab('Account') },
+    { id: 'Overview', label: 'Overview', icon: Activity, onClick: () => handleTabChange('Overview' as Tab) },
+    { id: 'Listings', label: 'Listings', icon: LayoutGrid, onClick: () => handleTabChange('Listings') },
+    { id: 'Calendars', label: 'Bookings', icon: CalendarDays, onClick: () => handleTabChange('Calendars') },
+    { id: 'Payouts', label: 'Payouts', icon: Wallet, onClick: () => handleTabChange('Payouts') },
+    { id: 'Support', label: 'Support Tickets', icon: LifeBuoy, onClick: () => handleTabChange('Support') },
+    { id: 'Account', label: 'Account', icon: ShieldCheck, onClick: () => handleTabChange('Account') },
   ];
 
   const headerActions = (
     <button
       onClick={() => setModalVenue('new')}
-      className="flex items-center gap-1.5 bg-pitch hover:bg-[#15462E] text-chalk px-4 py-2 rounded-full font-sans text-sm font-semibold transition active:scale-[0.97] ease-out"
+      className="flex items-center gap-1.5 bg-pitch hover:bg-[#15462E] text-chalk px-4 py-2 rounded-full font-sans text-sm font-semibold transition active:scale-[0.97] ease-out cursor-pointer"
     >
       <Plus size={16} /> List a new venue
     </button>
@@ -284,36 +326,388 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
       headerActions={headerActions}
       userName={user?.name}
       userRole={user?.role}
-        onLogout={logout}
-        onReturnToSite={onReturnToSite}
+      onLogout={logout}
+      onReturnToSite={onReturnToSite}
     >
       {activeTab === 'Overview' && (
         <div className="space-y-6">
+          {/* 1. Needs your attention banner */}
+          {overview?.attention_items && overview.attention_items.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-sans text-xs font-bold text-clay uppercase tracking-wider flex items-center gap-2">
+                <AlertCircle size={15} /> Needs Your Attention ({overview.attention_items.length})
+              </h3>
+              <div className="grid gap-3">
+                {overview.attention_items.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="bg-clay/5 border border-clay/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-xl bg-clay/10 text-clay shrink-0 mt-0.5">
+                        {item.type === 'rejected_venue' ? (
+                          <AlertTriangle size={18} />
+                        ) : item.type === 'verification_pending' ? (
+                          <ShieldAlert size={18} />
+                        ) : item.type === 'payout_ready' ? (
+                          <Wallet size={18} />
+                        ) : (
+                          <Clock size={18} />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-sans font-bold text-sm text-ink">{item.title}</h4>
+                        <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
+                          {item.message || item.description}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 self-end sm:self-center">
+                      {item.type === 'rejected_venue' && item.venue_id && (
+                        <button
+                          onClick={() => {
+                            const v = venues.find((x) => x.id === item.venue_id);
+                            if (v) setSelectedWorkspaceVenue(v);
+                          }}
+                          className="px-3.5 py-1.5 bg-pitch text-chalk text-xs font-semibold rounded-lg hover:bg-[#15462E] transition active:scale-[0.97] cursor-pointer"
+                        >
+                          Fix Listing
+                        </button>
+                      )}
+                      {item.type === 'verification_pending' && (
+                        <button
+                          onClick={() => handleTabChange('Account')}
+                          className="px-3.5 py-1.5 bg-pitch text-chalk text-xs font-semibold rounded-lg hover:bg-[#15462E] transition active:scale-[0.97] cursor-pointer"
+                        >
+                          Verify Identity
+                        </button>
+                      )}
+                      {item.type === 'payout_ready' && (
+                        <button
+                          onClick={() => handleTabChange('Payouts')}
+                          className="px-3.5 py-1.5 bg-pitch text-chalk text-xs font-semibold rounded-lg hover:bg-[#15462E] transition active:scale-[0.97] cursor-pointer"
+                        >
+                          View Payouts
+                        </button>
+                      )}
+                      {(item.type === 'new_booking_request' || item.type === 'booking_today') && (
+                        <button
+                          onClick={() => handleTabChange('Calendars')}
+                          className="px-3.5 py-1.5 bg-pitch text-chalk text-xs font-semibold rounded-lg hover:bg-[#15462E] transition active:scale-[0.97] cursor-pointer"
+                        >
+                          View Bookings
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 2. Four Counters */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <MetricCard label="Active Venues" value={activeVenuesCount} isLoading={venuesLoading} />
-            <MetricCard label="Total Bookings" value={bookings.length} isLoading={bookingsLoading} />
-            <MetricCard label="Pending Requests" value={pendingRequestsCount} isLoading={bookingsLoading} />
-            <MetricCard label="Available Balance" value={`₹${totalEarnings.toLocaleString('en-IN')}`} isLoading={payoutsLoading} />
+            <MetricCard
+              label="Earnings This Month"
+              value={`₹${Number(overview?.counters?.earnings_this_month || 0).toLocaleString('en-IN')}`}
+              isLoading={overviewLoading}
+            />
+            <MetricCard
+              label="Events in Next 7 Days"
+              value={overview?.counters?.events_next_7_days ?? 0}
+              isLoading={overviewLoading}
+            />
+            <MetricCard
+              label="Pending Requests"
+              value={overview?.counters?.pending_requests ?? 0}
+              isLoading={overviewLoading}
+            />
+            <MetricCard
+              label="Next Payout Amount"
+              value={`₹${Number(overview?.counters?.next_payout_amount || 0).toLocaleString('en-IN')}`}
+              isLoading={overviewLoading}
+            />
           </div>
-          
+
+          {/* 3. Booking Stages Board */}
+          <div className="bg-surface-container-lowest border border-surface-container rounded-2xl p-5 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="font-sans text-sm font-bold text-ink uppercase tracking-wide flex items-center gap-2">
+                <Layers size={16} className="text-primary-container" /> Booking Stages
+              </h3>
+              <button
+                onClick={() => handleTabChange('Calendars')}
+                className="text-xs font-semibold text-primary-container hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                Calendar view <ChevronRight size={14} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {[
+                {
+                  key: 'requested',
+                  label: 'Requested',
+                  count: overview?.booking_stages?.requested ?? 0,
+                  badgeBg: 'bg-amber-500/10 text-amber-900 border-amber-300/40',
+                },
+                {
+                  key: 'awaiting_payment',
+                  label: 'Awaiting Payment',
+                  count: overview?.booking_stages?.awaiting_payment ?? 0,
+                  badgeBg: 'bg-blue-500/10 text-blue-900 border-blue-300/40',
+                },
+                {
+                  key: 'confirmed',
+                  label: 'Confirmed',
+                  count: overview?.booking_stages?.confirmed ?? 0,
+                  badgeBg: 'bg-emerald-500/10 text-emerald-900 border-emerald-300/40',
+                },
+                {
+                  key: 'completed',
+                  label: 'Completed',
+                  count: overview?.booking_stages?.completed ?? 0,
+                  badgeBg: 'bg-slate-500/10 text-slate-900 border-slate-300/40',
+                },
+                {
+                  key: 'paid_out',
+                  label: 'Paid Out',
+                  count: overview?.booking_stages?.paid_out ?? 0,
+                  badgeBg: 'bg-purple-500/10 text-purple-900 border-purple-300/40',
+                },
+              ].map((stage) => (
+                <button
+                  key={stage.key}
+                  onClick={() => handleTabChange('Calendars')}
+                  className={`p-3.5 rounded-xl border text-left transition hover:shadow-xs cursor-pointer ${stage.badgeBg}`}
+                >
+                  <p className="text-xs font-medium opacity-75">{stage.label}</p>
+                  <p className="font-display text-2xl font-bold mt-1 text-ink">{stage.count}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4. Listing Stages & 6-Month Revenue Grid */}
           <div className="grid gap-6 md:grid-cols-2">
-             <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5">
-               <h3 className="mb-4 font-sans text-sm font-semibold text-ink uppercase tracking-wide">Quick Actions</h3>
-               <div className="grid gap-3">
-                 <button onClick={() => setActiveTab('Listings')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container/10 text-primary-container">
-                      <LayoutGrid size={16} />
-                    </div>
-                    <span className="font-sans text-sm font-medium text-ink">Manage Venues</span>
+            {/* Listing Progress */}
+            <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <h3 className="font-sans text-sm font-bold text-ink uppercase tracking-wide flex items-center gap-2">
+                  <LayoutGrid size={16} className="text-primary-container" /> Listing Stages
+                </h3>
+                <button
+                  onClick={() => handleTabChange('Listings')}
+                  className="text-xs font-semibold text-primary-container hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  All venues <ChevronRight size={14} />
+                </button>
+              </div>
+
+              {overview?.listing_stages && overview.listing_stages.length > 0 ? (
+                <div className="divide-y divide-surface-container">
+                  {overview.listing_stages.map((stage) => {
+                    const v = venues.find((x) => x.id === stage.venue_id);
+                    const pct = stage.progress_pct ?? stage.progress_percent ?? 0;
+                    return (
+                      <div key={stage.venue_id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="font-sans font-bold text-sm text-ink truncate">
+                              {stage.name || stage.venue_name || v?.name}
+                            </span>
+                            <DashboardStatusBadge status={stage.status as any} />
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs font-mono font-medium text-on-surface-variant">
+                              {pct}%
+                            </span>
+                            {v && (
+                              <button
+                                onClick={() => setSelectedWorkspaceVenue(v)}
+                                className="text-xs px-2.5 py-1 bg-surface-container hover:bg-surface-container-high rounded-md font-semibold text-ink transition cursor-pointer"
+                              >
+                                Workspace
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              pct >= 100
+                                ? 'bg-emerald-500'
+                                : pct >= 80
+                                ? 'bg-primary-container'
+                                : pct >= 50
+                                ? 'bg-marigold'
+                                : 'bg-clay'
+                            }`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+
+                        {/* Missing items chips */}
+                        {stage.missing_items && stage.missing_items.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            <span className="text-[11px] text-on-surface-variant font-medium">Missing:</span>
+                            {stage.missing_items.map((item, i) => (
+                              <button
+                                key={i}
+                                onClick={() => {
+                                  if (v) setSelectedWorkspaceVenue(v);
+                                }}
+                                className="text-[11px] px-2 py-0.5 rounded-full bg-clay/10 text-clay hover:bg-clay/20 font-medium transition cursor-pointer"
+                              >
+                                + {item.replace(/_/g, ' ')}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-on-surface-variant text-sm">
+                  <p>No venues listed yet.</p>
+                  <button
+                    onClick={() => setModalVenue('new')}
+                    className="text-primary-container font-semibold mt-1 hover:underline cursor-pointer"
+                  >
+                    List your first venue
                   </button>
-                  <button onClick={() => setActiveTab('Calendars')} className="flex items-center gap-3 rounded-xl border border-surface-container p-3 text-left transition-colors hover:bg-surface-container/50">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-marigold/10 text-marigold">
-                      <CalendarDays size={16} />
-                    </div>
-                    <span className="font-sans text-sm font-medium text-ink">View Bookings</span>
+                </div>
+              )}
+            </div>
+
+            {/* 6-Month Revenue & Insights Card */}
+            <div className="rounded-2xl border border-surface-container bg-surface-container-lowest p-5 space-y-4 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-sans text-sm font-bold text-ink uppercase tracking-wide flex items-center gap-2">
+                    <TrendingUp size={16} className="text-primary-container" /> 6-Month Financials
+                  </h3>
+                  <button
+                    onClick={() => handleTabChange('Payouts')}
+                    className="text-xs font-semibold text-primary-container hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    Payouts ledger <ChevronRight size={14} />
                   </button>
-               </div>
-             </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3.5 bg-surface-container/40 rounded-xl border border-surface-container">
+                    <p className="text-xs text-on-surface-variant font-medium">Gross Bookings</p>
+                    <p className="font-display text-xl font-bold text-ink mt-1">
+                      ₹{Number(analytics?.gmv || 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <div className="p-3.5 bg-surface-container/40 rounded-xl border border-surface-container">
+                    <p className="text-xs text-on-surface-variant font-medium">Net Payouts</p>
+                    <p className="font-display text-xl font-bold text-emerald-700 mt-1">
+                      ₹{Number(analytics?.owner_payout || 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <div className="p-3.5 bg-surface-container/40 rounded-xl border border-surface-container">
+                    <p className="text-xs text-on-surface-variant font-medium">Completed Bookings</p>
+                    <p className="font-display text-xl font-bold text-ink mt-1">
+                      {analytics?.booking_count || 0}
+                    </p>
+                  </div>
+                  <div className="p-3.5 bg-surface-container/40 rounded-xl border border-surface-container">
+                    <p className="text-xs text-on-surface-variant font-medium">Avg Booking Value</p>
+                    <p className="font-display text-xl font-bold text-ink mt-1">
+                      ₹{Number(analytics?.average_booking_value || 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Navigation actions */}
+              <div className="pt-3 border-t border-surface-container grid grid-cols-2 gap-3 mt-4">
+                <button
+                  onClick={() => handleTabChange('Listings')}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-surface-container p-2.5 text-center text-xs font-semibold text-ink hover:bg-surface-container/50 transition cursor-pointer"
+                >
+                  <LayoutGrid size={14} className="text-primary-container" /> Manage Venues
+                </button>
+                <button
+                  onClick={() => handleTabChange('Calendars')}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-surface-container p-2.5 text-center text-xs font-semibold text-ink hover:bg-surface-container/50 transition cursor-pointer"
+                >
+                  <CalendarDays size={14} className="text-marigold" /> View Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Upcoming Events Timeline (Next 14 Days) */}
+          <div className="bg-surface-container-lowest border border-surface-container rounded-2xl p-5 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="font-sans text-sm font-bold text-ink uppercase tracking-wide flex items-center gap-2">
+                <CalendarDays size={16} className="text-primary-container" /> Upcoming Events (Next 14 Days)
+              </h3>
+              <button
+                onClick={() => handleTabChange('Calendars')}
+                className="text-xs font-semibold text-primary-container hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                Full calendar <ChevronRight size={14} />
+              </button>
+            </div>
+
+            {overview?.upcoming_events && overview.upcoming_events.length > 0 ? (
+              <div className="grid gap-2.5">
+                {overview.upcoming_events.map((evt, idx) => (
+                  <div
+                    key={evt.id || evt.booking_id || idx}
+                    className="p-3.5 rounded-xl border border-surface-container bg-surface-container-lowest hover:bg-surface-container/30 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-primary-container/10 text-primary-container flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider">
+                          {new Date(evt.date).toLocaleDateString('en-US', { month: 'short' })}
+                        </span>
+                        <span className="font-display text-base font-bold leading-none">
+                          {new Date(evt.date).getDate()}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-sans font-bold text-sm text-ink">{evt.venue_name}</h4>
+                          {(evt.purpose || evt.purpose_name) && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-marigold/15 text-ink">
+                              {evt.purpose || evt.purpose_name}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-on-surface-variant mt-0.5">
+                          {evt.customer_name} {evt.guest_count ? `· ${evt.guest_count} guests` : ''}
+                          {evt.start_time
+                            ? ` · ${evt.start_time.slice(0, 5)} - ${evt.end_time?.slice(0, 5)}`
+                            : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          evt.payment_status === 'paid'
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {evt.payment_status || 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-on-surface-variant text-sm">
+                No events scheduled for the next 14 days.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -323,7 +717,7 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
           venues={venues}
           bookings={bookings}
           isLoading={venuesLoading}
-          onManage={(v) => setModalVenue(v)}
+          onManage={handleManageVenue}
         />
       )}
       {activeTab === 'Calendars' && (
@@ -334,7 +728,23 @@ function OwnerDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
       {activeTab === 'Account' && <AccountTab verification={verification} />}
 
       {modalVenue !== null && (
-        <ListingBuilder venueId={modalVenue === 'new' ? null : modalVenue?.id} onClose={() => setModalVenue(null)} onComplete={() => setModalVenue(null)} />
+        <ListingBuilder
+          venueId={modalVenue === 'new' ? null : modalVenue?.id}
+          onClose={() => setModalVenue(null)}
+          onComplete={() => setModalVenue(null)}
+        />
+      )}
+
+      {selectedWorkspaceVenue !== null && (
+        <VenueWorkspace
+          venue={selectedWorkspaceVenue}
+          onClose={() => setSelectedWorkspaceVenue(null)}
+          onOpenListingBuilder={(venueId) => {
+            setSelectedWorkspaceVenue(null);
+            const found = venues.find((v) => v.id === venueId);
+            setModalVenue(found || 'new');
+          }}
+        />
       )}
     </DashboardShell>
   );

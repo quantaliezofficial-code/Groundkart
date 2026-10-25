@@ -92,6 +92,30 @@ async def process_one_job(session: AsyncSession, session_maker) -> bool:
                 
     return True
 
+async def reclaim_stale_running_jobs(session: AsyncSession, timeout_minutes: int = 15) -> int:
+    """Reclaims jobs left in 'running' status for longer than timeout_minutes (e.g. after worker crash/restart).
+    Resets them to 'pending' if under max_attempts, or 'failed' if max_attempts reached."""
+    cutoff = func.now() - timedelta(minutes=timeout_minutes)
+    stmt = (
+        select(Job)
+        .where(Job.status == "running", Job.started_at <= cutoff)
+        .with_for_update(skip_locked=True)
+    )
+    result = await session.execute(stmt)
+    stale_jobs = result.scalars().all()
+    count = 0
+    for job in stale_jobs:
+        job.attempts += 1
+        if job.attempts >= job.max_attempts:
+            job.status = "failed"
+            job.error_details = f"Job timed out and reached max attempts ({job.max_attempts}) after worker failure"
+        else:
+            job.status = "pending"
+            job.error_details = "Reclaimed after worker process timeout/crash"
+            job.next_attempt_at = func.now()
+        count += 1
+    return count
+
 async def worker_loop(interval_seconds: int = 5) -> None:
     """Continuous loop polling for jobs."""
     while True:

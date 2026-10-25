@@ -1,0 +1,70 @@
+flowchart TD
+    subgraph ExternalInteractions ["Client Ingestion"]
+        ClientReq["HTTP Client Request<br/>(Customer / Owner / Admin)"]
+        TokenAuth["Bearer JWT or Session Header"]
+    end
+
+    subgraph APILayer ["FastAPI Pipeline"]
+        CORS["CORSMiddleware & RateLimiter"]
+        AuthDep["Auth Dependency<br/>(get_current_user / require_role)"]
+        Validation["Pydantic v2 Schema Validation"]
+        RouteHandler["Route Controller Endpoint"]
+    end
+
+    subgraph ServiceLayer ["Domain Services"]
+        CatalogSvc["Catalog Service<br/>(Venue, Slots, Media)"]
+        BookingEngine["Booking Engine<br/>(Holds, State Machine, Slots)"]
+        LedgerSvc["Double-Entry Ledger<br/>(Accounts: Held, Payable, Commission, Cash)"]
+        PayoutSvc["Payout Service<br/>(Batch Calculation & Bank Reconciliation)"]
+        SupportSvc["Support Service<br/>(Ticket Threading & SLA)"]
+        AuditSvc["Audit Service<br/>(Immutable Action History)"]
+    end
+
+    subgraph PersistenceLayer ["PostgreSQL 16 Transaction Boundary"]
+        TxScope["Async SQLAlchemy Transaction<br/>(Isolation: READ COMMITTED / FOR UPDATE)"]
+        TableVenues[("venues / inventory_units")]
+        TableBookings[("bookings / booking_events / payments")]
+        TableLedger[("ledger_entries / refunds / payouts")]
+        TableAudit[("audit_logs / support_tickets")]
+        TableOutbox[("outbox_events / jobs")]
+    end
+
+    subgraph BackgroundExecution ["Asynchronous Workers"]
+        JobPoller["Job Worker Loop<br/>(SELECT ... FOR UPDATE SKIP LOCKED)"]
+        HoldSweeper["Hold Sweep Job<br/>(Expired Slot Cleanup)"]
+        NotificationRelay["Outbox Notification Relay<br/>(In-App & Email Delivery)"]
+    end
+
+    %% Flow connections
+    ClientReq --> CORS
+    TokenAuth --> CORS
+    CORS --> AuthDep
+    AuthDep --> Validation
+    Validation --> RouteHandler
+
+    RouteHandler --> CatalogSvc
+    RouteHandler --> BookingEngine
+    RouteHandler --> SupportSvc
+    RouteHandler --> PayoutSvc
+
+    BookingEngine --> LedgerSvc
+    PayoutSvc --> LedgerSvc
+    RouteHandler --> AuditSvc
+
+    CatalogSvc --> TxScope
+    BookingEngine --> TxScope
+    LedgerSvc --> TxScope
+    SupportSvc --> TxScope
+    AuditSvc --> TxScope
+
+    TxScope --> TableVenues
+    TxScope --> TableBookings
+    TxScope --> TableLedger
+    TxScope --> TableAudit
+    TxScope --> TableOutbox
+
+    TableOutbox -.->|Polled by worker| JobPoller
+    JobPoller --> HoldSweeper
+    JobPoller --> NotificationRelay
+    HoldSweeper -.->|Releases unconfirmed holds| TableVenues
+    HoldSweeper -.->|Marks expired| TableBookings

@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -27,6 +28,10 @@ class BookingCreateRequest(BaseModel):
     guest_name: str | None = Field(default=None, max_length=255)
     guest_email: EmailStr | None = None
     guest_phone: str | None = Field(default=None, max_length=50)
+    purpose_id: uuid.UUID | None = None
+    rental_mode: Literal["hour", "half_day", "full_day"] | None = None
+    guest_count: int | None = Field(default=None, gt=0)
+    customer_notes: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def guest_fields_come_together(self) -> "BookingCreateRequest":
@@ -78,6 +83,10 @@ class BookingDetail(BaseModel):
     slot_date: date
     slot_start_time: time | None
     slot_end_time: time | None
+    purpose_id: uuid.UUID | None = None
+    rental_mode: str | None = None
+    guest_count: int | None = None
+    customer_notes: str | None = None
     status: str
     amount: Decimal
     base_amount: Decimal | None = None

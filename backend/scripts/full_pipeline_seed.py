@@ -75,7 +75,8 @@ async def api_call(client, method, path, *, token=None, **kwargs):
 
 
 async def signup_and_login(client, name, email, password):
-    await api_call(client, "POST", "/api/v1/auth/signup", json={"name": name, "email": email, "password": password})
+    phone = f"98{uuid.uuid4().int % 100000000:08d}"
+    await api_call(client, "POST", "/api/v1/auth/signup", json={"name": name, "email": email, "password": password, "phone": phone})
     resp = await api_call(client, "POST", "/api/v1/auth/login", json={"email": email, "password": password})
     return resp["access_token"]
 

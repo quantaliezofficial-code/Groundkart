@@ -22,7 +22,7 @@ export default function NotFound() {
             href="/"
             className="inline-flex items-center justify-center bg-pitch hover:bg-[#15462E] text-chalk px-6 py-3 rounded-full text-xs font-bold transition ease-out shadow-xs"
           >
-            Return to Homepage
+            Return Home
           </a>
           <a
             href="/search"

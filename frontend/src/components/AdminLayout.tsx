@@ -1,8 +1,9 @@
 import AdminPasswords from './dashboard/AdminPasswords';
+import DatabaseStudioTab from './dashboard/DatabaseStudioTab';
 import { useDebounce } from '../hooks/useDebounce';
 import { useAdminNotifications, useAdminSendNotification } from '../hooks/useNotifications';
 import GroundSelect from './ui/GroundSelect';
-import { Activity, AlertCircle, Ban, CalendarClock, CheckCircle2, FileText, Globe, Layers, LayoutDashboard, Key, Loader2, Mail, MessageSquare, Minus, Plus as PlusIcon, PlayCircle, RefreshCw, Search, Server, ShieldCheck, Users as UsersIcon, Wallet, Wifi, XCircle, ArrowRight, Star, Bell, Clock } from 'lucide-react';
+import { Activity, AlertCircle, Ban, CalendarClock, CheckCircle2, Database, FileText, Globe, Layers, LayoutDashboard, Key, Loader2, Mail, MessageSquare, Minus, Plus as PlusIcon, PlayCircle, RefreshCw, Search, Server, ShieldCheck, Users as UsersIcon, Wallet, Wifi, XCircle, ArrowRight, Star, Bell, Clock } from 'lucide-react';
 import { DashboardShell, MetricCard, StatusBadge as DashboardStatusBadge, EmptyState } from './dashboard';
 import { Home } from 'lucide-react';
 import HomepageTab from './dashboard/HomepageTab';
@@ -56,7 +57,7 @@ import type {
 } from '../lib/api/types';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'Overview' | 'Analytics' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews' | 'Support' | 'Notifications' | 'Homepage' | 'Passwords';
+type Tab = 'Overview' | 'Analytics' | 'DatabaseStudio' | 'ApprovalQueue' | 'Venues' | 'Users' | 'Bookings' | 'Payouts' | 'Reviews' | 'Support' | 'Notifications' | 'Homepage' | 'Passwords';
 
 function money(value: string | number): string {
   const n = typeof value === 'string' ? Number(value) : value;
@@ -169,7 +170,8 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
   const pendingCount = pendingVenues.length + pendingVerifications.length;
 
   const navItems = [
-    { id: 'Overview', label: 'Overview', icon: LayoutDashboard, Key, onClick: () => setActiveTab('Overview') },
+    { id: 'Overview', label: 'Overview', icon: LayoutDashboard, onClick: () => setActiveTab('Overview') },
+    { id: 'DatabaseStudio', label: 'DB & Analytics', icon: Database, onClick: () => setActiveTab('DatabaseStudio') },
     { id: 'Analytics', label: 'Analytics', icon: Activity, onClick: () => setActiveTab('Analytics') },
     { id: 'ApprovalQueue', label: 'Approval Queue', icon: ShieldCheck, badge: pendingCount || undefined, onClick: () => setActiveTab('ApprovalQueue') },
     { id: 'Venues', label: 'Venues', icon: Layers, onClick: () => setActiveTab('Venues') },
@@ -185,6 +187,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
 
   const titles: Record<Tab, { title: string; desc: string }> = {
     Overview: { title: 'Admin Dashboard', desc: 'Operations overview and platform health' },
+    DatabaseStudio: { title: 'Database Studio & Analytics', desc: 'Live DB monitoring, table browser, safe SQL runner, charts & CSV exports' },
     Analytics: { title: 'Analytics', desc: 'Platform growth and revenue' },
     ApprovalQueue: { title: 'Approval Queue', desc: 'Pending verifications and venue reviews' },
     Venues: { title: 'Venues', desc: 'Manage marketplace venues' },
@@ -218,6 +221,7 @@ function AdminDashboard({ onReturnToSite }: { onReturnToSite?: () => void }) {
           onNavigate={(tab) => setActiveTab(tab)}
         />
       )}
+      {activeTab === 'DatabaseStudio' && <DatabaseStudioTab />}
       {activeTab === 'Analytics' && (
         <AnalyticsTab overview={dashboard} auditLog={auditLog} />
       )}
@@ -630,7 +634,7 @@ function AnalyticsTab({
              </div>
              <Globe size={24} className="text-ink/20" />
           </div>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-2 custom-scrollbar" data-lenis-prevent>
             {auditLog.slice(0, 7).map((log, i) => (
               <div key={log.id} className="flex items-start justify-between p-3 rounded-2xl bg-surface-container/50 hover:bg-surface-container transition-colors ease-out">
                 <div className="flex gap-3 items-center">
@@ -1687,7 +1691,7 @@ function AdminTicketDetail({ ticketId }: { ticketId: string }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-surface-container">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6 bg-surface-container custom-scrollbar" data-lenis-prevent>
           {ticket.events?.map((event: ApiTicketEvent) => {
             if (event.event_type !== 'comment' && event.event_type !== 'created') return null;
             
@@ -1824,7 +1828,7 @@ function AdminSendNotification() {
           ) : users?.length === 0 ? (
             <div className="p-4 text-sm text-on-surface-variant">No users found.</div>
           ) : (
-            <div className="max-h-[400px] overflow-y-auto divide-y divide-ink/5">
+            <div className="max-h-[400px] overflow-y-auto divide-y divide-ink/5 custom-scrollbar" data-lenis-prevent>
               {users?.map((user: ApiAdminUserView) => (
                 <button
                   key={user.id}

@@ -37,7 +37,9 @@ def _times_overlap(start1: time | None, end1: time | None, start2: time | None, 
     
     return max(s1, s2) < min(e1, e2)
 
-async def calculate_booking_price(session: AsyncSession, unit) -> PricingSnapshot:
+async def calculate_booking_price(
+    session: AsyncSession, unit, base_price_override: Decimal | None = None
+) -> PricingSnapshot:
     """
     Phase 3: Rule-based pricing.
     Deterministic price breakdown based on active PricingRules for the venue.
@@ -45,7 +47,7 @@ async def calculate_booking_price(session: AsyncSession, unit) -> PricingSnapsho
     """
     from app.models.core import PricingRule
     
-    base_price = unit.price
+    base_price = base_price_override if base_price_override is not None else unit.price
     final_amount = base_price
     
     result = await session.execute(

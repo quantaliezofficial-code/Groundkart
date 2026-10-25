@@ -76,17 +76,27 @@ async def test_list_inventory_units_for_active_venue_is_public(client, test_sess
     assert units[0]["status"] == "available"
 
 
-async def test_list_inventory_units_shows_both_available_and_booked(client, test_session_factory):
-    _, venue_id, _ = await _owner_venue_and_unit(test_session_factory)
+async def test_list_inventory_units_hides_held_from_public_but_shows_to_owner(client, test_session_factory):
+    owner_id, venue_id, _ = await _owner_venue_and_unit(test_session_factory)
     async with test_session_factory() as session:
         async with session.begin():
             session.add(InventoryUnit(
                 venue_id=venue_id, date=date(2027, 8, 15), start_time=time(21, 0), end_time=time(22, 0),
                 price=Decimal("2000.00"), status="held",
             ))
+    # Customer view: held unit is hidden
     resp = await client.get(f"/api/v1/venues/{venue_id}/inventory-units")
     statuses = {u["status"] for u in resp.json()}
-    assert statuses == {"available", "held"}
+    assert statuses == {"available"}
+
+    # Owner view with include_all: sees both
+    token = create_access_token(user_id=owner_id, role="owner")
+    resp_owner = await client.get(
+        f"/api/v1/venues/{venue_id}/inventory-units?include_all=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    statuses_owner = {u["status"] for u in resp_owner.json()}
+    assert statuses_owner == {"available", "held"}
 
 
 async def test_list_inventory_units_filters_by_date_range(client, test_session_factory):

@@ -28,6 +28,8 @@ async def submit_verification(
     identification_type: str | None = None,
     identification_number: str | None = None,
     storage_key: str | None = None,
+    pan: str | None = None,
+    gstin: str | None = None,
 ) -> OwnerVerification:
     async with session.begin():
         existing = await session.execute(
@@ -48,6 +50,8 @@ async def submit_verification(
             business_name=business_name,
             identification_type=identification_type,
             identification_number=identification_number,
+            pan=pan.strip().upper() if pan else None,
+            gstin=gstin.strip().upper() if gstin else None,
         )
         session.add(verification)
         await session.flush()

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings, Star, Zap, ShieldCheck, CircleDollarSign, Target, AlertCircle } from 'lucide-react';
+import { Search, MapPin, CheckCircle, ArrowRight, Sparkles, Filter, Heart, RefreshCw, Eye, Landmark, Settings, Star, Zap, ShieldCheck, CircleDollarSign, Target, AlertCircle, ArrowUpDown, Sliders, X } from 'lucide-react';
 import { motion, useInView } from 'framer-motion';
 import Header from './components/Header';
 
@@ -21,8 +21,10 @@ function ScrollReveal({ children, className = '', delay = 0 }: { children: React
 }
 import Hero from './components/Hero';
 import VenueCard from './components/VenueCard';
-import FiltersSidebar from './components/FiltersSidebar';
+import FiltersSidebar, { matchesAmenity, AMENITY_FILTER_ITEMS, SORT_OPTIONS } from './components/FiltersSidebar';
+import type { VenueSortOption } from './types';
 import AuthModal from './components/AuthModal';
+import { Pagination } from './components/ui/Pagination';
 import { useSmoothScroll } from './components/SmoothScroll';
 
 import { useAuth } from './lib/auth';
@@ -31,7 +33,7 @@ import { useMyBookings, useCreateBooking, useCancelBooking } from './hooks/useBo
 import { useToast } from './components/ui/Toast';
 import { ApiError } from './lib/api/client';
 
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import SEOHead from './components/SEOHead';
 import { generateWebsiteSchema, generateOrganizationSchema, generateCollectionPageSchema, generateBreadcrumbSchema } from './lib/schema';
 import About from './components/About';
@@ -155,6 +157,23 @@ function VenueErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+const SEARCH_FILTERS_STORAGE_KEY = 'groundkart_search_filters';
+
+interface StoredSearchFilters {
+  category?: string;
+  city?: string;
+  q?: string;
+  available_on?: string;
+  min_price?: string;
+  max_price?: string;
+  amenities?: string[];
+  capacity?: string;
+  environment?: string;
+  rating?: number;
+  sort?: VenueSortOption;
+  page?: number;
+}
+
 export default function App() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const toast = useToast();
@@ -198,7 +217,7 @@ export default function App() {
   // starting from a real list instead of a hardcoded one.
   const [searchParams, setSearchParams] = useState<{ city?: string; category?: string; available_on?: string }>({});
   const { data: homepageData } = useHomepage();
-  const { venues: realVenues, isLoading: isVenuesLoading } = useVenues(searchParams);
+  const { venues: realVenues, isLoading: isVenuesLoading, isError: isVenuesError, refetch: refetchVenues } = useVenues(searchParams);
 
   // Real "My Bookings" — replaces the old localStorage-backed mock list
   // for the customer-facing experience. Only fetches once a real user is
@@ -220,6 +239,7 @@ export default function App() {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const navType = useNavigationType();
 
   // Navigation & Primary State
   const [supportContext, setSupportContext] = useState<{ type: 'booking' | 'venue'; id: string } | null>(null);
@@ -234,20 +254,22 @@ export default function App() {
   // Filters state
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
-  const [selectedAmenities, setSelectedAmenities] = useState({
-    freeParking: false,
-    floodlights: false,
-    airConditioning: false,
-    lockerRooms: false
-  });
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [selectedCapacity, setSelectedCapacity] = useState('');
   const [selectedRating, setSelectedRating] = useState<number>(0);
+  const [selectedEnvironment, setSelectedEnvironment] = useState('');
+  const [sortBy, setSortBy] = useState<VenueSortOption>('recommended');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(12);
 
   // Dynamic booking transactions state
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [bookingDate, setBookingDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [bookingMeta, setBookingMeta] = useState<any>(null);
 
   // Favorites persistence
   const [favorites, setFavorites] = useState<string[]>([
@@ -270,7 +292,21 @@ export default function App() {
     'Community Halls': 'community_hall',
     'banquet': 'banquet_hall',
     'football': 'sports',
+    'cricket': 'sports',
+    'badminton': 'sports',
+    'tennis': 'sports',
+    'swimming': 'sports',
     'conference': 'corporate',
+    'meeting_room': 'corporate',
+    'coworking': 'corporate',
+    'party_hall': 'banquet_hall',
+    'birthday': 'banquet_hall',
+    'lounge': 'banquet_hall',
+    'wedding_lawn': 'banquet_hall',
+    'reception': 'banquet_hall',
+    'resort': 'farmhouse',
+    'photography': 'creative',
+    'dance_studio': 'creative',
     'Sports Grounds': 'sports',
     'Corporate Spaces': 'corporate',
     'sports': 'sports',
@@ -278,6 +314,14 @@ export default function App() {
     'farmhouse': 'farmhouse',
     'corporate': 'corporate',
     'community_hall': 'community_hall',
+    'creative': 'creative',
+    'g_sports': 'sports',
+    'g_banquet': 'banquet_hall',
+    'g_party': 'banquet_hall',
+    'g_wedding': 'banquet_hall',
+    'g_corp': 'corporate',
+    'g_outdoor': 'farmhouse',
+    'g_creative': 'creative',
   };
 
   const SLUG_TO_DISPLAY_CATEGORY: Record<string, string> = {
@@ -291,6 +335,35 @@ export default function App() {
     'corporate-hubs': 'Corporate Spaces',
     'community-halls': 'Community Halls',
     'community_hall': 'Community Halls',
+    'creative': 'Creative & Studios',
+    'photography': 'Photography Studios',
+    'dance_studio': 'Dance Studios',
+    'football': 'Football Turfs',
+    'cricket': 'Cricket Grounds',
+    'badminton': 'Badminton Courts',
+    'tennis': 'Tennis Courts',
+    'swimming': 'Swimming Pools',
+    'party_hall': 'Party Halls',
+    'birthday': 'Birthday Venues',
+    'lounge': 'Lounges',
+    'wedding_lawn': 'Wedding Lawns',
+    'reception': 'Reception Venues',
+    'meeting_room': 'Meeting Rooms',
+    'conference': 'Conference Rooms',
+    'coworking': 'Coworking Spaces',
+    'resort': 'Resorts & Stays',
+    'g_sports': 'Sports Grounds',
+    'g_banquet': 'Banquet Halls',
+    'g_party': 'Parties & Celebrations',
+    'g_wedding': 'Weddings & Celebrations',
+    'g_corp': 'Corporate Spaces',
+    'g_outdoor': 'Farmhouses & Outdoor',
+    'g_creative': 'Creative & Studios',
+  };
+
+  const getCategoryTitle = (cat: string) => {
+    if (!cat) return '';
+    return SLUG_TO_DISPLAY_CATEGORY[cat] || SLUG_TO_DISPLAY_CATEGORY[cat.toLowerCase()] || cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   // Synchronize state value writes to LocalStorage to retain cross-role testing inputs
@@ -308,25 +381,59 @@ export default function App() {
       setCurrentView('search');
       setActiveRole('client');
       const params = new URLSearchParams(location.search);
-      const cat = params.get('category');
-      const city = params.get('city');
-      const q = params.get('q');
-      const date = params.get('available_on');
-      if (cat) {
-        setCategoryInput(cat);
-        setSearchParams(prev => ({ ...prev, category: DISPLAY_TO_BACKEND_CATEGORY[cat] || cat }));
+      let saved: StoredSearchFilters = {};
+      try {
+        const raw = sessionStorage.getItem(SEARCH_FILTERS_STORAGE_KEY);
+        if (raw) saved = JSON.parse(raw);
+      } catch {}
+
+      const hasUrlParams = location.search.length > 1;
+
+      const cat = params.has('category') ? (params.get('category') || '') : (hasUrlParams ? '' : (saved.category || ''));
+      const city = params.has('city') ? (params.get('city') || '') : (hasUrlParams ? '' : (saved.city || ''));
+      const q = params.has('q') ? (params.get('q') || '') : (hasUrlParams ? '' : (saved.q || ''));
+      const date = params.has('available_on') ? (params.get('available_on') || '') : (hasUrlParams ? '' : (saved.available_on || ''));
+      const sortParam = params.get('sort') as VenueSortOption;
+      const sort = params.has('sort')
+        ? (sortParam || 'recommended')
+        : (hasUrlParams ? 'recommended' : (saved.sort || 'recommended'));
+
+      const minP = params.has('min_price') ? (params.get('min_price') || '') : (hasUrlParams ? '' : (saved.min_price || ''));
+      const maxP = params.has('max_price') ? (params.get('max_price') || '') : (hasUrlParams ? '' : (saved.max_price || ''));
+      const cap = params.has('capacity') ? (params.get('capacity') || '') : (hasUrlParams ? '' : (saved.capacity || ''));
+      const env = params.has('environment') ? (params.get('environment') || '') : (hasUrlParams ? '' : (saved.environment || ''));
+      const ratStr = params.has('rating') ? params.get('rating') : (hasUrlParams ? null : (saved.rating != null ? String(saved.rating) : null));
+      const rat = ratStr ? Number(ratStr) : 0;
+      const pgStr = params.has('page') ? params.get('page') : (hasUrlParams ? null : (saved.page ? String(saved.page) : null));
+      const pg = pgStr ? Math.max(1, parseInt(pgStr, 10) || 1) : 1;
+
+      let amenities: string[] = [];
+      if (params.has('amenities')) {
+        amenities = (params.get('amenities') || '').split(',').map((s) => s.trim()).filter(Boolean);
+      } else if (!hasUrlParams && Array.isArray(saved.amenities)) {
+        amenities = saved.amenities;
       }
-      if (city) {
-        setLocationInput(city);
-        setSearchParams(prev => ({ ...prev, city }));
+
+      setCategoryInput(cat);
+      setLocationInput(city);
+      setSearchQuery(q);
+      setDateInput(date);
+      setMinPrice(minP);
+      setMaxPrice(maxP);
+      setSelectedCapacity(cap);
+      setSelectedEnvironment(env);
+      setSelectedRating(rat);
+      setSelectedAmenities(amenities);
+      if (['recommended', 'newest', 'price_asc', 'price_desc', 'rating_desc'].includes(sort)) {
+        setSortBy(sort);
       }
-      if (date) {
-        setDateInput(date);
-        setSearchParams(prev => ({ ...prev, available_on: date }));
-      }
-      if (q) {
-        setSearchQuery(q);
-      }
+      setCurrentPage(pg);
+
+      const nextSearch: { city?: string; category?: string; available_on?: string } = {};
+      if (cat) nextSearch.category = DISPLAY_TO_BACKEND_CATEGORY[cat] || cat;
+      if (city) nextSearch.city = city;
+      if (date) nextSearch.available_on = date;
+      setSearchParams(nextSearch);
     } else if (path.startsWith('/categories/')) {
       const catSlug = path.replace('/categories/', '');
       const displayCat = SLUG_TO_DISPLAY_CATEGORY[catSlug] || catSlug;
@@ -377,11 +484,12 @@ export default function App() {
 
   const { scrollTo: smoothScrollTo } = useSmoothScroll();
 
-  // Scroll to top on view changes to mirror SPA transitions
+  // Scroll to top on view changes to mirror SPA transitions (except on back/forward POP navigation)
   useEffect(() => {
+    if (navType === 'POP') return;
     smoothScrollTo(0, { immediate: true });
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [currentView, selectedVenueId, activeRole, smoothScrollTo]);
+  }, [currentView, selectedVenueId, activeRole, smoothScrollTo, navType]);
 
   // Opens the auth modal and remembers what to do once login/signup
   // actually succeeds — so "log in" doesn't strand the person back at a
@@ -426,12 +534,9 @@ export default function App() {
     setMaxPrice('');
     setSelectedCapacity('');
     setSelectedRating(0);
-    setSelectedAmenities({
-      freeParking: false,
-      floodlights: false,
-      airConditioning: false,
-      lockerRooms: false
-    });
+    setSelectedEnvironment('');
+    setSelectedAmenities([]);
+    setSortBy('recommended');
 
     navigate(`/search?category=${encodeURIComponent(categoryName)}`);
     setTimeout(() => {
@@ -440,19 +545,19 @@ export default function App() {
   };
 
   // Initiate dynamic booking pipeline
-  const handleInitiateBooking = (slot: string, date: string, slotId: string) => {
+  const handleInitiateBooking = (slot: string, date: string, slotId: string, meta?: any) => {
     setSelectedSlot(slot);
     setBookingDate(date);
     setSelectedSlotId(slotId);
+    setBookingMeta(meta || null);
     navigate('/checkout');
   };
 
   // Handle sidebar toggling
-  const handleAmenityToggle = (key: 'freeParking' | 'floodlights' | 'airConditioning' | 'lockerRooms') => {
-    setSelectedAmenities((prev) => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+  const handleAmenityToggle = (key: string) => {
+    setSelectedAmenities((prev) =>
+      prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]
+    );
   };
 
   const handleClearFilters = () => {
@@ -460,22 +565,123 @@ export default function App() {
     setMaxPrice('');
     setSelectedCapacity('');
     setSelectedRating(0);
+    setSelectedEnvironment('');
+    setSelectedAmenities([]);
+    setSortBy('recommended');
     setSearchQuery('');
     setCategoryInput('');
-    setSelectedAmenities({
-      freeParking: false,
-      floodlights: false,
-      airConditioning: false,
-      lockerRooms: false
-    });
+    setLocationInput('');
+    setDateInput('');
+    setSearchParams({});
+    setCurrentPage(1);
+    try {
+      sessionStorage.removeItem(SEARCH_FILTERS_STORAGE_KEY);
+    } catch {}
+    if (location.pathname === '/search' && location.search) {
+      navigate('/search', { replace: true });
+    }
   };
 
-  // Filter Catalog dynamically — now over the real venue list. Amenity/
-  // capacity/rating filters still narrow client-side (the backend search
-  // endpoint doesn't take those params); city/category/date narrow via
-  // searchParams -> a real server-side query instead.
+  // Reset page when filters change (guard against resetting during initial restoration or page changes)
+  const prevFilterValuesRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentFiltersHash = JSON.stringify({
+      searchQuery,
+      categoryInput,
+      minPrice,
+      maxPrice,
+      selectedAmenities,
+      selectedCapacity,
+      selectedRating,
+      selectedEnvironment,
+      sortBy,
+      searchParams,
+    });
+
+    if (prevFilterValuesRef.current === null) {
+      prevFilterValuesRef.current = currentFiltersHash;
+      return;
+    }
+
+    if (prevFilterValuesRef.current !== currentFiltersHash) {
+      prevFilterValuesRef.current = currentFiltersHash;
+      setCurrentPage(1);
+    }
+  }, [
+    searchQuery,
+    categoryInput,
+    minPrice,
+    maxPrice,
+    selectedAmenities,
+    selectedCapacity,
+    selectedRating,
+    selectedEnvironment,
+    sortBy,
+    searchParams,
+  ]);
+
+  // Save search state to sessionStorage and sync URL query params when on /search
+  useEffect(() => {
+    if (location.pathname !== '/search') return;
+    const filterState: StoredSearchFilters = {
+      category: categoryInput,
+      city: locationInput,
+      q: searchQuery,
+      available_on: dateInput,
+      min_price: minPrice,
+      max_price: maxPrice,
+      amenities: selectedAmenities,
+      capacity: selectedCapacity,
+      environment: selectedEnvironment,
+      rating: selectedRating,
+      sort: sortBy,
+      page: currentPage,
+    };
+    try {
+      sessionStorage.setItem(SEARCH_FILTERS_STORAGE_KEY, JSON.stringify(filterState));
+    } catch {}
+
+    const searchParamsObj = new URLSearchParams();
+    if (categoryInput) searchParamsObj.set('category', categoryInput);
+    if (locationInput) searchParamsObj.set('city', locationInput);
+    if (searchQuery) searchParamsObj.set('q', searchQuery);
+    if (dateInput) searchParamsObj.set('available_on', dateInput);
+    if (minPrice) searchParamsObj.set('min_price', minPrice);
+    if (maxPrice) searchParamsObj.set('max_price', maxPrice);
+    if (selectedCapacity) searchParamsObj.set('capacity', selectedCapacity);
+    if (selectedEnvironment) searchParamsObj.set('environment', selectedEnvironment);
+    if (selectedRating > 0) searchParamsObj.set('rating', String(selectedRating));
+    if (sortBy && sortBy !== 'recommended') searchParamsObj.set('sort', sortBy);
+    if (currentPage > 1) searchParamsObj.set('page', String(currentPage));
+    if (selectedAmenities.length > 0) {
+      searchParamsObj.set('amenities', selectedAmenities.join(','));
+    }
+
+    const newQuery = searchParamsObj.toString();
+    const newRelativePathQuery = window.location.pathname + (newQuery ? `?${newQuery}` : '');
+    if (window.location.search !== (newQuery ? `?${newQuery}` : '')) {
+      window.history.replaceState(window.history.state, '', newRelativePathQuery);
+    }
+  }, [
+    location.pathname,
+    categoryInput,
+    locationInput,
+    searchQuery,
+    dateInput,
+    minPrice,
+    maxPrice,
+    selectedAmenities,
+    selectedCapacity,
+    selectedEnvironment,
+    selectedRating,
+    sortBy,
+    currentPage,
+  ]);
+
+  // Filter & Sort Catalog dynamically
   const filteredVenues = useMemo(() => {
-    return realVenues.filter((venue) => {
+    const list = realVenues.filter((venue) => {
       // 1. Text Search matches Name, District, and Sport types
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -488,46 +694,152 @@ export default function App() {
         }
       }
 
-      // 2. Min Price matches
+      // 2. Category filter (if set from sidebar or tile)
+      if (categoryInput) {
+        const backendCat = (DISPLAY_TO_BACKEND_CATEGORY[categoryInput] || categoryInput).toLowerCase();
+        const vCat = (venue.category || '').toLowerCase();
+        const vType = (venue.venueType || '').toLowerCase();
+        const matchesCat =
+          vCat.includes(backendCat) ||
+          backendCat.includes(vCat) ||
+          vType.includes(backendCat);
+        if (!matchesCat) return false;
+      }
+
+      // 3. Min Price matches
       if (minPrice && venue.basePrice < parseFloat(minPrice)) {
         return false;
       }
 
-      // 3. Max Price matches
+      // 4. Max Price matches
       if (maxPrice && venue.basePrice > parseFloat(maxPrice)) {
         return false;
       }
 
-      // 4. Amenities check checks
-      const ams = venue.amenities || [];
-      const amLower = ams.map(a => a.toLowerCase());
-      
-      if (selectedAmenities.freeParking && !amLower.some(a => a.includes('park'))) return false;
-      if (selectedAmenities.floodlights && !amLower.some(a => a.includes('light'))) return false;
-      if (selectedAmenities.airConditioning && !amLower.some(a => a.includes('ac') || a.includes('air') || a.includes('climate'))) return false;
-      if (selectedAmenities.lockerRooms && !amLower.some(a => a.includes('room') || a.includes('bath'))) return false;
+      // 5. Amenities check
+      if (selectedAmenities.length > 0) {
+        const venueAms = venue.amenities || [];
+        for (const amId of selectedAmenities) {
+          if (!matchesAmenity(venueAms, amId)) {
+            return false;
+          }
+        }
+      }
 
-      // 5. Capacity filters
+      // 6. Environment / Setting filter
+      if (selectedEnvironment) {
+        const env = (venue.environment || '').toLowerCase();
+        const vText = `${venue.description || ''} ${venue.venueType || ''} ${venue.name || ''}`.toLowerCase();
+        if (
+          selectedEnvironment === 'indoor' &&
+          !env.includes('indoor') &&
+          !vText.includes('indoor') &&
+          !vText.includes('hall') &&
+          !vText.includes('ac')
+        ) {
+          return false;
+        }
+        if (
+          selectedEnvironment === 'outdoor' &&
+          !env.includes('outdoor') &&
+          !vText.includes('outdoor') &&
+          !vText.includes('ground') &&
+          !vText.includes('lawn') &&
+          !vText.includes('turf')
+        ) {
+          return false;
+        }
+        if (
+          selectedEnvironment === 'covered' &&
+          !env.includes('cover') &&
+          !vText.includes('covered') &&
+          !vText.includes('semi-covered')
+        ) {
+          return false;
+        }
+      }
+
+      // 7. Capacity filters
       if (selectedCapacity && venue.capacityGroup !== selectedCapacity) {
         return false;
       }
 
-      // 6. Rating selector
+      // 8. Rating selector
       if (selectedRating && venue.rating < selectedRating) {
         return false;
       }
 
       return true;
     });
+
+    // Apply Sorting: Newest Venues, Price Asc/Desc, Highest Rated, Recommended
+    return list.slice().sort((a, b) => {
+      if (sortBy === 'newest') {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      }
+      if (sortBy === 'price_asc') {
+        return a.basePrice - b.basePrice;
+      }
+      if (sortBy === 'price_desc') {
+        return b.basePrice - a.basePrice;
+      }
+      if (sortBy === 'rating_desc') {
+        return b.rating - a.rating;
+      }
+      return 0;
+    });
   }, [
     realVenues,
     searchQuery,
+    categoryInput,
     minPrice,
     maxPrice,
     selectedAmenities,
+    selectedEnvironment,
     selectedCapacity,
-    selectedRating
+    selectedRating,
+    sortBy,
   ]);
+
+  // Real-time counts for amenities across loaded venues
+  const amenityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of AMENITY_FILTER_ITEMS) {
+      counts[item.id] = realVenues.filter((v) => matchesAmenity(v.amenities, item.id)).length;
+    }
+    return counts;
+  }, [realVenues]);
+
+  // Active filter count for mobile badge & UI summary
+  const activeFilterCount = useMemo(() => {
+    let count = selectedAmenities.length;
+    if (minPrice || maxPrice) count += 1;
+    if (selectedCapacity) count += 1;
+    if (selectedRating > 0) count += 1;
+    if (selectedEnvironment) count += 1;
+    if (categoryInput) count += 1;
+    return count;
+  }, [
+    selectedAmenities.length,
+    minPrice,
+    maxPrice,
+    selectedCapacity,
+    selectedRating,
+    selectedEnvironment,
+    categoryInput,
+  ]);
+
+  // Pagination calculation
+  const totalVenuesCount = filteredVenues.length;
+  const totalPages = Math.max(1, Math.ceil(totalVenuesCount / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedVenues = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filteredVenues.slice(start, start + pageSize);
+  }, [filteredVenues, safePage, pageSize]);
 
   // Real venue + real slots for the currently-open detail/checkout view —
   // fetched directly by id rather than found within the (possibly
@@ -564,8 +876,16 @@ export default function App() {
     return realVenues.filter((v) => v.id !== featuredVenueObj?.id).slice(0, 4);
   }, [realVenues, homepageData, featuredVenueObj]);
 
+  const searchDisplayCategory = getCategoryTitle(categoryInput);
+  const searchDisplayCity = locationInput || (searchParams.city ? searchParams.city : '');
+  const searchHeading = searchDisplayCategory
+    ? (searchDisplayCity ? `${searchDisplayCategory} in ${searchDisplayCity}` : searchDisplayCategory)
+    : (searchDisplayCity ? `Premium Venues in ${searchDisplayCity}` : 'All Premium Venues');
+
+  const isDashboardRole = activeRole === 'admin' || activeRole === 'owner';
+
   return (
-    <div className="bg-mist text-ink font-sans min-h-screen flex flex-col antialiased">
+    <div className={`bg-mist text-ink font-sans ${isDashboardRole ? 'h-screen overflow-hidden' : 'min-h-screen flex flex-col'} antialiased`}>
       
       {/* Global Transparent Sticky Header */}
       {activeRole === 'client' && (
@@ -623,11 +943,11 @@ export default function App() {
       )}
 
       {/* Main Canvas Segment */}
-      <main className="flex-grow flex flex-col">
+      <main className={`flex-grow flex flex-col ${isDashboardRole ? 'h-full overflow-hidden' : ''}`}>
         
         {/* ================= ROLE CONDITIONAL ROUTER ================= */}
         {activeRole === 'owner' ? (
-          <div className="w-full flex-grow flex flex-col">
+          <div className="w-full flex-grow flex flex-col h-full overflow-hidden">
             <SEOHead
               title={`Owner Portal — ${SITE_NAME}`}
               description={`Manage your sports turfs, banquet halls, and venue listings on ${SITE_NAME}.`}
@@ -639,7 +959,7 @@ export default function App() {
             </React.Suspense>
           </div>
         ) : activeRole === 'admin' ? (
-          <div className="w-full flex-grow flex flex-col">
+          <div className="w-full flex-grow flex flex-col h-full overflow-hidden">
             <SEOHead
               title={`Admin Dashboard — ${SITE_NAME}`}
               description={`${SITE_NAME} administrative management and approval portal.`}
@@ -998,19 +1318,19 @@ export default function App() {
             {currentView === 'search' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-8 py-8 w-full">
                 <SEOHead
-                  title={categoryInput ? `${categoryInput} in Metropolis | ${SITE_NAME}` : `Explore Verified Venues in Metropolis | ${SITE_NAME}`}
-                  description={categoryInput ? `Discover and book verified ${categoryInput} in Metropolis. View real-time availability, authentic photos, amenities, and transparent hourly rates.` : 'Browse verified sports grounds, banquet halls, farmhouses, and corporate spaces in Metropolis with transparent pricing and real-time slot booking.'}
+                  title={searchDisplayCategory ? `${searchDisplayCategory} in ${searchDisplayCity} | ${SITE_NAME}` : `Explore Verified Venues in ${searchDisplayCity} | ${SITE_NAME}`}
+                  description={searchDisplayCategory ? `Discover and book verified ${searchDisplayCategory} in ${searchDisplayCity}. View real-time availability, authentic photos, amenities, and transparent hourly rates.` : `Browse verified sports grounds, banquet halls, farmhouses, and corporate spaces in ${searchDisplayCity} with transparent pricing and real-time slot booking.`}
                   canonicalUrl={categoryInput ? absUrl(`/search?category=${encodeURIComponent(categoryInput)}`) : absUrl('/search')}
                   jsonLd={[
                     generateCollectionPageSchema(
-                      categoryInput ? `${categoryInput} in Metropolis` : 'Explore Venues in Metropolis',
+                      searchHeading,
                       categoryInput ? `/search?category=${encodeURIComponent(categoryInput)}` : '/search',
                       'Browse verified sports grounds, banquet halls, farmhouses, and corporate spaces.'
                     ),
                     generateBreadcrumbSchema([
                       { name: 'Home', path: '/' },
                       { name: 'Venues', path: '/search' },
-                      ...(categoryInput ? [{ name: categoryInput, path: `/search?category=${encodeURIComponent(categoryInput)}` }] : []),
+                      ...(searchDisplayCategory ? [{ name: searchDisplayCategory, path: `/search?category=${encodeURIComponent(categoryInput)}` }] : []),
                     ]),
                   ]}
                 />
@@ -1027,50 +1347,221 @@ export default function App() {
                   onCapacitySet={setSelectedCapacity}
                   selectedRating={selectedRating}
                   onRatingSet={setSelectedRating}
+                  selectedCategory={categoryInput ? (DISPLAY_TO_BACKEND_CATEGORY[categoryInput] || categoryInput) : ''}
+                  onCategorySet={(cat) => {
+                    const displayCat = SLUG_TO_DISPLAY_CATEGORY[cat] || cat;
+                    setCategoryInput(displayCat);
+                    const nextSearch = { ...searchParams };
+                    if (cat) nextSearch.category = DISPLAY_TO_BACKEND_CATEGORY[displayCat] || cat;
+                    else delete nextSearch.category;
+                    setSearchParams(nextSearch);
+                    navigate(cat ? `/search?category=${encodeURIComponent(cat)}` : '/search');
+                  }}
+                  selectedEnvironment={selectedEnvironment}
+                  onEnvironmentSet={setSelectedEnvironment}
+                  sortBy={sortBy}
+                  onSortByChange={setSortBy}
                   onClearAll={handleClearFilters}
                   resultsCount={filteredVenues.length}
                   isMobileDrawerOpen={isMobileDrawerOpen}
                   onCloseMobileDrawer={() => setIsMobileDrawerOpen(false)}
+                  amenityCounts={amenityCounts}
                 />
 
-                {/* Catalog catalog items */}
-                <section className="flex-1 flex flex-col gap-6 w-full overflow-hidden">
+                {/* Catalog items */}
+                <section className="flex-1 flex flex-col gap-5 w-full overflow-hidden">
                   
                   {/* Context Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
                     <div>
                       <h1 className="font-sans text-2xl font-extrabold text-ink tracking-tight flex items-center gap-1.5">
-                        {categoryInput ? `${categoryInput} in Metropolis` : 'Premium Venues in Metropolis'}
+                        {searchHeading}
                       </h1>
                       <p className="font-sans text-xs text-on-surface-variant mt-0.5">
-                        Showing <span className="font-bold text-pitch">{filteredVenues.length}</span> professional-grade spaces
+                        Showing <span className="font-bold text-pitch">{totalVenuesCount === 0 ? 0 : `${(safePage - 1) * pageSize + 1}-${Math.min(safePage * pageSize, totalVenuesCount)}`}</span> of <span className="font-bold text-pitch">{totalVenuesCount}</span> professional-grade spaces
                       </p>
                     </div>
                     
-                    {/* Filter triggers for mobile/tablet & Reset */}
-                    <div className="flex items-center gap-3">
+                    {/* Sorting & Filter controls */}
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      {/* Sort Dropdown */}
+                      <div className="flex items-center gap-1.5 bg-chalk border border-ink/10 rounded-xl px-3 py-1.5 shadow-xs">
+                        <ArrowUpDown size={14} className="text-pitch shrink-0" />
+                        <label htmlFor="venue-sort-select" className="text-xs font-medium text-on-surface-variant shrink-0">
+                          Sort:
+                        </label>
+                        <select
+                          id="venue-sort-select"
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as VenueSortOption)}
+                          className="bg-transparent text-xs font-bold text-ink focus:outline-none cursor-pointer pr-1"
+                          aria-label="Sort venues"
+                        >
+                          {SORT_OPTIONS.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Filter triggers for mobile/tablet */}
                       <button
                         onClick={() => setIsMobileDrawerOpen(true)}
-                        className="lg:hidden flex items-center gap-1.5 px-4 py-2 border border-ink/10 bg-chalk rounded-lg font-sans text-xs font-semibold text-ink shadow-xs hover:bg-mist cursor-pointer"
+                        className="lg:hidden flex items-center gap-1.5 px-3.5 py-1.5 border border-ink/10 bg-chalk rounded-xl font-sans text-xs font-semibold text-ink shadow-xs hover:bg-mist cursor-pointer"
+                        aria-label="Open filters"
                       >
-                        <Filter size={14} className="text-pitch" />
-                        <span>Filter ({Object.values(selectedAmenities).filter(Boolean).length + (selectedCapacity ? 1 : 0) + (selectedRating ? 1 : 0)})</span>
+                        <Sliders size={14} className="text-pitch" />
+                        <span>Filters {activeFilterCount > 0 && `(${activeFilterCount})`}</span>
                       </button>
                       
-                      {(minPrice || maxPrice || searchQuery || categoryInput || selectedCapacity || selectedRating || Object.values(selectedAmenities).some(Boolean)) && (
+                      {(activeFilterCount > 0 || sortBy !== 'recommended' || searchQuery) && (
                         <button
                           onClick={handleClearFilters}
-                          className="px-3 py-1.5 bg-pitch/5 hover:bg-pitch/10 text-pitch border border-pitch/10 rounded-lg text-xs font-sans font-bold flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-1.5 bg-pitch/5 hover:bg-pitch/10 text-pitch border border-pitch/10 rounded-xl text-xs font-sans font-bold flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <RefreshCw size={12} />
-                          <span>Reset Filters</span>
+                          <span>Reset</span>
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Shimmer Placeholder (Simulated feedback loading effect on filters changing) */}
-                  {isLoading ? (
+                  {/* Active Filter Chips (Tags) */}
+                  {(activeFilterCount > 0 || sortBy !== 'recommended') && (
+                    <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-1 bg-mist/40 rounded-xl border border-ink/5">
+                      <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider pl-1.5 mr-1">
+                        Active:
+                      </span>
+
+                      {sortBy !== 'recommended' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-pitch text-chalk shadow-xs">
+                          <span>Sort: {SORT_OPTIONS.find((s) => s.id === sortBy)?.label || sortBy}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSortBy('recommended')}
+                            className="hover:opacity-75 cursor-pointer ml-0.5"
+                            aria-label="Reset sort"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {categoryInput && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-chalk border border-ink/10 text-ink shadow-xs">
+                          <span>Category: {getCategoryTitle(categoryInput)}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCategoryInput('');
+                              const nextSearch = { ...searchParams };
+                              delete nextSearch.category;
+                              setSearchParams(nextSearch);
+                              navigate('/search');
+                            }}
+                            className="text-on-surface-variant hover:text-clay cursor-pointer ml-0.5"
+                            aria-label="Remove category filter"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {(minPrice || maxPrice) && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-chalk border border-ink/10 text-ink shadow-xs">
+                          <span>Price: {minPrice ? `₹${minPrice}` : '₹0'}–{maxPrice ? `₹${maxPrice}` : 'Any'}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMinPrice('');
+                              setMaxPrice('');
+                            }}
+                            className="text-on-surface-variant hover:text-clay cursor-pointer ml-0.5"
+                            aria-label="Remove price filter"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {selectedEnvironment && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-chalk border border-ink/10 text-ink shadow-xs">
+                          <span>Setting: {selectedEnvironment.charAt(0).toUpperCase() + selectedEnvironment.slice(1)}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEnvironment('')}
+                            className="text-on-surface-variant hover:text-clay cursor-pointer ml-0.5"
+                            aria-label="Remove environment filter"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {selectedCapacity && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-chalk border border-ink/10 text-ink shadow-xs">
+                          <span>Capacity: {selectedCapacity} Guests</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCapacity('')}
+                            className="text-on-surface-variant hover:text-clay cursor-pointer ml-0.5"
+                            aria-label="Remove capacity filter"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {selectedRating > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-chalk border border-ink/10 text-ink shadow-xs">
+                          <Star size={11} className="fill-marigold text-marigold" />
+                          <span>{selectedRating.toFixed(1)}+</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRating(0)}
+                            className="text-on-surface-variant hover:text-clay cursor-pointer ml-0.5"
+                            aria-label="Remove rating filter"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+
+                      {selectedAmenities.map((amId) => {
+                        const item = AMENITY_FILTER_ITEMS.find((a) => a.id === amId);
+                        return (
+                          <span
+                            key={amId}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-pitch/10 text-pitch border border-pitch/20 shadow-xs"
+                          >
+                            <span>{item?.label || amId}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleAmenityToggle(amId)}
+                              className="hover:opacity-75 cursor-pointer ml-0.5"
+                              aria-label={`Remove ${item?.label || amId} filter`}
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={handleClearFilters}
+                        className="text-xs font-semibold text-clay hover:text-red-700 ml-1.5 underline cursor-pointer"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error State on API Failure */}
+                  {isVenuesError ? (
+                    <VenueErrorState onRetry={() => refetchVenues()} />
+                  ) : isLoading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 animate-pulse">
                       {[1, 2, 3].map((skeleton) => (
                         <div key={skeleton} className="bg-chalk rounded-xl border border-ink/5 overflow-hidden flex flex-col">
@@ -1085,34 +1576,60 @@ export default function App() {
                     </div>
                   ) : filteredVenues.length > 0 ? (
                     /* Results Grid */
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6" id="results-grid">
-                      {filteredVenues.map((venue) => (
-                        <VenueCard
-                          key={venue.id}
-                          venue={venue}
-                          onClick={(id) => {
-                            const target = venue.slug || id;
-                            setSelectedVenueId(target);
-                            navigate(`/venues/${target}`);
-                          }}
-                          onToggleFavorite={handleToggleFavorite}
-                          isFavorite={favorites.includes(venue.id)}
-                        />
-                      ))}
+                    <div className="flex flex-col gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6" id="results-grid">
+                        {paginatedVenues.map((venue) => (
+                          <VenueCard
+                            key={venue.id}
+                            venue={venue}
+                            onClick={(id) => {
+                              const target = venue.slug || id;
+                              setSelectedVenueId(target);
+                              navigate(`/venues/${target}`);
+                            }}
+                            onToggleFavorite={handleToggleFavorite}
+                            isFavorite={favorites.includes(venue.id)}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Pagination Controls */}
+                      <Pagination
+                        currentPage={safePage}
+                        totalPages={totalPages}
+                        totalItems={totalVenuesCount}
+                        pageSize={pageSize}
+                        onPageChange={(page) => {
+                          setCurrentPage(page);
+                          document.getElementById('results-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                        onPageSizeChange={(newSize) => {
+                          setPageSize(newSize);
+                          setCurrentPage(1);
+                        }}
+                        pageSizeOptions={[12, 24, 48]}
+                        className="mt-2"
+                      />
                     </div>
                   ) : (
-                    /* Beautiful Clean Empty State */
-                    <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-chalk rounded-xl border border-ink/10 border-dashed max-w-xl mx-auto my-6">
-                      <div className="w-16 h-16 bg-mist rounded-full flex items-center justify-center mb-6 text-on-surface-variant">
-                        <Search size={32} />
+                    /* Clean Empty State */
+                    <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-chalk rounded-2xl border border-ink/10 border-dashed max-w-xl mx-auto my-6">
+                      <div className="w-16 h-16 bg-mist rounded-full flex items-center justify-center mb-4 text-on-surface-variant">
+                        <Sliders size={28} className="text-pitch" />
                       </div>
-                      <h3 className="font-sans text-lg font-bold text-ink mb-1.5">No venues available yet</h3>
+                      <h3 className="font-sans text-lg font-bold text-ink mb-1.5">
+                        {activeFilterCount > 0 || searchQuery
+                          ? 'No venues match your current filters'
+                          : 'No venues available yet'}
+                      </h3>
                       <p className="font-sans text-xs sm:text-sm text-on-surface-variant max-w-md mb-6 leading-relaxed">
-                        New spaces are being added to GroundKart.
+                        {activeFilterCount > 0 || searchQuery
+                          ? 'Try clearing some amenities, widening your price range, or selecting a different category to see more spaces.'
+                          : 'New spaces are being added to GroundKart regularly.'}
                       </p>
                       <button
                         onClick={handleClearFilters}
-                        className="bg-pitch hover:bg-[#15462E] text-chalk px-5 py-2.5 rounded-lg font-sans text-xs font-bold shadow-xs active:scale-[0.97] transition cursor-pointer ease-out"
+                        className="bg-pitch hover:bg-[#15462E] text-chalk px-6 py-2.5 rounded-full font-sans text-xs font-bold shadow-md active:scale-[0.97] transition cursor-pointer ease-out"
                       >
                         Clear All Active Filters
                       </button>
@@ -1176,14 +1693,26 @@ export default function App() {
                       selectedSlotId={selectedSlotId}
                       selectedDate={bookingDate}
                       currentUser={user}
+                      bookingMeta={bookingMeta}
                       onNavigateHome={() => navigate('/')}
-                      onSubmitBooking={async (guestName?: string, guestEmail?: string, guestPhone?: string) => {
+                      onSubmitBooking={async (
+                        guestName?: string,
+                        guestEmail?: string,
+                        guestPhone?: string,
+                        extra?: any
+                      ) => {
                         if (!selectedSlotId) throw new Error('No slot selected');
-                        const result = await createBookingMutation.mutateAsync(
-                          user
-                            ? { inventory_unit_id: selectedSlotId }
-                            : { inventory_unit_id: selectedSlotId, guest_name: guestName, guest_email: guestEmail, guest_phone: guestPhone },
-                        );
+                        const result = await createBookingMutation.mutateAsync({
+                          inventory_unit_id: selectedSlotId,
+                          purpose_id: extra?.purpose_id || bookingMeta?.purposeId,
+                          rental_mode: extra?.rental_mode || bookingMeta?.rentalMode,
+                          guest_count: extra?.guest_count,
+                          customer_notes: extra?.customer_notes,
+                          idempotencyKey: extra?.idempotencyKey,
+                          ...(user
+                            ? {}
+                            : { guest_name: guestName, guest_email: guestEmail, guest_phone: guestPhone }),
+                        });
                         return result;
                       }}
                     />

@@ -472,3 +472,18 @@ async def test_submitting_venue_to_pending_review_requires_at_least_3_photos(
     assert resp_three_photos.status_code == 200
     assert resp_three_photos.json()["status"] == "pending_review"
 
+
+async def test_list_venues_supports_sorting(client):
+    """Verifies that the GET /api/v1/venues endpoint supports sort_by parameters."""
+    resp_newest = await client.get("/api/v1/venues?sort_by=newest")
+    assert resp_newest.status_code == 200
+    assert "data" in resp_newest.json()
+
+    resp_price_asc = await client.get("/api/v1/venues?sort_by=price_asc")
+    assert resp_price_asc.status_code == 200
+    venues_asc = resp_price_asc.json()["data"]
+    if len(venues_asc) >= 2:
+        prices = [float(v["base_price"]) for v in venues_asc]
+        assert prices == sorted(prices)
+
+

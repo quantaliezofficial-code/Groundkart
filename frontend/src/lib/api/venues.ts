@@ -16,6 +16,7 @@ export interface VenueSearchParams {
   category?: string;
   available_on?: string; // YYYY-MM-DD
   price_max?: number;
+  sort_by?: string;
   limit?: number;
   offset?: number;
 }

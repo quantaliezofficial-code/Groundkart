@@ -1,0 +1,89 @@
+graph TD
+    %% User Personas & Client Layer
+    subgraph Clients ["Client Layer (Web Browsers)"]
+        UserCustomer["Customer / Guest<br/>(Desktop / Mobile Web)"]
+        UserOwner["Venue Owner<br/>(Desktop / Tablet)"]
+        UserAdmin["Platform Administrator<br/>(Desktop)"]
+    end
+
+    %% Frontend Single Page Application
+    subgraph Frontend ["Frontend SPA (React 19 + TypeScript + Vite)"]
+        Router["React Router v6<br/>(/, /search, /venues/:id, /checkout, /my-bookings, /owner, /admin)"]
+        TanStackQuery["TanStack React Query v5<br/>(Server State Cache & Invalidation)"]
+        AuthContext["Auth Context & Token Storage<br/>(localStorage: access_token, refresh_token)"]
+        UIComponents["UI & Layout System<br/>(Tailwind CSS v4 + Framer Motion + Lucide Icons)"]
+        ListingBuilder["12-Step Listing Builder<br/>(Venue Workspace, Media, Calendars)"]
+        AdminDashboardShell["Admin Management Shell<br/>(12 Operational Tabs & Drawers)"]
+    end
+
+    %% Backend Services Layer
+    subgraph Backend ["Backend API Service (Python 3.11+ / FastAPI)"]
+        MainApp["FastAPI Core Application<br/>(CORS, Error Handlers, Static Mounts)"]
+        Middleware["Security & Observability Middleware<br/>(Correlation ID, Rate Limiter, Timing)"]
+        
+        subgraph SubModules ["Modular Service Layer"]
+            ModAuth["Auth Module<br/>(Argon2id, PyJWT, Session)"]
+            ModCatalog["Catalog Module<br/>(Venues, Slots, Media, Search)"]
+            ModBooking["Booking Module<br/>(Holds, State Machine, Tokens)"]
+            ModLedger["Ledger Module<br/>(Double-Entry Accounting)"]
+            ModPayout["Payout Module<br/>(Batches, Bank Accounts)"]
+            ModSupport["Support Tickets Module<br/>(Threading, Audit)"]
+            ModNotifications["Notifications Module<br/>(In-App, Outbox)"]
+            ModAdmin["Admin Module<br/>(Health, Governance, Editorial)"]
+        end
+
+        StorageService["Storage Engine<br/>(LocalFileStorage / S3 Boto3)"]
+    end
+
+    %% Background Processing Layer
+    subgraph BackgroundWorkers ["Background Worker System"]
+        JobWorker["Jobs Worker Loop<br/>(SKIP LOCKED Job Claiming)"]
+        HoldSweep["Hold Sweep Worker<br/>(Releases Expired 10m Holds)"]
+        OutboxRelay["Outbox Event Processor<br/>(Async Event Dispatch)"]
+    end
+
+    %% Database & Persistence Layer
+    subgraph Persistence ["Persistence Layer (PostgreSQL 16)"]
+        DB[(PostgreSQL Database)]
+        TablesCore["Core Tables:<br/>users, venues, inventory_units,<br/>bookings, booking_events, payments"]
+        TablesFinance["Financial Ledger:<br/>ledger_entries, payouts, refunds,<br/>owner_bank_accounts"]
+        TablesOperational["Operational & Audit:<br/>support_tickets, audit_logs, jobs,<br/>outbox_events, reviews, notifications"]
+    end
+
+    %% File Storage
+    subgraph FileStorage ["Asset Storage"]
+        LocalStorage["Local File Storage<br/>(/tmp/groundkart-uploads)"]
+        S3Storage["AWS S3 / Cloud Bucket<br/>(Optional Production Mode)"]
+    end
+
+    %% Connections
+    Clients -->|HTTPS Requests| Router
+    Router --> UIComponents
+    Router --> ListingBuilder
+    Router --> AdminDashboardShell
+    UIComponents --> TanStackQuery
+    TanStackQuery -->|REST / JSON| Middleware
+    Middleware --> MainApp
+    MainApp --> ModAuth
+    MainApp --> ModCatalog
+    MainApp --> ModBooking
+    MainApp --> ModLedger
+    MainApp --> ModPayout
+    MainApp --> ModSupport
+    MainApp --> ModNotifications
+    MainApp --> ModAdmin
+    
+    SubModules -->|SQLAlchemy AsyncPG| DB
+    DB --- TablesCore
+    DB --- TablesFinance
+    DB --- TablesOperational
+    
+    ModCatalog --> StorageService
+    ModAuth --> StorageService
+    StorageService --> LocalStorage
+    StorageService -.-> S3Storage
+
+    JobWorker -->|Polls pending jobs| DB
+    JobWorker --> HoldSweep
+    JobWorker --> OutboxRelay
+    HoldSweep -->|Reverts expired units| DB

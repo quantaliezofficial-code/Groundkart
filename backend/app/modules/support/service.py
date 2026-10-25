@@ -10,16 +10,17 @@ app/modules/booking/service.py and app/modules/admin/service.py.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.core import (
     AuditLog,
     Booking,
+    HelpArticle,
     SupportTicket,
     TicketEvent,
     User,
@@ -41,11 +42,14 @@ async def create_ticket(
     priority: str = "medium",
     booking_id: uuid.UUID | None = None,
     venue_id: uuid.UUID | None = None,
+    help_article_id: uuid.UUID | None = None,
+    help_article_version: int | None = None,
+    help_section: str | None = None,
+    reason_code: str | None = None,
 ) -> SupportTicket:
     """Creates a support ticket. Dispute category requires a booking_id.
-    If a booking_id is given, validates it exists and the customer owns it
-    (or is the venue owner/admin). If venue_id is given, validates it exists.
-    Auto-infers venue_id from booking when not explicitly provided."""
+    Help request category validates the referenced article, populates a server-side
+    excerpt snapshot, enforces a 5 tickets/day limit, and deduplicates open requests."""
 
     async with session.begin():
         # Validate dispute requires booking
@@ -54,6 +58,91 @@ async def create_ticket(
                 status_code=400,
                 detail="Disputes must reference a booking (booking_id required)",
             )
+
+        # Validate help_request
+        help_excerpt = None
+        if category == "help_request" or help_article_id is not None:
+            category = "help_request"
+            if help_article_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Help requests must reference an article (help_article_id required)",
+                )
+
+            article_res = await session.execute(
+                select(HelpArticle).where(HelpArticle.id == help_article_id)
+            )
+            article = article_res.scalar_one_or_none()
+            if article is None:
+                raise HTTPException(status_code=404, detail="Help article not found")
+
+            # Rate limit: max 5 help tickets per user per 24 hours
+            since = datetime.now(timezone.utc) - timedelta(days=1)
+            count_res = await session.execute(
+                select(func.count(SupportTicket.id)).where(
+                    SupportTicket.creator_id == creator_id,
+                    SupportTicket.category == "help_request",
+                    SupportTicket.created_at >= since,
+                )
+            )
+            help_ticket_count = count_res.scalar_one() or 0
+            if help_ticket_count >= 5:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Daily help request limit reached (max 5 tickets per day)",
+                )
+
+            # Deduplication: if user already has an active ticket for this article and section, append comment
+            dup_query = select(SupportTicket).where(
+                SupportTicket.creator_id == creator_id,
+                SupportTicket.category == "help_request",
+                SupportTicket.help_article_id == help_article_id,
+                SupportTicket.status.in_(["open", "in_review", "waiting_customer"]),
+            )
+            if help_section:
+                dup_query = dup_query.where(SupportTicket.help_section == help_section)
+            else:
+                dup_query = dup_query.where(SupportTicket.help_section.is_(None))
+
+            existing_ticket = (await session.execute(dup_query)).scalars().first()
+            if existing_ticket is not None:
+                comment_body = description
+                if reason_code:
+                    comment_body = f"[{reason_code}] {description}"
+
+                dup_event = TicketEvent(
+                    ticket_id=existing_ticket.id,
+                    event_type="comment",
+                    actor_id=creator_id,
+                    comment=comment_body,
+                    internal=False,
+                )
+                session.add(dup_event)
+                dup_audit = AuditLog(
+                    actor_id=creator_id,
+                    action="support_ticket.comment_added",
+                    entity_type="support_ticket",
+                    entity_id=existing_ticket.id,
+                    extra_data={
+                        "reason": "duplicate_help_request_appended",
+                        "help_section": help_section,
+                        "reason_code": reason_code,
+                    },
+                )
+                session.add(dup_audit)
+                await session.flush()
+                return existing_ticket
+
+            # Server-side snapshot extraction (never rely on client-supplied markdown)
+            from app.modules.help.service import extract_section_excerpt
+            help_excerpt = extract_section_excerpt(article.body_markdown, help_section, max_chars=500)
+            if not help_article_version:
+                help_article_version = article.version
+
+            # Auto-generate subject if not specifically provided or generic
+            if not subject or subject.strip().lower() in ["help request", "help", "question"]:
+                sec_desc = f", {help_section}" if help_section else ""
+                subject = f"Help request: {article.title}{sec_desc}"
 
         # Validate booking if provided
         if booking_id is not None:
@@ -105,6 +194,10 @@ async def create_ticket(
             creator_id=creator_id,
             booking_id=booking_id,
             venue_id=venue_id,
+            help_article_id=help_article_id,
+            help_article_version=help_article_version,
+            help_section=help_section,
+            help_excerpt=help_excerpt,
         )
         session.add(ticket)
         await session.flush()
@@ -119,13 +212,19 @@ async def create_ticket(
         )
         session.add(event)
 
-        # Audit log
+        audit_extra: dict = {"category": category, "priority": priority}
+        if help_article_id:
+            audit_extra["help_article_id"] = str(help_article_id)
+            audit_extra["help_section"] = help_section
+            if reason_code:
+                audit_extra["reason_code"] = reason_code
+
         audit = AuditLog(
             actor_id=creator_id,
             action="support_ticket.created",
             entity_type="support_ticket",
             entity_id=ticket.id,
-            extra_data={"category": category, "priority": priority},
+            extra_data=audit_extra,
         )
         session.add(audit)
 

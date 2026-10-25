@@ -131,7 +131,7 @@ TicketStatus = PGEnum(
 )
 
 TicketCategory = PGEnum(
-    "general", "billing", "venue_issue", "dispute",
+    "general", "billing", "venue_issue", "dispute", "help_request",
     name="ticket_category", create_type=False,
 )
 

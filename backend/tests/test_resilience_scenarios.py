@@ -10,7 +10,10 @@ from app.db import get_db, get_idem_db
 from app.main import app
 from app.models.core import Booking, InventoryUnit, Payment, IdempotencyKey
 from app.modules.auth.security import create_access_token
-from backend.tests.invariants import assert_invariants
+try:
+    from tests.invariants import assert_invariants
+except ModuleNotFoundError:
+    from backend.tests.invariants import assert_invariants
 
 
 @pytest.fixture

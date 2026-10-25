@@ -471,7 +471,8 @@ async def test_owner_flag_creates_action_request_and_admin_processes(
         ).scalar_one()
         assert req.status == "pending"
         assert req.action_type == "cancel"
-        assert req.reason == "Double booked on owner local calendar"
+        assert req.reason == "owner_request"
+        assert req.notes == "Double booked on owner local calendar"
         req_id = req.id
 
     # 2. Admin lists booking action requests
@@ -483,7 +484,8 @@ async def test_owner_flag_creates_action_request_and_admin_processes(
     # 3. Admin gets detail of the booking action request
     detail_resp = await client.get(f"/api/v1/admin/booking-actions/{req_id}", headers=admin_headers)
     assert detail_resp.status_code == 200
-    assert detail_resp.json()["id"] == str(req_id)
+    assert detail_resp.json()["request"]["id"] == str(req_id)
+    assert "assessment" in detail_resp.json()
 
     # 4. Admin processes the request: APPROVES
     proc_resp = await client.post(

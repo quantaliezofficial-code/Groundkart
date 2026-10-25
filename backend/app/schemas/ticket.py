@@ -16,10 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class TicketCreateRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=200)
     description: str = Field(..., min_length=1, max_length=5000)
-    category: Literal["general", "billing", "venue_issue", "dispute"] = "general"
+    category: Literal["general", "billing", "venue_issue", "dispute", "help_request"] = "general"
     priority: Literal["low", "medium", "high", "urgent"] = "medium"
     booking_id: uuid.UUID | None = None
     venue_id: uuid.UUID | None = None
+    help_article_id: uuid.UUID | None = None
+    help_article_version: int | None = None
+    help_section: str | None = None
+    reason_code: str | None = None
 
     @field_validator("booking_id")
     @classmethod
@@ -84,6 +88,10 @@ class TicketResponse(BaseModel):
     assignee_id: str | None = None
     booking_id: str | None = None
     venue_id: str | None = None
+    help_article_id: str | None = None
+    help_article_version: int | None = None
+    help_section: str | None = None
+    help_excerpt: str | None = None
     resolved_at: datetime | None = None
     closed_at: datetime | None = None
     created_at: datetime
@@ -104,6 +112,10 @@ class TicketResponse(BaseModel):
             assignee_id=str(ticket.assignee_id) if ticket.assignee_id else None,
             booking_id=str(ticket.booking_id) if ticket.booking_id else None,
             venue_id=str(ticket.venue_id) if ticket.venue_id else None,
+            help_article_id=str(ticket.help_article_id) if getattr(ticket, "help_article_id", None) else None,
+            help_article_version=getattr(ticket, "help_article_version", None),
+            help_section=getattr(ticket, "help_section", None),
+            help_excerpt=getattr(ticket, "help_excerpt", None),
             resolved_at=ticket.resolved_at,
             closed_at=ticket.closed_at,
             created_at=ticket.created_at,

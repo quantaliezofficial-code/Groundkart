@@ -473,7 +473,8 @@ export default function ReviewPay({
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: "spring", stiffness: 200, damping: 20 }}
-            className="bg-chalk rounded-2xl ring-1 ring-ink/5 overflow-hidden shadow-xl lg:sticky lg:top-[95px]"
+            className="bg-chalk rounded-2xl ring-1 ring-ink/5 overflow-hidden shadow-xl lg:sticky lg:top-[95px] lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto custom-scrollbar"
+            data-lenis-prevent
           >
             
             <div className="bg-gradient-to-r from-[#143828] via-pitch to-[#1a5438] p-6 text-chalk relative overflow-hidden">

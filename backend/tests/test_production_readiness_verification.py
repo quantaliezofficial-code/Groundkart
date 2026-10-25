@@ -117,3 +117,51 @@ async def test_end_to_end_production_readiness_flow(
     assert admin_resp.status_code == 200
     assert admin_resp.content == fake_doc_bytes
     assert admin_resp.headers["content-type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_healthz_endpoint_healthy(client):
+    """GET /healthz returns 200 OK when database, schema, and storage are healthy."""
+    resp = await client.get("/healthz")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["checks"]["database"] is True
+    assert data["checks"]["schema"] is True
+    assert data["checks"]["storage"] is True
+
+
+@pytest.mark.asyncio
+async def test_api_v1_health_endpoint_healthy(client):
+    """GET /api/v1/health returns 200 OK with schema and storage verification."""
+    resp = await client.get("/api/v1/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["checks"]["database"] is True
+    assert data["checks"]["schema"] is True
+    assert data["checks"]["storage"] is True
+
+
+@pytest.mark.asyncio
+async def test_healthz_endpoint_degraded_on_db_failure(client):
+    """GET /healthz returns 503 degraded if database execution fails."""
+    from unittest.mock import AsyncMock
+
+    mock_db = AsyncMock()
+    mock_db.execute.side_effect = Exception("Connection to database timed out")
+
+    async def _failing_get_db():
+        yield mock_db
+
+    app.dependency_overrides[get_db] = _failing_get_db
+    try:
+        resp = await client.get("/healthz")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["status"] == "degraded"
+        assert data["checks"]["database"] is False
+        assert "Connection to database timed out" in data["database_error"]
+    finally:
+        app.dependency_overrides.clear()
+

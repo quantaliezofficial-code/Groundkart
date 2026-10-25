@@ -76,7 +76,7 @@ describe('MediaStep component', () => {
 
     // 2 photos + 1 video -> photo count is 2
     expect(onPhotoCountChange).toHaveBeenCalledWith(2);
-    expect(screen.getByText('Photos: 2/3 required')).toBeInTheDocument();
+    expect(screen.getByText('Photos: 2/15 (min 3)')).toBeInTheDocument();
     expect(screen.getByText('Cover Photo')).toBeInTheDocument();
     expect(screen.getByText('Tour Video')).toBeInTheDocument();
   });
@@ -163,7 +163,7 @@ describe('MediaStep component', () => {
     render(<MediaStep venueId="venue-123" onComplete={() => {}} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Photos: 2/3 required')).toBeInTheDocument();
+      expect(screen.getByText('Photos: 2/15 (min 3)')).toBeInTheDocument();
     });
 
     const removeButtons = screen.getAllByRole('button', { name: /remove media/i });
@@ -173,5 +173,86 @@ describe('MediaStep component', () => {
 
     expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to remove this media?');
     expect(ownerApi.deleteVenueImage).toHaveBeenCalledWith('venue-123', 'img-1');
+  });
+
+  it('validates client-side and rejects videos over 100 MB', async () => {
+    vi.mocked(ownerApi.getVenue).mockResolvedValueOnce({ ...mockVenueWithMedia, media: [] });
+
+    render(<MediaStep venueId="venue-123" onComplete={() => {}} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const oversizedVideo = new File(['fake-vid'], 'giant.mp4', { type: 'video/mp4' });
+    Object.defineProperty(oversizedVideo, 'size', { value: 105 * 1024 * 1024 });
+
+    fireEvent.change(fileInput, { target: { files: [oversizedVideo] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/exceeds 100 MB limit/i)).toBeInTheDocument();
+    });
+
+    expect(ownerApi.uploadVenueMedia).not.toHaveBeenCalled();
+  });
+
+  it('validates client-side and rejects video shorter than 10 seconds', async () => {
+    vi.mocked(ownerApi.getVenue).mockResolvedValueOnce({ ...mockVenueWithMedia, media: [] });
+
+    render(<MediaStep venueId="venue-123" onComplete={() => {}} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const shortVideo = new File(['short'], 'short.mp4', { type: 'video/mp4' });
+    Object.defineProperty(shortVideo, 'mockDuration', { value: 6 });
+
+    fireEvent.change(fileInput, { target: { files: [shortVideo] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/Video duration is too short \(6s\)\. Minimum video duration is 10 seconds/i)).toBeInTheDocument();
+    });
+
+    expect(ownerApi.uploadVenueMedia).not.toHaveBeenCalled();
+  });
+
+  it('validates client-side and rejects video longer than 1 minute 30 seconds (90s)', async () => {
+    vi.mocked(ownerApi.getVenue).mockResolvedValueOnce({ ...mockVenueWithMedia, media: [] });
+
+    render(<MediaStep venueId="venue-123" onComplete={() => {}} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const longVideo = new File(['long'], 'long.mp4', { type: 'video/mp4' });
+    Object.defineProperty(longVideo, 'mockDuration', { value: 95 });
+
+    fireEvent.change(fileInput, { target: { files: [longVideo] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/Video duration is too long \(95s\)\. Maximum video duration is 1 minute 30 seconds \(90s\)/i)).toBeInTheDocument();
+    });
+
+    expect(ownerApi.uploadVenueMedia).not.toHaveBeenCalled();
+  });
+
+  it('accepts video with valid duration (10s to 90s) and passes duration to ownerApi.uploadVenueMedia', async () => {
+    vi.mocked(ownerApi.getVenue).mockResolvedValueOnce({ ...mockVenueWithMedia, media: [] });
+    vi.mocked(ownerApi.uploadVenueMedia).mockResolvedValueOnce({
+      ...mockVenueWithMedia,
+      media: [
+        { id: 'vid-new', url: 'https://example.com/valid.mp4', is_cover: false, sort_order: 0 },
+      ],
+    });
+
+    render(<MediaStep venueId="venue-123" onComplete={() => {}} />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const validVideo = new File(['valid video content'], 'tour.mp4', { type: 'video/mp4' });
+    Object.defineProperty(validVideo, 'mockDuration', { value: 45 });
+
+    fireEvent.change(fileInput, { target: { files: [validVideo] } });
+
+    await waitFor(() => {
+      expect(ownerApi.uploadVenueMedia).toHaveBeenCalledTimes(1);
+    });
+
+    expect(ownerApi.uploadVenueMedia).toHaveBeenCalledWith('venue-123', validVideo, false, 45);
   });
 });

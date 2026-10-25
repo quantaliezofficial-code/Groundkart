@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import App from './App';
 import { authApi } from './lib/api/auth';
 import { AuthProvider } from './lib/auth';
 
@@ -45,78 +44,86 @@ vi.mock('./lib/api/owner', () => ({
   },
 }));
 
-const notificationsApiMock = vi.hoisted(() => ({
-  list: vi.fn().mockResolvedValue([]),
-  getUnreadCount: vi.fn().mockResolvedValue({ unread_count: 0 }),
-  markRead: vi.fn(),
-  markAllRead: vi.fn(),
+const { notificationsApiMock } = vi.hoisted(() => ({
+  notificationsApiMock: {
+    list: vi.fn().mockResolvedValue([]),
+    getUnreadCount: vi.fn().mockResolvedValue({ unread_count: 0 }),
+    markRead: vi.fn(),
+    markAllRead: vi.fn(),
+  },
 }));
 
 vi.mock('./lib/api/notifications', () => ({ notificationsApi: notificationsApiMock }));
 
-const supportApiMock = vi.hoisted(() => ({
-  createTicket: vi.fn(),
-  listTickets: vi.fn().mockResolvedValue([]),
-  getTicket: vi.fn(),
-  addComment: vi.fn(),
-  adminListTickets: vi.fn().mockResolvedValue([]),
-  adminUpdateTicket: vi.fn(),
+const { supportApiMock } = vi.hoisted(() => ({
+  supportApiMock: {
+    createTicket: vi.fn(),
+    listTickets: vi.fn().mockResolvedValue([]),
+    getTicket: vi.fn(),
+    addComment: vi.fn(),
+    adminListTickets: vi.fn().mockResolvedValue([]),
+    adminUpdateTicket: vi.fn(),
+  },
 }));
 
 vi.mock('./lib/api/support', () => ({ supportApi: supportApiMock }));
 
-const adminApiMock = {
-  getAuditLog: vi.fn().mockResolvedValue([]),
-  getHealth: vi.fn().mockResolvedValue({ api_live: true, db_connected: true }),
-  getOverview: vi.fn().mockResolvedValue({
-    metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
-    attention: [],
-    live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
-    booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
-    revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
-    venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
-    top_venues: [],
-    category_performance: [],
-    support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
-    notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
-    recent_activity: [],
-  }),
-  getDashboardOverview: vi.fn().mockResolvedValue({
-    metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
-    attention: [],
-    live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
-    booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
-    revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
-    venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
-    top_venues: [],
-    category_performance: [],
-    support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
-    notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
-    recent_activity: [],
-  }),
-  listVenues: vi.fn().mockResolvedValue([]),
-  suspendVenue: vi.fn(),
-  reactivateVenue: vi.fn(),
-  approveVenue: vi.fn(),
-  rejectVenue: vi.fn(),
-  listUsers: vi.fn().mockResolvedValue([]),
-  suspendUser: vi.fn(),
-  reactivateUser: vi.fn(),
-  listVerifications: vi.fn().mockResolvedValue([]),
-  viewVerificationDocument: vi.fn(),
-  approveVerification: vi.fn(),
-  rejectVerification: vi.fn(),
-  listBookings: vi.fn().mockResolvedValue([]),
-  confirmBookingPayment: vi.fn(),
-  cancelPendingBooking: vi.fn(),
-  getBookingById: vi.fn(),
-  sweepExpiredHolds: vi.fn(),
-  listPayouts: vi.fn().mockResolvedValue([]),
-  runPayout: vi.fn(),
-  markPayoutPaid: vi.fn(),
-};
+const { adminApiMock } = vi.hoisted(() => ({
+  adminApiMock: {
+    getAuditLog: vi.fn().mockResolvedValue([]),
+    getHealth: vi.fn().mockResolvedValue({ api_live: true, db_connected: true }),
+    getOverview: vi.fn().mockResolvedValue({
+      metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
+      attention: [],
+      live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
+      booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
+      revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
+      venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
+      top_venues: [],
+      category_performance: [],
+      support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
+      notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
+      recent_activity: [],
+    }),
+    getDashboardOverview: vi.fn().mockResolvedValue({
+      metrics: { total_bookings: 0, gmv: '0', total_commission: '0', active_venues: 0, active_users: 0, average_booking_value: '0' },
+      attention: [],
+      live_operations: { currently_booked: 0, available: 0, pending: 0, cancelled_today: 0, active_bookings: [] },
+      booking_activity: { stats: { total_today: 0, confirmed_today: 0, pending_today: 0, cancelled_today: 0, completed_today: 0 }, recent: [] },
+      revenue: { this_month: '0', this_week: '0', today: '0', chart_data: [] },
+      venue_health: { approved: 0, pending_approval: 0, incomplete: 0, inactive: 0, suspended: 0 },
+      top_venues: [],
+      category_performance: [],
+      support: { open_tickets: 0, critical_tickets: 0, avg_resolution_hours: 0 },
+      notifications: { email_deliverability: 100, sms_deliverability: 100, unread_admin_alerts: 0 },
+      recent_activity: [],
+    }),
+    listVenues: vi.fn().mockResolvedValue([]),
+    suspendVenue: vi.fn(),
+    reactivateVenue: vi.fn(),
+    approveVenue: vi.fn(),
+    rejectVenue: vi.fn(),
+    listUsers: vi.fn().mockResolvedValue([]),
+    suspendUser: vi.fn(),
+    reactivateUser: vi.fn(),
+    listVerifications: vi.fn().mockResolvedValue([]),
+    viewVerificationDocument: vi.fn(),
+    approveVerification: vi.fn(),
+    rejectVerification: vi.fn(),
+    listBookings: vi.fn().mockResolvedValue([]),
+    confirmBookingPayment: vi.fn(),
+    cancelPendingBooking: vi.fn(),
+    getBookingById: vi.fn(),
+    sweepExpiredHolds: vi.fn(),
+    listPayouts: vi.fn().mockResolvedValue([]),
+    runPayout: vi.fn(),
+    markPayoutPaid: vi.fn(),
+  },
+}));
 
 vi.mock('./lib/api/admin', () => ({ adminApi: adminApiMock }));
+
+import App from './App';
 
 function mockLoggedInAs(role: 'customer' | 'owner' | 'admin') {
   vi.mocked(authApi.me).mockResolvedValue({

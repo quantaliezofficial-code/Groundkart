@@ -123,6 +123,17 @@ async def run_payout(
     async with tx:
         from app.modules.core.config_service import get_system_config
         config = await get_system_config(session)
+
+        holdback_days = getattr(config, "payout_holdback_days", 0)
+        if holdback_days > 0:
+            from datetime import timedelta
+            max_allowed = today - timedelta(days=holdback_days)
+            if period_end > max_allowed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"period_end ({period_end}) exceeds the {holdback_days}-day settlement holdback window. Slots on or after {max_allowed + timedelta(days=1)} cannot be settled yet.",
+                )
+
         result = await session.execute(
             select(Payment)
             .join(Booking, Payment.booking_id == Booking.id)
@@ -197,7 +208,13 @@ async def run_payout(
     return payout
 
 
-async def mark_payout_paid(session: AsyncSession, payout_id: uuid.UUID, admin_id: uuid.UUID) -> Payout:
+async def mark_payout_paid(
+    session: AsyncSession,
+    payout_id: uuid.UUID,
+    admin_id: uuid.UUID,
+    reference: str | None = None,
+    bank_account_id: uuid.UUID | None = None,
+) -> Payout:
     """The manual-payout-run completion — 01_PRD.md §5: "manual payout run
     acceptable for Phase 1, automated bank transfer is Phase 2." Same
     two-step shape as confirm_booking_by_admin: run_payout() computes and
@@ -221,8 +238,15 @@ async def mark_payout_paid(session: AsyncSession, payout_id: uuid.UUID, admin_id
         if payout.status != "pending":
             raise HTTPException(status_code=409, detail=f"Payout is '{payout.status}', not pending")
 
+        ref = reference or f"PAYOUT-MANUAL-{payout.id.hex[:8].upper()}"
         payout.status = "paid"
         payout.paid_at = datetime.now(timezone.utc)
+        payout.payout_reference = ref
+        if bank_account_id is not None:
+            payout.bank_account_id = bank_account_id
+
+        from app.modules.ledger import service as ledger_service
+        await ledger_service.record_payout_disbursement(session, payout, admin_id, ref)
 
         session.add(
             AuditLog(
@@ -230,7 +254,7 @@ async def mark_payout_paid(session: AsyncSession, payout_id: uuid.UUID, admin_id
                 action="payout.marked_paid",
                 entity_type="payout",
                 entity_id=payout.id,
-                extra_data={"net_amount": str(payout.net_amount)},
+                extra_data={"net_amount": str(payout.net_amount), "reference": ref},
             )
         )
         session.add_all(

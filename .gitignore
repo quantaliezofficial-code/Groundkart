@@ -62,6 +62,13 @@ coverage.xml
 *.log
 htmlcov/
 .tox/
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+frontend/.auth/
+.auth/
+docs/test-results/
 
 # OS Generated
 .DS_Store

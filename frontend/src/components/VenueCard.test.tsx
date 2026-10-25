@@ -86,4 +86,76 @@ describe('VenueCard component', () => {
     // Ensure onClick was not called
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  it('renders displayName, tagline, review count, and use cases badge', () => {
+    const enrichedVenue: Venue = {
+      ...mockVenue,
+      displayName: 'Royal Palms Sports Ground',
+      tagline: 'Premium grass pitch under floodlights',
+      reviewCount: 38,
+      useCases: ['Corporate Tournament', 'Weekend Match'],
+    };
+
+    render(
+      <VenueCard
+        venue={enrichedVenue}
+        onClick={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        isFavorite={false}
+      />
+    );
+
+    expect(screen.getByText('Royal Palms Sports Ground')).toBeInTheDocument();
+    expect(screen.getByText('Premium grass pitch under floodlights')).toBeInTheDocument();
+    expect(screen.getByText('(38)')).toBeInTheDocument();
+    expect(screen.getByText('Corporate Tournament')).toBeInTheDocument();
+  });
+
+  it('renders badges with whitespace-nowrap and flex-wrap without awkward line breaking', () => {
+    const venueWithBadges: Venue = {
+      ...mockVenue,
+      venueType: 'Amphitheatre',
+      capacityGroup: '1-5',
+      useCases: ['Badminton'],
+    };
+
+    render(
+      <VenueCard
+        venue={venueWithBadges}
+        onClick={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        isFavorite={false}
+      />
+    );
+
+    const venueTypeBadge = screen.getByText('Amphitheatre');
+    const useCaseBadge = screen.getByText('Badminton');
+    const capBadge = screen.getByText('1-5 Cap');
+
+    expect(venueTypeBadge).toHaveClass('whitespace-nowrap');
+    expect(useCaseBadge).toHaveClass('whitespace-nowrap');
+    expect(capBadge).toHaveClass('whitespace-nowrap');
+
+    const badgesContainer = capBadge.parentElement;
+    expect(badgesContainer).toHaveClass('flex-wrap');
+  });
+
+  it('renders a NEW badge when venue has a recent createdAt date', () => {
+    const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const newVenue: Venue = {
+      ...mockVenue,
+      createdAt: recentDate,
+    };
+
+    render(
+      <VenueCard
+        venue={newVenue}
+        onClick={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        isFavorite={false}
+      />
+    );
+
+    expect(screen.getByText('NEW')).toBeInTheDocument();
+  });
 });

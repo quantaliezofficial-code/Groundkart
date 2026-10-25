@@ -67,8 +67,9 @@ class AdminOwnerVerificationView(BaseModel):
     applicant_phone: str | None = None
     document_url: str | None = None
     identification_type: str | None = None
-    identification_number: str | None = None
     business_name: str | None
+    pan: str | None = None
+    gstin: str | None = None
     status: str
     rejection_reason: str | None
     created_at: datetime
@@ -86,6 +87,8 @@ class AdminOwnerVerificationView(BaseModel):
             identification_type=verification.identification_type,
             identification_number=verification.identification_number,
             business_name=verification.business_name,
+            pan=getattr(verification, "pan", None),
+            gstin=getattr(verification, "gstin", None),
             status=verification.status,
             rejection_reason=verification.rejection_reason,
             created_at=verification.created_at,
@@ -433,6 +436,7 @@ class SystemSettingsResponse(BaseModel):
     cancellation_partial_refund_hours: int
     cancellation_partial_refund_percent: int
     platform_commission_percent: int
+    payout_holdback_days: int = 3
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -445,6 +449,7 @@ class SystemSettingsUpdateRequest(BaseModel):
     cancellation_partial_refund_hours: int | None = Field(default=None, ge=0, le=720)
     cancellation_partial_refund_percent: int | None = Field(default=None, ge=0, le=100)
     platform_commission_percent: int | None = Field(default=None, ge=0, le=100)
+    payout_holdback_days: int | None = Field(default=None, ge=0, le=90)
 
 
 class BookingActionProcessRequest(BaseModel):

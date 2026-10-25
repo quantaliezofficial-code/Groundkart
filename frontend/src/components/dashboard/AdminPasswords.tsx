@@ -342,7 +342,7 @@ function ResetPasswordDialog({
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto">
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto custom-scrollbar" data-lenis-prevent>
           {result ? (
             /* ---- Result state ---- */
             <div className="space-y-5">

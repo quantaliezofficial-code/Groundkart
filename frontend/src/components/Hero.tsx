@@ -23,7 +23,7 @@ const heroSlides = [
     titleLine2Gold: false,
     description: "Book turfs, courts and sports grounds that fit your next match.",
     cta: "Explore Sports",
-    category: "g_sports",
+    category: "sports",
     image: "/hero-sports.webp",
     objectPosition: "65% center", // Adjusted to not block the headline
     contentPosition: "left"
@@ -36,7 +36,7 @@ const heroSlides = [
     titleLine2Gold: true,
     description: "Discover beautiful halls, lawns and wedding venues for every celebration.",
     cta: "Explore Weddings",
-    category: "g_wedding",
+    category: "banquet_hall",
     image: "/hero-wedding.webp",
     objectPosition: "70% center",
     contentPosition: "left"
@@ -49,7 +49,7 @@ const heroSlides = [
     titleLine2Gold: false,
     description: "Find the right space for birthdays, parties and nights worth remembering.",
     cta: "Explore Parties",
-    category: "g_party",
+    category: "banquet_hall",
     image: "/hero-party.webp",
     objectPosition: "60% center",
     contentPosition: "left"
@@ -62,7 +62,7 @@ const heroSlides = [
     titleLine2Gold: true,
     description: "Book meeting rooms, conference spaces and offsite venues without the hassle.",
     cta: "Explore Business Spaces",
-    category: "g_corp",
+    category: "corporate",
     image: "/hero-corporate.webp",
     objectPosition: "75% center",
     contentPosition: "left"
@@ -75,7 +75,7 @@ const heroSlides = [
     titleLine2Gold: false,
     description: "Find farmhouses, lawns and private outdoor spaces for gatherings and getaways.",
     cta: "Explore Outdoor Spaces",
-    category: "g_outdoor",
+    category: "farmhouse",
     image: "/hero-outdoor.webp",
     objectPosition: "70% center",
     contentPosition: "left"
@@ -88,7 +88,7 @@ const heroSlides = [
     titleLine2Gold: true,
     description: "From resorts and villas to studios and creative spaces, discover places made for your plans.",
     cta: "Explore More",
-    category: "g_creative",
+    category: "creative",
     image: "/hero-resort.webp",
     objectPosition: "50% center",
     contentPosition: "left"
@@ -108,7 +108,6 @@ export default function Hero({
   const { scrollTo } = useSmoothScroll();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [categoryManuallySelected, setCategoryManuallySelected] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   const currentSlide = heroSlides[currentSlideIndex];
@@ -119,13 +118,6 @@ export default function Hero({
     const img = new Image();
     img.src = heroSlides[nextIndex].image;
   }, [currentSlideIndex]);
-
-  // Update category based on slide (if not manually overridden)
-  useEffect(() => {
-    if (!categoryManuallySelected) {
-      onCategoryChange(currentSlide.category);
-    }
-  }, [currentSlideIndex, categoryManuallySelected, onCategoryChange, currentSlide.category]);
 
   const goToNextSlide = useCallback(() => {
     setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length);
@@ -194,7 +186,6 @@ export default function Hero({
   };
 
   const handleCategorySelect = (val: string) => {
-    setCategoryManuallySelected(true);
     onCategoryChange(val);
   };
 
@@ -353,7 +344,7 @@ export default function Hero({
                   type="button"
                   onClick={() => scrollTo('#trending-section', { offset: -70, duration: 1.4 })}
                   className="hidden md:flex items-center gap-1.5 ml-4 pl-4 border-l border-white/20 text-[#F7F7F2]/70 hover:text-[#F4B544] font-sans text-[11px] font-bold tracking-wider uppercase transition-colors cursor-pointer group"
-                  aria-label="Scroll to trending venues"
+                  aria-label="Explore below — scroll to trending venues"
                 >
                   <span>Explore below</span>
                   <ChevronDown size={14} className="group-hover:translate-y-0.5 transition-transform duration-200" />

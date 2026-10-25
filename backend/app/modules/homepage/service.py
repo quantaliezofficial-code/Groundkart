@@ -390,6 +390,9 @@ async def set_cover_image(
         ).scalar_one_or_none()
         if image is None:
             raise HTTPException(status_code=404, detail="Image not found for this venue")
+
+        if getattr(image, "media_type", "image") != "image":
+            raise HTTPException(status_code=422, detail="Cover must be an image, not a video")
         
         venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
         if venue:

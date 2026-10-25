@@ -41,16 +41,16 @@ export default function AuthNavbar({ logoOnly = false }: AuthNavbarProps) {
                 {/* ── Right Navigation Links & CTAs ── */}
                 <div className="flex items-center gap-1 sm:gap-2">
                   <nav className="hidden lg:flex items-center gap-0.5 mr-3">
-                    <Link to="/" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white/80 hover:text-white hover:bg-white/10 transition">
+                    <Link to="/" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white hover:bg-white/10 transition">
                       Explore
                     </Link>
-                    <Link to="/?view=search" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white/80 hover:text-white hover:bg-white/10 transition">
+                    <Link to="/?view=search" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white hover:bg-white/10 transition">
                       Find Venues
                     </Link>
-                    <Link to="/?view=my-bookings" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white/80 hover:text-white hover:bg-white/10 transition">
+                    <Link to="/?view=my-bookings" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white hover:bg-white/10 transition">
                       My Bookings
                     </Link>
-                    <Link to="/?view=support" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white/80 hover:text-white hover:bg-white/10 transition">
+                    <Link to="/?view=support" className="px-3.5 py-2 rounded-full text-[13px] font-medium text-white hover:bg-white/10 transition">
                       Support
                     </Link>
                   </nav>
@@ -90,16 +90,16 @@ export default function AuthNavbar({ logoOnly = false }: AuthNavbarProps) {
         {/* Mobile dropdown navigation */}
         {!logoOnly && mobileMenuOpen && (
           <div className="lg:hidden px-4 pt-2 pb-4 space-y-1 bg-[#032017] border-b border-white/10 animate-in slide-in-from-top-2 duration-150">
-            <Link to="/" className="block px-3 py-2 rounded-lg text-sm font-medium text-white/80 hover:text-white hover:bg-white/10">
+            <Link to="/" className="block px-3 py-2 rounded-lg text-sm font-medium text-white hover:bg-white/10">
               Explore
             </Link>
-            <Link to="/?view=search" className="block px-3 py-2 rounded-lg text-sm font-medium text-white/80 hover:text-white hover:bg-white/10">
+            <Link to="/?view=search" className="block px-3 py-2 rounded-lg text-sm font-medium text-white hover:bg-white/10">
               Find Venues
             </Link>
-            <Link to="/?view=my-bookings" className="block px-3 py-2 rounded-lg text-sm font-medium text-white/80 hover:text-white hover:bg-white/10">
+            <Link to="/?view=my-bookings" className="block px-3 py-2 rounded-lg text-sm font-medium text-white hover:bg-white/10">
               My Bookings
             </Link>
-            <Link to="/?view=support" className="block px-3 py-2 rounded-lg text-sm font-medium text-white/80 hover:text-white hover:bg-white/10">
+            <Link to="/?view=support" className="block px-3 py-2 rounded-lg text-sm font-medium text-white hover:bg-white/10">
               Support
             </Link>
             <div className="pt-2 flex gap-2">

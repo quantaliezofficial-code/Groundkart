@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import date as date_, time, datetime
+from datetime import date as date_, time, datetime, timezone, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +33,8 @@ from app.models.core import (
     Venue,
     VenueContentBlock,
     VenueMedia,
+    VenuePurpose,
+    VenueRentalOption,
     VenueType,
 )
 from app.modules.auth.dependencies import CurrentUser
@@ -188,6 +190,9 @@ async def _get_with_relations(session: AsyncSession, venue_id: uuid.UUID | str) 
             selectinload(Venue.content_blocks),
             selectinload(Venue.venue_type),
             selectinload(Venue.use_cases),
+            selectinload(Venue.rental_options),
+            selectinload(Venue.purposes).selectinload(VenuePurpose.use_case),
+            selectinload(Venue.reviews),
         )
         .where(clause, Venue.deleted_at.is_(None))
     )
@@ -360,7 +365,8 @@ async def list_venues(
     venue_type_id: uuid.UUID | None = None,
     available_on: date_ | None = None,
     price_max: Decimal | None = None,
-    limit: int = 20,
+    sort_by: str | None = None,
+    limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[Venue], int]:
     """Only ever returns 'active' listings — this is the public search,
@@ -399,8 +405,23 @@ async def list_venues(
     ).scalar_one()
 
     data_query = query.options(
-        selectinload(Venue.media), selectinload(Venue.amenities), selectinload(Venue.content_blocks)
-    ).order_by(Venue.created_at.desc())
+        selectinload(Venue.media),
+        selectinload(Venue.amenities),
+        selectinload(Venue.content_blocks),
+        selectinload(Venue.venue_type),
+        selectinload(Venue.use_cases),
+        selectinload(Venue.reviews),
+    )
+    if sort_by == "newest":
+        data_query = data_query.order_by(Venue.created_at.desc())
+    elif sort_by == "price_asc":
+        data_query = data_query.order_by(Venue.base_price.asc(), Venue.created_at.desc())
+    elif sort_by == "price_desc":
+        data_query = data_query.order_by(Venue.base_price.desc(), Venue.created_at.desc())
+    elif sort_by == "rating_desc":
+        data_query = data_query.order_by(Venue.avg_rating.desc(), Venue.created_at.desc())
+    else:
+        data_query = data_query.order_by(Venue.created_at.desc())
     data_query = data_query.limit(limit).offset(offset)
     venues = (await session.execute(data_query)).scalars().all()
 
@@ -535,10 +556,17 @@ async def update_venue(
                     raise HTTPException(status_code=422, detail="Venue type not found")
                 target_cat_id = venue.category_id
                 if target_cat_id is not None and vt.category_id != target_cat_id:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Venue type does not belong to the selected category",
-                    )
+                    if "category_id" not in changes:
+                        venue.category_id = vt.category_id
+                        cat_res = await session.execute(select(Category).where(Category.id == vt.category_id))
+                        cat_obj = cat_res.scalar_one_or_none()
+                        if cat_obj:
+                            venue.category = cat_obj.name
+                    else:
+                        raise HTTPException(
+                            status_code=422,
+                            detail="Venue type does not belong to the selected category",
+                        )
                 old_vt_id = venue.venue_type_id
                 if old_vt_id != vt_id:
                     content_changed = True
@@ -666,7 +694,8 @@ async def upload_venue_media(
     content_type: str,
     storage: FileStorage,
     is_cover: bool = False,
-) -> VenueMedia:
+    duration: float | None = None,
+) -> Venue:
     async with session.begin():
         result = await session.execute(select(Venue).where(Venue.id == venue_id))
         venue = result.scalar_one_or_none()
@@ -676,6 +705,42 @@ async def upload_venue_media(
         from app.modules.auth.policies import authorize_venue_modify
         authorize_venue_modify(viewer, venue)
 
+        is_video = content_type.startswith("video/")
+        media_type = "video" if is_video else "image"
+
+        if media_type == "video" and is_cover:
+            raise HTTPException(status_code=422, detail="Cover must be an image, not a video")
+
+        if media_type == "video" and duration is not None:
+            if duration < 10.0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Video duration is too short ({duration:.1f}s). Minimum video duration is 10 seconds",
+                )
+            if duration > 90.0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Video duration is too long ({duration:.1f}s). Maximum video duration is 1 minute 30 seconds (90s)",
+                )
+
+        existing_media = list(
+            (
+                await session.execute(
+                    select(VenueMedia).where(VenueMedia.venue_id == venue_id)
+                )
+            ).scalars().all()
+        )
+        image_count = sum(1 for m in existing_media if getattr(m, "media_type", "image") == "image")
+        video_count = sum(1 for m in existing_media if getattr(m, "media_type", "image") == "video")
+
+        if media_type == "image" and image_count >= 15:
+            raise HTTPException(status_code=422, detail="Maximum of 15 images allowed per venue")
+        if media_type == "video" and video_count >= 3:
+            raise HTTPException(status_code=422, detail="Maximum of 3 videos allowed per venue")
+
+        if media_type == "image" and image_count == 0:
+            is_cover = True
+
         try:
             url, storage_key = await storage.save(content, content_type, key_prefix=f"venues/{venue_id}")
         except UnsupportedFileError as exc:
@@ -684,14 +749,21 @@ async def upload_venue_media(
         if is_cover:
             # Un-cover any existing cover image first, in the SAME
             # transaction as the insert below — otherwise
-            # uq_one_cover_image_per_venue rejects the new row.
+            # uq_one_cover_media_per_venue rejects the new row.
             await session.execute(
                 update(VenueMedia)
                 .where(VenueMedia.venue_id == venue_id, VenueMedia.is_cover.is_(True))
                 .values(is_cover=False)
             )
 
-        media_item = VenueMedia(venue_id=venue_id, url=url, storage_key=storage_key, is_cover=is_cover)
+        media_item = VenueMedia(
+            venue_id=venue_id,
+            url=url,
+            storage_key=storage_key,
+            media_type=media_type,
+            is_cover=is_cover,
+            sort_order=len(existing_media),
+        )
         session.add(media_item)
         await session.flush()
         refreshed = await _get_with_relations(session, venue_id)
@@ -705,7 +777,14 @@ async def add_inventory_units(
     units: list[dict],
 ) -> list[InventoryUnit]:
     async with session.begin():
-        result = await session.execute(select(Venue).where(Venue.id == venue_id))
+        result = await session.execute(
+            select(Venue)
+            .options(
+                selectinload(Venue.rental_options),
+                selectinload(Venue.purposes),
+            )
+            .where(Venue.id == venue_id)
+        )
         venue = result.scalar_one_or_none()
         if venue is None:
             raise HTTPException(status_code=404, detail="Venue not found")
@@ -713,27 +792,44 @@ async def add_inventory_units(
         from app.modules.auth.policies import authorize_venue_modify
         authorize_venue_modify(viewer, venue)
 
+        enabled_modes = set()
+        if getattr(venue, "rental_options", None):
+            enabled_modes.update(ro.mode for ro in venue.rental_options if ro.enabled)
+        if getattr(venue, "purposes", None):
+            for p in venue.purposes:
+                if p.enabled and p.allowed_modes:
+                    enabled_modes.update(p.allowed_modes)
+        if not enabled_modes:
+            enabled_modes.add(venue.unit_type)
+
         created = []
         for unit_data in units:
             start_time: time | None = unit_data.get("start_time")
             end_time: time | None = unit_data.get("end_time")
 
-            # Decision B-1's assumption (PHASE_B_SUMMARY.md), enforced here
-            # instead of just hoped for: half_day/full_day units must have
-            # NULL start/end time, or the grace-period calculation's "no
-            # slot to cap against" branch silently stops being true.
-            if venue.unit_type == "hour" and (start_time is None or end_time is None):
+            if (start_time is None) != (end_time is None):
                 raise HTTPException(
                     status_code=422,
-                    detail="Hourly venues require start_time and end_time on every inventory unit",
+                    detail="Both start_time and end_time must be provided together, or neither",
                 )
-            if venue.unit_type in ("half_day", "full_day") and (
-                start_time is not None or end_time is not None
-            ):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"{venue.unit_type} venues must not set start_time/end_time",
-                )
+
+            if start_time is not None and end_time is not None:
+                if start_time >= end_time:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="start_time must be earlier than end_time",
+                    )
+                if not getattr(venue, "rental_options", None) and venue.unit_type in ("half_day", "full_day"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Full-day and half-day venues must not have start_time or end_time",
+                    )
+            else:
+                if "half_day" not in enabled_modes and "full_day" not in enabled_modes:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Hourly venues require start_time and end_time on every inventory unit",
+                    )
 
             unit = InventoryUnit(
                 venue_id=venue_id,
@@ -756,25 +852,27 @@ async def list_inventory_units_for_venue(
     viewer: CurrentUser | None,
     date_from: date_ | None = None,
     date_to: date_ | None = None,
+    include_all: bool = False,
 ) -> list[InventoryUnit]:
-    """GET /api/v1/venues/{id}/inventory-units — a real gap found while
-    starting frontend integration: add_inventory_units() (owner creates
-    slots) existed with no way for anyone, including a browsing customer,
-    to actually list them. Reuses get_venue's exact visibility gate rather
-    than inventing a separate rule — a stranger gets the same 404 on a
-    non-active venue's units as they would on the venue itself.
-
-    Returns every unit regardless of status (available/held/booked) —
-    the caller decides how to render each state; a booked slot showing as
-    unavailable is a display concern, not a reason to hide it from the
-    response entirely.
+    """GET /api/v1/venues/{id}/inventory-units — Guide 11 availability rules:
+    1. Returns ONLY bookable units for customers:
+       - Status must be 'available'
+       - No active block covers it
+       - No overlapping unit for the same venue is held or booked
+    2. Hidden means not returned at all, so nothing about who or when leaks.
+    3. Owners and admins can see all units to manage their venue.
     """
     from zoneinfo import ZoneInfo
     VENUE_LOCAL_TZ = ZoneInfo("Asia/Kolkata")
     from app.models.core import Block
     
-    venue = await get_venue(session, venue_id, viewer)  # raises 404 under the same rule if not visible
+    venue = await get_venue(session, venue_id, viewer)
     actual_venue_id = venue.id
+
+    is_owner_or_admin = viewer is not None and (
+        viewer.role == "admin" or (viewer.role == "owner" and venue.owner_id == viewer.id)
+    )
+    show_all = is_owner_or_admin
 
     query = select(InventoryUnit).where(InventoryUnit.venue_id == actual_venue_id)
     if date_from is not None:
@@ -791,12 +889,9 @@ async def list_inventory_units_for_venue(
 
     # Fetch active blocks
     blocks_result = await session.execute(
-        select(Block).where(Block.venue_id == venue_id, Block.status == "active")
+        select(Block).where(Block.venue_id == actual_venue_id, Block.status == "active")
     )
     blocks = list(blocks_result.scalars().all())
-
-    if not blocks:
-        return units
 
     for unit in units:
         if unit.status == "available":
@@ -808,12 +903,44 @@ async def list_inventory_units_for_venue(
             for block in blocks:
                 if block.inventory_unit_id and block.inventory_unit_id != unit.id:
                     continue
-                # strict overlap: max(start) < min(end)
-                if max(unit_start, block.start_time) < min(unit_end, block.end_time):
+                b_start = block.start_time if block.start_time.tzinfo else block.start_time.replace(tzinfo=VENUE_LOCAL_TZ)
+                b_end = block.end_time if block.end_time.tzinfo else block.end_time.replace(tzinfo=VENUE_LOCAL_TZ)
+                if max(unit_start, b_start) < min(unit_end, b_end):
                     unit.status = "blocked"
                     break
 
-    return units
+    if show_all:
+        return units
+
+    # Customer view: return ONLY bookable units!
+    occupied_result = await session.execute(
+        select(InventoryUnit).where(
+            InventoryUnit.venue_id == actual_venue_id,
+            InventoryUnit.status.in_(["held", "booked"]),
+        )
+    )
+    occupied_units = list(occupied_result.scalars().all())
+
+    bookable_units = []
+    for unit in units:
+        if unit.status != "available":
+            continue
+        unit_start_ts = unit.starts_at or datetime.combine(unit.date, unit.start_time or time.min)
+        unit_end_ts = unit.ends_at or (datetime.combine(unit.date, unit.end_time) if unit.end_time else datetime.combine(unit.date + timedelta(days=1), time.min))
+
+        has_overlap = False
+        for occ in occupied_units:
+            if occ.id == unit.id:
+                continue
+            occ_start = occ.starts_at or datetime.combine(occ.date, occ.start_time or time.min)
+            occ_end = occ.ends_at or (datetime.combine(occ.date, occ.end_time) if occ.end_time else datetime.combine(occ.date + timedelta(days=1), time.min))
+            if max(unit_start_ts, occ_start) < min(unit_end_ts, occ_end):
+                has_overlap = True
+                break
+        if not has_overlap:
+            bookable_units.append(unit)
+
+    return bookable_units
 
 
 async def _load_pending_for_review(session: AsyncSession, venue_id: uuid.UUID) -> Venue:
@@ -1076,3 +1203,468 @@ async def delete_pricing_rule(
         
     await session.delete(rule)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Guide 11: Multi-Purpose & Flexible Rental System
+# ---------------------------------------------------------------------------
+
+async def _sync_venue_pricing_from_rental_options(session: AsyncSession, venue_id: uuid.UUID) -> None:
+    """Updates venue.unit_type and venue.base_price from the cheapest enabled rental option."""
+    result = await session.execute(
+        select(VenueRentalOption)
+        .where(VenueRentalOption.venue_id == venue_id, VenueRentalOption.enabled.is_(True))
+        .order_by(VenueRentalOption.price.asc())
+    )
+    cheapest = result.scalars().first()
+    if cheapest:
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if venue:
+            venue.unit_type = cheapest.mode
+            venue.base_price = cheapest.price
+
+
+async def list_rental_options(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+) -> list[VenueRentalOption]:
+    result = await session.execute(
+        select(VenueRentalOption)
+        .where(VenueRentalOption.venue_id == venue_id)
+        .order_by(VenueRentalOption.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def create_rental_option(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    data: dict,
+) -> VenueRentalOption:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        mode = data.get("mode")
+        existing = (
+            await session.execute(
+                select(VenueRentalOption).where(
+                    VenueRentalOption.venue_id == venue_id,
+                    VenueRentalOption.mode == mode,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Rental option for mode '{mode}' already exists")
+
+        opt = VenueRentalOption(venue_id=venue_id, **data)
+        session.add(opt)
+        await session.flush()
+        await _sync_venue_pricing_from_rental_options(session, venue_id)
+        opt_id = opt.id
+
+    res = await session.execute(select(VenueRentalOption).where(VenueRentalOption.id == opt_id))
+    return res.scalar_one()
+
+
+async def update_rental_option(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    option_id: uuid.UUID,
+    viewer: CurrentUser,
+    data: dict,
+) -> VenueRentalOption:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        opt = (
+            await session.execute(
+                select(VenueRentalOption).where(
+                    VenueRentalOption.id == option_id,
+                    VenueRentalOption.venue_id == venue_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not opt:
+            raise HTTPException(status_code=404, detail="Rental option not found")
+
+        for k, v in data.items():
+            if v is not None:
+                setattr(opt, k, v)
+        opt.updated_at = datetime.now(timezone.utc)
+        await session.flush()
+        await _sync_venue_pricing_from_rental_options(session, venue_id)
+
+    res = await session.execute(select(VenueRentalOption).where(VenueRentalOption.id == option_id))
+    return res.scalar_one()
+
+
+async def delete_rental_option(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    option_id: uuid.UUID,
+    viewer: CurrentUser,
+) -> None:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        opt = (
+            await session.execute(
+                select(VenueRentalOption).where(
+                    VenueRentalOption.id == option_id,
+                    VenueRentalOption.venue_id == venue_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not opt:
+            raise HTTPException(status_code=404, detail="Rental option not found")
+
+        await session.delete(opt)
+        await session.flush()
+        await _sync_venue_pricing_from_rental_options(session, venue_id)
+
+
+async def list_purposes(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser | None = None,
+) -> list[VenuePurpose]:
+    venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+
+    is_owner_or_admin = viewer is not None and (
+        viewer.role == "admin" or (viewer.role == "owner" and venue.owner_id == viewer.id)
+    )
+
+    stmt = (
+        select(VenuePurpose)
+        .options(selectinload(VenuePurpose.use_case))
+        .where(VenuePurpose.venue_id == venue_id)
+    )
+    if not is_owner_or_admin:
+        stmt = stmt.where(
+            VenuePurpose.enabled.is_(True),
+            or_(
+                VenuePurpose.use_case_id.isnot(None),
+                VenuePurpose.is_custom_approved.is_(True),
+            ),
+        )
+    stmt = stmt.order_by(VenuePurpose.created_at.asc())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def create_purpose(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    data: dict,
+) -> VenuePurpose:
+    async with session.begin():
+        venue = (
+            await session.execute(
+                select(Venue).options(selectinload(Venue.use_cases)).where(Venue.id == venue_id)
+            )
+        ).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        use_case_id = data.get("use_case_id")
+        custom_name = data.get("custom_name")
+        if not use_case_id and not custom_name:
+            raise HTTPException(status_code=422, detail="Must provide use_case_id or custom_name")
+
+        is_custom_approved = None
+        if custom_name and not use_case_id:
+            is_custom_approved = False
+
+        if use_case_id:
+            uc = (await session.execute(select(UseCase).where(UseCase.id == use_case_id))).scalar_one_or_none()
+            if not uc:
+                raise HTTPException(status_code=404, detail="Use case not found")
+            if uc not in venue.use_cases:
+                venue.use_cases.append(uc)
+
+        purpose = VenuePurpose(
+            venue_id=venue_id,
+            use_case_id=use_case_id,
+            custom_name=custom_name,
+            is_custom_approved=is_custom_approved,
+            description=data.get("description"),
+            max_guests=data.get("max_guests"),
+            allowed_modes=data.get("allowed_modes"),
+            price_override=data.get("price_override"),
+            rules=data.get("rules"),
+            enabled=data.get("enabled", True),
+        )
+        session.add(purpose)
+        await session.flush()
+        purpose_id = purpose.id
+
+    stmt = select(VenuePurpose).options(selectinload(VenuePurpose.use_case)).where(VenuePurpose.id == purpose_id)
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def update_purpose(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    purpose_id: uuid.UUID,
+    viewer: CurrentUser,
+    data: dict,
+) -> VenuePurpose:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        purpose = (
+            await session.execute(
+                select(VenuePurpose).where(
+                    VenuePurpose.id == purpose_id,
+                    VenuePurpose.venue_id == venue_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        for k, v in data.items():
+            if v is not None:
+                if k == "custom_name" and v != purpose.custom_name and purpose.use_case_id is None:
+                    purpose.is_custom_approved = False
+                setattr(purpose, k, v)
+        purpose.updated_at = datetime.now(timezone.utc)
+
+    stmt = select(VenuePurpose).options(selectinload(VenuePurpose.use_case)).where(VenuePurpose.id == purpose_id)
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def delete_purpose(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    purpose_id: uuid.UUID,
+    viewer: CurrentUser,
+) -> None:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        purpose = (
+            await session.execute(
+                select(VenuePurpose).where(
+                    VenuePurpose.id == purpose_id,
+                    VenuePurpose.venue_id == venue_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        await session.delete(purpose)
+
+
+async def list_pending_custom_purposes(session: AsyncSession) -> list[VenuePurpose]:
+    stmt = (
+        select(VenuePurpose)
+        .options(selectinload(VenuePurpose.venue))
+        .where(
+            VenuePurpose.is_custom_approved.is_(False),
+            VenuePurpose.custom_name.isnot(None),
+        )
+        .order_by(VenuePurpose.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def moderate_custom_purpose(
+    session: AsyncSession,
+    purpose_id: uuid.UUID,
+    approved: bool,
+) -> VenuePurpose:
+    async with session.begin():
+        purpose = (
+            await session.execute(select(VenuePurpose).where(VenuePurpose.id == purpose_id))
+        ).scalar_one_or_none()
+        if not purpose:
+            raise HTTPException(status_code=404, detail="Purpose not found")
+
+        purpose.is_custom_approved = approved
+        purpose.updated_at = datetime.now(timezone.utc)
+
+    stmt = select(VenuePurpose).options(selectinload(VenuePurpose.use_case)).where(VenuePurpose.id == purpose_id)
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def add_venue_video_link(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    url: str,
+    thumbnail_url: str | None = None,
+) -> VenueMedia:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        existing = list(
+            (
+                await session.execute(
+                    select(VenueMedia).where(VenueMedia.venue_id == venue_id)
+                )
+            ).scalars().all()
+        )
+        video_count = sum(1 for m in existing if getattr(m, "media_type", "image") == "video")
+        if video_count >= 3:
+            raise HTTPException(status_code=422, detail="Maximum 3 videos allowed per venue")
+
+        media = VenueMedia(
+            venue_id=venue_id,
+            url=url,
+            media_type="video",
+            thumbnail_url=thumbnail_url,
+            is_cover=False,
+            sort_order=len(existing),
+        )
+        session.add(media)
+        await session.flush()
+        media_id = media.id
+
+    return (await session.execute(select(VenueMedia).where(VenueMedia.id == media_id))).scalar_one()
+
+
+async def reorder_venue_media(
+    session: AsyncSession,
+    venue_id: uuid.UUID,
+    viewer: CurrentUser,
+    ordered_ids: list[uuid.UUID],
+) -> list[VenueMedia]:
+    async with session.begin():
+        venue = (await session.execute(select(Venue).where(Venue.id == venue_id))).scalar_one_or_none()
+        if not venue:
+            raise HTTPException(status_code=404, detail="Venue not found")
+        from app.modules.auth.policies import authorize_venue_modify
+        authorize_venue_modify(viewer, venue)
+
+        existing = {
+            m.id: m
+            for m in (
+                await session.execute(
+                    select(VenueMedia).where(VenueMedia.venue_id == venue_id).with_for_update()
+                )
+            ).scalars().all()
+        }
+
+        for idx, mid in enumerate(ordered_ids):
+            if mid in existing:
+                existing[mid].sort_order = idx
+
+    result = await session.execute(
+        select(VenueMedia)
+        .where(VenueMedia.venue_id == venue_id)
+        .order_by(VenueMedia.sort_order.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_venue_availability(
+    session: AsyncSession,
+    venue_id: uuid.UUID | str,
+    date_from: date_,
+    date_to: date_,
+    purpose_id: uuid.UUID | None = None,
+    viewer: CurrentUser | None = None,
+) -> list[dict]:
+    venue = await get_venue(session, venue_id, viewer)
+    actual_venue_id = venue.id
+
+    ro_result = await session.execute(
+        select(VenueRentalOption).where(
+            VenueRentalOption.venue_id == actual_venue_id,
+            VenueRentalOption.enabled.is_(True),
+        )
+    )
+    rental_options = list(ro_result.scalars().all())
+    enabled_modes = {ro.mode for ro in rental_options}
+    if not enabled_modes:
+        enabled_modes = {venue.unit_type}
+
+    if purpose_id is not None:
+        p_res = await session.execute(
+            select(VenuePurpose).where(
+                VenuePurpose.id == purpose_id,
+                VenuePurpose.venue_id == actual_venue_id,
+            )
+        )
+        purpose = p_res.scalar_one_or_none()
+        if purpose and purpose.allowed_modes:
+            enabled_modes = enabled_modes.intersection(set(purpose.allowed_modes))
+
+    all_units_res = await session.execute(
+        select(InventoryUnit).where(
+            InventoryUnit.venue_id == actual_venue_id,
+            InventoryUnit.date >= date_from,
+            InventoryUnit.date <= date_to,
+        )
+    )
+    all_units = list(all_units_res.scalars().all())
+
+    bookable_units = await list_inventory_units_for_venue(
+        session, actual_venue_id, viewer=None, date_from=date_from, date_to=date_to, include_all=False
+    )
+    bookable_by_id = {u.id for u in bookable_units}
+
+    results = []
+    curr = date_from
+    while curr <= date_to:
+        day_all = [u for u in all_units if u.date == curr]
+        day_bookable = [u for u in day_all if u.id in bookable_by_id]
+
+        hourly_all = [u for u in day_all if u.start_time is not None and u.end_time is not None]
+        hourly_bookable = [u for u in day_bookable if u.start_time is not None and u.end_time is not None]
+
+        full_day_unit = next((u for u in day_all if u.start_time is None or (u.start_time == time(0, 0) and u.end_time is None)), None)
+        is_full_day_available = (
+            ("full_day" in enabled_modes)
+            and (full_day_unit is not None and full_day_unit.id in bookable_by_id)
+        )
+
+        modes = []
+        if is_full_day_available:
+            modes.append("full_day")
+        if hourly_bookable and "hour" in enabled_modes:
+            modes.append("hour")
+
+        results.append({
+            "date": curr,
+            "is_full_day_available": is_full_day_available,
+            "hourly_slots_total": len(hourly_all),
+            "hourly_slots_available": len(hourly_bookable),
+            "available_rental_modes": modes,
+        })
+        curr += timedelta(days=1)
+
+    return results

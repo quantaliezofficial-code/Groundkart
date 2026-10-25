@@ -36,6 +36,32 @@ vi.mock('./lib/api/owner', () => ({
     listMyBookings: vi.fn().mockResolvedValue([]),
     listMyPayouts: vi.fn().mockResolvedValue([]),
     getMyVerification: vi.fn().mockResolvedValue(null),
+    getOverview: vi.fn().mockResolvedValue({
+      attention_items: [],
+      counters: {
+        earnings_this_month: 0,
+        events_next_7_days: 0,
+        pending_requests: 0,
+        next_payout_amount: 0,
+      },
+      booking_stages: {
+        requested: 0,
+        awaiting_payment: 0,
+        confirmed: 0,
+        completed: 0,
+        paid_out: 0,
+      },
+      listing_stages: [],
+      upcoming_events: [],
+    }),
+    getVenueStats: vi.fn().mockResolvedValue({
+      venue_id: 'v1',
+      revenue_last_30_days: 0,
+      events_upcoming: 0,
+      recent_bookings_count: 0,
+      avg_rating: 0,
+      total_reviews: 0,
+    }),
     createVenue: vi.fn(),
     updateVenue: vi.fn(),
     uploadVenueImage: vi.fn(),
@@ -44,6 +70,15 @@ vi.mock('./lib/api/owner', () => ({
     flagBooking: vi.fn(),
     submitVerification: vi.fn(),
   },
+  getAnalytics: vi.fn().mockResolvedValue({
+    gmv: 0,
+    retained_gmv: 0,
+    refunds: 0,
+    platform_revenue: 0,
+    owner_payout: 0,
+    booking_count: 0,
+    average_booking_value: 0,
+  }),
 }));
 
 vi.mock('./lib/api/notifications', () => ({

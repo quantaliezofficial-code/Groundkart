@@ -248,7 +248,7 @@ function TicketDetailView({ ticketId, onBack }: { ticketId: string; onBack: () =
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto bg-surface-container p-6 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-surface-container p-6 space-y-6 custom-scrollbar" data-lenis-prevent>
         <div className="flex gap-4">
           <div className="h-8 w-8 shrink-0 rounded-full bg-emerald-600 flex items-center justify-center text-white text-sm font-bold">
             U

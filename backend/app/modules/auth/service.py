@@ -17,12 +17,14 @@ own AsyncSession, not a separate redis_client.
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy import select, text, update, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.security import create_access_token, hash_password, verify_password
@@ -39,21 +41,28 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-async def check_login_rate_limit(session: AsyncSession, key: str) -> None:
-    """Fixed-window counter per IP or per email — TRD §4. `key` should
-    already be namespaced by the caller (e.g. f'ratelimit:login:{email}').
+def get_client_ip(request: Request) -> str:
+    """Extract client IP, inspecting standard proxy headers before falling
+    back to socket peer address. Gracefully handles local test clients."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
 
-    Postgres-backed (see module docstring): one atomic UPSERT against
-    login_rate_limits (app/models/core.py) does what Redis's INCR+EXPIRE
-    pair did — increment within the current window, or reset to 1 and
-    start a new window once the old one has expired — as a single
-    round-trip with no separate lock needed, since the UPSERT's CASE
-    expressions run atomically against whatever row version Postgres's
-    MVCC hands this statement. Runs as its own complete transaction,
-    committed before this function returns — not nested inside a caller's
-    own session.begin() (login()'s, right below), so there's no
-    autobegin-collision risk (Bug 1, PHASE_C2_SUMMARY.md) between the two.
+
+async def check_rate_limit(
+    session: AsyncSession,
+    key: str,
+    max_attempts: int = LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+    window_seconds: int = LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+) -> None:
+    """Atomic, Postgres-backed sliding-window rate limit and timeout mechanism.
+    Normalizes key whitespace/casing. Returns exact retry-after seconds in standard
+    Retry-After response header and detail message when limit is exceeded.
     """
+    normalized_key = ":".join(part.strip().lower() for part in key.split(":"))
     async with session.begin():
         result = await session.execute(
             text(
@@ -71,40 +80,72 @@ async def check_login_rate_limit(session: AsyncSession, key: str) -> None:
                         THEN now()
                         ELSE login_rate_limits.window_start
                     END
-                RETURNING attempt_count
+                RETURNING attempt_count,
+                          GREATEST(1, CEIL(EXTRACT(EPOCH FROM (login_rate_limits.window_start + make_interval(secs => :window_seconds) - now())))::int) AS retry_after
                 """
             ),
-            {"key": key, "window_seconds": float(LOGIN_RATE_LIMIT_WINDOW_SECONDS)},
+            {"key": normalized_key, "window_seconds": float(window_seconds)},
         )
-        count = result.scalar_one()
+        row = result.one()
+        count = row[0]
+        retry_after = row[1]
 
-    if count > LOGIN_RATE_LIMIT_MAX_ATTEMPTS:
+    if count > max_attempts:
         raise HTTPException(
             status_code=429,
-            detail="Too many attempts — try again in a minute.",
-            headers={"code": "rate_limited"},
+            detail=f"Too many attempts — try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after), "code": "rate_limited"},
         )
+
+
+async def check_login_rate_limit(session: AsyncSession, key: str) -> None:
+    """Backwards-compatible wrapper for existing login and test call sites."""
+    await check_rate_limit(
+        session,
+        key,
+        max_attempts=LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+        window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+
+
+async def cleanup_expired_rate_limits(session: AsyncSession, older_than_seconds: int = 3600) -> int:
+    """Deletes rate limit entries older than older_than_seconds to keep
+    the login_rate_limits table compact and performant."""
+    async with session.begin():
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM login_rate_limits
+                WHERE window_start < now() - make_interval(secs => :older_than_seconds)
+                """
+            ),
+            {"older_than_seconds": float(older_than_seconds)},
+        )
+        return result.rowcount
 
 
 async def signup(session: AsyncSession, name: str, phone: str, password: str, email: str | None = None) -> User:
-    async with session.begin():
-        # Check if email is provided and exists, or if phone exists
-        query_conditions = [User.phone == phone]
-        if email is not None:
-            query_conditions.append(User.email == email)
-            
-        existing = await session.execute(select(User).where(or_(*query_conditions)))
-        if existing.scalar_one_or_none() is not None:
-            raise HTTPException(status_code=409, detail="An account with this phone or email already exists")
+    try:
+        async with session.begin():
+            # Check if email is provided and exists, or if phone exists
+            query_conditions = [User.phone == phone]
+            if email is not None:
+                query_conditions.append(User.email == email)
+                
+            existing = await session.execute(select(User).where(or_(*query_conditions)))
+            if existing.scalar_one_or_none() is not None:
+                raise HTTPException(status_code=409, detail="An account with this phone or email already exists")
 
-        user = User(
-            name=name,
-            email=email,
-            phone=phone,
-            password_hash=hash_password(password),
-            role="customer",  # owner accounts go through a separate verification flow — not this endpoint
-        )
-        session.add(user)
+            user = User(
+                name=name,
+                email=email,
+                phone=phone,
+                password_hash=hash_password(password),
+                role="customer",  # owner accounts go through a separate verification flow — not this endpoint
+            )
+            session.add(user)
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="An account with this phone or email already exists")
 
     return user
 

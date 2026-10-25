@@ -20,7 +20,10 @@ export function useMyBookings() {
 export function useCreateBooking() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: BookingCreateRequest) => bookingsApi.create(body),
+    mutationFn: (variables: BookingCreateRequest & { idempotencyKey?: string }) => {
+      const { idempotencyKey, ...body } = variables;
+      return bookingsApi.create(body as BookingCreateRequest, idempotencyKey);
+    },
     onSuccess: () => {
       // A slot that was just held moves from available -> held for
       // everyone else looking at the same venue, so both the slot list

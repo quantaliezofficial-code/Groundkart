@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Menu, X, LogOut, Globe } from 'lucide-react';
 
 export interface NavItem {
@@ -36,9 +36,25 @@ export function DashboardShell({
   onReturnToSite
 }: DashboardShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Automatically reset scroll to top on tab change
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      if (typeof scrollContainerRef.current.scrollTo === 'function') {
+        try {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+        } catch {
+          scrollContainerRef.current.scrollTop = 0;
+        }
+      } else {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [activeNavId]);
 
   return (
-    <div className="flex min-h-[calc(100vh-4.5rem)] bg-mist w-full">
+    <div className="flex h-screen max-h-screen w-full bg-mist overflow-hidden">
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div 
@@ -49,11 +65,11 @@ export function DashboardShell({
 
       {/* Sidebar */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-surface-container-lowest border-r border-surface-container transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-surface-container-lowest border-r border-surface-container transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 h-full flex flex-col shrink-0 ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-16 items-center justify-between px-6 border-b border-surface-container lg:hidden">
+        <div className="flex h-16 shrink-0 items-center justify-between px-6 border-b border-surface-container lg:hidden">
           <a href="/" className="flex items-center gap-2">
             <span className="font-display text-xl font-bold text-pitch">GroundKart</span>
           </a>
@@ -65,8 +81,8 @@ export function DashboardShell({
           </button>
         </div>
 
-        <div className="flex flex-col justify-between h-full">
-          <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1 no-scrollbar">
+        <div className="flex flex-col justify-between h-full min-h-0">
+          <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-6 space-y-1 custom-scrollbar overscroll-contain" data-lenis-prevent>
             {navItems.map((item) => {
               const isActive = activeNavId === item.id;
               const content = (
@@ -111,7 +127,7 @@ export function DashboardShell({
           </nav>
           
           {userName && userRole && (
-            <div className="p-4 border-t border-surface-container">
+            <div className="p-4 border-t border-surface-container shrink-0">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pitch text-sm font-bold text-chalk">
                   {userName.charAt(0)}
@@ -139,7 +155,7 @@ export function DashboardShell({
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
         {/* Header */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-surface-container bg-surface-container-lowest/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
@@ -163,8 +179,12 @@ export function DashboardShell({
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-5xl">
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-8 sm:px-6 lg:px-8 custom-scrollbar overscroll-contain" 
+          data-lenis-prevent
+        >
+          <div className="mx-auto max-w-7xl w-full">
             {children}
           </div>
         </div>

@@ -12,7 +12,7 @@ from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Re
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,6 +24,14 @@ from app.models.core import (
     BookingActionRequest, AuditLog, OwnerBankAccount, Refund, LedgerEntry
 )
 from app.modules.admin import service as admin_service
+from app.modules.admin import db_service as admin_db_service
+from app.schemas.admin_db import (
+    DatabaseStatsResponse,
+    TableDataResponse,
+    SafeQueryRequest,
+    SafeQueryResponse,
+    DatabaseAnalyticsResponse,
+)
 from app.modules.auth import service as auth_service
 from app.modules.auth.dependencies import (
     CurrentUser,
@@ -205,6 +213,27 @@ async def lifespan(_app: FastAPI):
     cleanup_task = None
     
     if not is_test:
+        # Pre-flight startup database & migration check
+        try:
+            async with SessionLocal() as check_session:
+                await check_session.execute(select(1))
+                res = await check_session.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'alembic_version';"
+                    )
+                )
+                if not res.scalar():
+                    logger.critical(
+                        "CRITICAL DATABASE WARNING: 'alembic_version' table not found in attached database! "
+                        "The attached database is unmigrated or empty. Execute 'alembic upgrade head' to create all required tables."
+                    )
+                else:
+                    logger.info("Database connectivity and schema migration verified.")
+        except Exception as exc:
+            logger.critical(
+                "CRITICAL DATABASE CONNECTION ERROR: Failed to connect to DATABASE_URL: %s", exc
+            )
+
         sweep_task = asyncio.create_task(_hold_sweep_loop())
         outbox_task = asyncio.create_task(_outbox_sweep_loop())
         cleanup_task = asyncio.create_task(_rate_limit_cleanup_loop())
@@ -273,8 +302,24 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Swagger UI (/docs) and ReDoc (/redoc) load assets from CDN — apply a
+    # relaxed CSP only for those internal developer routes so the broader API
+    # stays protected with the strict default-src 'self' policy.
+    path = request.url.path
+    if path in ("/docs", "/redoc", "/openapi.json"):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "font-src 'self' data: https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "worker-src blob:; "
+            "connect-src 'self' https://cdn.jsdelivr.net"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
     return response
 
 # A real, necessary prerequisite found while starting frontend integration
@@ -328,8 +373,54 @@ def _set_refresh_cookie(response: Response, raw_token: str) -> None:
 
 @app.get("/healthz")
 @app.get("/api/v1/health")
-async def healthz() -> dict:
-    return {"status": "ok"}
+async def healthz(
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    checks = {
+        "database": False,
+        "schema": False,
+        "storage": False,
+    }
+    details = {}
+
+    try:
+        await db.execute(select(1))
+        checks["database"] = True
+    except Exception as exc:
+        details["database_error"] = str(exc)
+
+    if checks["database"]:
+        try:
+            res = await db.execute(
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'venues', 'bookings', 'alembic_version');")
+            )
+            tables = {row[0] for row in res.fetchall()}
+            if {"users", "venues", "bookings", "alembic_version"}.issubset(tables):
+                checks["schema"] = True
+            else:
+                missing = list({"users", "venues", "bookings", "alembic_version"} - tables)
+                details["schema_error"] = f"Missing core tables: {missing}. Run 'alembic upgrade head'."
+        except Exception as exc:
+            details["schema_error"] = str(exc)
+
+    try:
+        from pathlib import Path
+        upload_path = Path(settings.uploads_dir).resolve()
+        upload_path.mkdir(parents=True, exist_ok=True)
+        checks["storage"] = True
+    except Exception as exc:
+        details["storage_error"] = str(exc)
+
+    is_healthy = checks["database"] and checks["schema"] and checks["storage"]
+    return JSONResponse(
+        status_code=200 if is_healthy else 503,
+        content={
+            "status": "ok" if is_healthy else "degraded",
+            "environment": settings.environment,
+            "checks": checks,
+            **details,
+        },
+    )
 
 
 @app.get("/robots.txt", response_class=Response)
@@ -1262,7 +1353,8 @@ async def list_venues_route(
     category: str | None = Query(default=None),
     available_on: date_ | None = Query(default=None),
     price_max: Decimal | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    sort_by: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> VenueListResponse:
@@ -1274,6 +1366,7 @@ async def list_venues_route(
         category=category,
         available_on=available_on,
         price_max=price_max,
+        sort_by=sort_by,
         limit=limit,
         offset=offset,
     )
@@ -2170,6 +2263,80 @@ async def get_admin_health_route(
 
 
 # ---------------------------------------------------------------------------
+# Admin Database Studio & Analytics
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/db/stats", response_model=DatabaseStatsResponse)
+async def get_admin_db_stats_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> DatabaseStatsResponse:
+    stats = await admin_db_service.get_database_stats(db)
+    return DatabaseStatsResponse(**stats)
+
+
+@app.get("/api/v1/admin/db/tables/{table_name}", response_model=TableDataResponse)
+async def get_admin_table_data_route(
+    table_name: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    order_by: str | None = Query(default=None),
+    order_dir: str = Query(default="asc", pattern="^(asc|desc|ASC|DESC)$"),
+    search: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> TableDataResponse:
+    data = await admin_db_service.get_table_data(
+        db,
+        table_name=table_name,
+        limit=limit,
+        offset=offset,
+        order_by=order_by,
+        order_dir=order_dir,
+        search=search,
+    )
+    return TableDataResponse(**data)
+
+
+@app.post("/api/v1/admin/db/query", response_model=SafeQueryResponse)
+async def execute_admin_safe_query_route(
+    body: SafeQueryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> SafeQueryResponse:
+    res = await admin_db_service.execute_safe_query(db, body.sql)
+    return SafeQueryResponse(**res)
+
+
+@app.get("/api/v1/admin/db/analytics", response_model=DatabaseAnalyticsResponse)
+async def get_admin_db_analytics_route(
+    days: int = Query(default=30, ge=7, le=365),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+) -> DatabaseAnalyticsResponse:
+    analytics = await admin_db_service.get_db_analytics(db, days=days)
+    return DatabaseAnalyticsResponse(**analytics)
+
+
+@app.get("/api/v1/admin/db/export/{table_name}")
+async def export_admin_table_csv_route(
+    table_name: str,
+    limit: int = Query(default=5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role("admin")),
+):
+    csv_data = await admin_db_service.export_table_csv(db, table_name, limit=limit)
+    return Response(
+        content=csv_data,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="groundkart_{table_name}.csv"',
+            "Content-Type": "text/csv; charset=utf-8",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Reviews — POST (create, any auth'd user), GET (public), DELETE (admin only)
 # ---------------------------------------------------------------------------
 
@@ -2242,7 +2409,7 @@ async def create_review_route(
 @app.get("/api/v1/venues/{venue_id}/reviews", response_model=list[ReviewResponse])
 async def list_reviews_route(
     venue_id: str,
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[ReviewResponse]:

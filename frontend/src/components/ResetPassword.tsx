@@ -85,7 +85,7 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#041D15] flex flex-col relative overflow-hidden font-sans pt-[72px]">
+    <div className="min-h-screen bg-[#041D15] flex flex-col relative overflow-x-hidden font-sans pt-[72px]">
       <Helmet>
         <title>Create a New Password — GroundKart</title>
         {/* Prevent search engines from indexing reset pages */}

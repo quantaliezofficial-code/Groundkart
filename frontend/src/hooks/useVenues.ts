@@ -8,11 +8,11 @@ import type { Venue, VenueSlot } from '../types';
 export function useVenues(params: VenueSearchParams = {}) {
   const query = useQuery({
     queryKey: ['venues', params],
-    queryFn: () => venuesApi.search(params),
+    queryFn: () => venuesApi.search({ limit: 100, ...params }),
   });
 
   const venues: Venue[] = (query.data?.data ?? []).map(adaptVenue);
-  return { venues, total: query.data?.total ?? 0, isLoading: query.isLoading, error: query.error };
+  return { venues, total: query.data?.total ?? 0, isLoading: query.isLoading, error: query.error, isError: query.isError, refetch: query.refetch };
 }
 
 export function useVenue(venueId: string | undefined) {

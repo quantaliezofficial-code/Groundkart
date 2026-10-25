@@ -10,6 +10,8 @@ class OwnerVerificationResponse(BaseModel):
     business_name: str | None
     identification_type: str | None = None
     identification_number: str | None = None
+    pan: str | None = None
+    gstin: str | None = None
     rejection_reason: str | None
     created_at: datetime
     reviewed_at: datetime | None

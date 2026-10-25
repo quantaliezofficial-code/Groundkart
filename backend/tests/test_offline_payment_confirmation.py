@@ -259,17 +259,15 @@ async def test_grace_period_computed_correctly_through_admin_confirm_path(
 async def test_hold_duration_is_configurable_not_hardcoded_ten_minutes(
     client, test_session_factory, seeded_unit
 ):
-    """Decision Point C-5: HOLD_DURATION must reflect
-    1440, not the original hardcoded 10
-    minutes — a slot confirmed offline hours or days later must still be
-    genuinely 'held', not silently already past its old, too-short TTL."""
+    """Decision Point C-5 & Phase 0 Hardening: HOLD_DURATION must reflect
+    the system configuration default of 30 minutes (1800s), not the legacy 1440m or hardcoded 10m."""
     before = datetime.now(timezone.utc)
     created = await _create_booking(client, seeded_unit)
-    assert created["expires_in"] == 1440 * 60
+    assert created["expires_in"] == 30 * 60
     assert created["expires_in"] != 600, "expires_in must not silently be the old 10-minute default"
 
     async with test_session_factory() as session:
         unit = await session.get(InventoryUnit, seeded_unit)
-        expected_expiry = before + timedelta(minutes=1440)
+        expected_expiry = before + timedelta(minutes=30)
         # Allow a few seconds of slack for test execution time.
         assert abs((unit.hold_expires_at - expected_expiry).total_seconds()) < 5

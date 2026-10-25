@@ -1,6 +1,6 @@
 import { SafeImage } from './dashboard';
-import React from 'react';
-import { Star, MapPin, Heart } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Star, MapPin, Heart, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Venue } from '../types';
 
@@ -18,6 +18,19 @@ export default function VenueCard({
   onToggleFavorite,
   isFavorite
 }: VenueCardProps) {
+  const isNew = useMemo(() => {
+    if (!venue.createdAt) return false;
+    const createdDate = new Date(venue.createdAt);
+    if (isNaN(createdDate.getTime())) return false;
+    const diffDays = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= 60;
+  }, [venue.createdAt]);
+
+  const keyAmenities = useMemo(() => {
+    const list = venue.amenities || [];
+    return list.slice(0, 2);
+  }, [venue.amenities]);
+
   return (
     <motion.div
       onClick={() => onClick(venue.id)}
@@ -50,15 +63,26 @@ export default function VenueCard({
           />
         </motion.button>
 
+        {/* NEW Badge if created recently */}
+        {isNew && (
+          <div className="absolute top-3 left-13 bg-pitch/90 backdrop-blur-md text-chalk px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm text-[10px] font-bold tracking-wider uppercase z-10">
+            <Sparkles size={11} className="text-marigold" />
+            <span>NEW</span>
+          </div>
+        )}
+
         {/* Glassmorphic Rating Floating Chip */}
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.3 }}
-          className="absolute top-3 right-3 bg-ink/60 backdrop-blur-md text-chalk px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm"
+          className="absolute top-3 right-3 bg-ink/90 backdrop-blur-md text-chalk px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm"
         >
           <Star size={12} className="fill-marigold text-marigold" />
           <span className="font-sans text-xs font-bold text-chalk">{venue.rating.toFixed(1)}</span>
+          {venue.reviewCount > 0 && (
+            <span className="font-sans text-[10px] text-chalk/80">({venue.reviewCount})</span>
+          )}
         </motion.div>
 
         {/* fully booked watermark overlay */}
@@ -82,7 +106,7 @@ export default function VenueCard({
       <div className="p-4 flex flex-col flex-grow bg-chalk">
         <div className="flex justify-between items-start gap-1 mb-1">
           <h3 className="font-sans text-base font-semibold text-ink line-clamp-1 group-hover:text-pitch transition-colors ease-out">
-            {venue.name}
+            {venue.displayName || venue.name}
           </h3>
           <motion.span 
             initial={{ opacity: 0 }}
@@ -96,6 +120,12 @@ export default function VenueCard({
           </motion.span>
         </div>
 
+        {venue.tagline && (
+          <p className="font-sans text-xs text-pitch/90 font-medium line-clamp-1 mb-1.5">
+            {venue.tagline}
+          </p>
+        )}
+
         {/* physical location details */}
         <p className="font-sans text-xs text-on-surface-variant mb-3 flex items-center gap-1">
           <MapPin size={12} className="text-pitch/70" />
@@ -105,25 +135,47 @@ export default function VenueCard({
           </span>
         </p>
 
-        {/* tag values & sub categories */}
-        <div className="mt-auto pt-3 border-t border-ink/5 flex justify-between items-center">
-          <div className="flex gap-1.5">
+        {/* tag values, sub categories & key amenities */}
+        <div className="mt-auto pt-3 border-t border-ink/5">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            {venue.venueType && (
+              <motion.span 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.1 }}
+                className="px-2.5 py-0.5 bg-mist text-ink rounded-full text-xs font-medium whitespace-nowrap shrink-0"
+              >
+                {venue.venueType}
+              </motion.span>
+            )}
+            {venue.useCases && venue.useCases.length > 0 && (!venue.venueType || venue.useCases[0].trim().toLowerCase() !== venue.venueType.trim().toLowerCase()) && (
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="px-2.5 py-0.5 bg-pitch/10 text-pitch rounded-full text-xs font-medium whitespace-nowrap truncate max-w-[140px]"
+                title={venue.useCases[0]}
+              >
+                {venue.useCases[0]}
+              </motion.span>
+            )}
             <motion.span 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              className="px-2.5 py-0.5 bg-mist text-ink rounded-full text-xs font-medium"
-            >
-              {venue.venueType}
-            </motion.span>
-            <motion.span 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="px-2.5 py-0.5 bg-mist text-ink rounded-full text-xs font-medium"
+              transition={{ delay: 0.3 }}
+              className="px-2.5 py-0.5 bg-mist text-ink rounded-full text-xs font-medium whitespace-nowrap shrink-0"
             >
               {venue.capacityGroup} Cap
             </motion.span>
+            {keyAmenities.map((amenity) => (
+              <span
+                key={amenity}
+                className="px-2 py-0.5 bg-mist/60 text-on-surface-variant rounded-full text-[11px] font-normal truncate max-w-[110px]"
+                title={amenity}
+              >
+                {amenity}
+              </span>
+            ))}
           </div>
         </div>
       </div>
