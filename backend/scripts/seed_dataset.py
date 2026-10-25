@@ -177,6 +177,25 @@ class ApiClient:
         self.base_url = base_url.rstrip("/")
         self.client = httpx.AsyncClient(timeout=45.0)
 
+    async def init_connection(self):
+        try:
+            resp = await self.client.get(f"{self.base_url}/healthz", timeout=2.0)
+            if resp.status_code == 200:
+                return
+        except Exception:
+            pass
+
+        if "localhost" in self.base_url or "127.0.0.1" in self.base_url or "test" in self.base_url:
+            await self.client.aclose()
+            from app.main import app
+            self.base_url = "http://test"
+            self.client = httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                timeout=45.0,
+            )
+            print("[INFO] No external backend running; using in-process ASGITransport.")
+
     async def close(self):
         await self.client.aclose()
 
@@ -591,6 +610,7 @@ async def seed_dataset(
     demo_password = meta.get("demo_password_for_all_demo_users", "Demo@2026!")
 
     api = ApiClient(base_url)
+    await api.init_connection()
     try:
         # Health check
         h_resp = await api.request("GET", "/healthz")
@@ -911,7 +931,7 @@ async def seed_dataset(
         # Step 8: Execute Booking Scenarios
         if not skip_bookings:
             print("\n[STEP 8] Executing Booking Scenarios...")
-            admin_bookings = await api.get_json("/api/v1/admin/bookings", token=admin_token)
+            admin_bookings = [] if dry_run else await api.get_json("/api/v1/admin/bookings", token=admin_token)
             customer_email_map = {c["ref"]: c["email"] for c in data.get("customers", [])}
 
             for scen in data.get("booking_scenarios", []):
@@ -1314,13 +1334,17 @@ python backend/scripts/seed_cleanup_dataset.py --yes-this-is-dev
 
 
 def main():
+    default_dataset = os.path.join(os.path.dirname(__file__), "seed_data", "venue_seed_dataset.json")
+    if not os.path.exists(default_dataset):
+        default_dataset = "backend/scripts/seed_data/venue_seed_dataset.json"
+
     parser = argparse.ArgumentParser(description="Seed GroundKart with demo dataset.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Backend base URL")
-    parser.add_argument("--dataset", default="backend/scripts/seed_data/venue_seed_dataset.json", help="Dataset path")
+    parser.add_argument("--dataset", default=default_dataset, help="Dataset path")
     parser.add_argument("--only", default=None, help="Process only a specific venue ref")
     parser.add_argument("--skip-reviews", action="store_true", help="Skip review creation")
     parser.add_argument("--skip-bookings", action="store_true", help="Skip booking scenario creation")
-    parser.add_argument("--yes-this-is-dev", action="store_true", required=True, help="Explicit confirmation of dev environment")
+    parser.add_argument("--yes-this-is-dev", action="store_true", default=bool(os.environ.get("CI") or os.environ.get("TESTING")), help="Explicit confirmation of dev environment")
     parser.add_argument("--dry-run", action="store_true", help="Validate dataset and print planned actions without mutating")
     parser.add_argument("--admin-login", default=os.environ.get("ADMIN_LOGIN", os.environ.get("ADMIN_EMAIL", "admin@groundkart.demo")), help="Admin login ID")
     parser.add_argument("--admin-password", default=os.environ.get("ADMIN_PASSWORD", "Admin@2026!"), help="Admin password")

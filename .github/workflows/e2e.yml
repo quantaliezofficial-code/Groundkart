@@ -70,7 +70,7 @@ jobs:
 
       - name: Seed demo dataset
         working-directory: backend
-        run: python scripts/seed_dataset.py
+        run: python scripts/seed_dataset.py --yes-this-is-dev
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
