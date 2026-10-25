@@ -525,6 +525,8 @@ export default function ReviewPay({
               </div>
 
               <motion.button
+                data-testid="request-booking-btn"
+                id="request-booking-btn"
                 whileHover={!isProcessing && canSubmit ? { scale: 1.02 } : {}}
                 whileTap={!isProcessing && canSubmit ? { scale: 0.97 } : {}}
                 onClick={handleConfirm}

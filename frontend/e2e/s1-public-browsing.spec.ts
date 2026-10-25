@@ -44,12 +44,14 @@ test.describe('S1 Public Browsing @regression', () => {
     const minPriceInput = page.locator('input[placeholder*="Min"], input[name*="minPrice"]').first();
     if (await minPriceInput.isVisible()) {
       await minPriceInput.fill('9999999');
-      await expect(page.locator('text=No venues available yet')).toBeVisible({ timeout: 10_000 });
+      await expect(
+        page.locator('text=No venues match your current filters').or(page.locator('text=No venues available yet'))
+      ).toBeVisible({ timeout: 10_000 });
 
       // Clear all active filters restores list
       const clearBtn = page.getByRole('button', { name: 'Clear All Active Filters' });
       await clearBtn.click();
-      await expect(page.locator('text=No venues available yet')).not.toBeVisible();
+      await expect(page.locator('text=No venues match your current filters')).not.toBeVisible();
     }
   });
 

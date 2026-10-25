@@ -117,7 +117,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  const hasIdemKey = Boolean(headers['Idempotency-Key']);
+  const hasIdemKey = Boolean(headers['Idempotency-Key'] || headers['idempotency-key']);
   const maxRetries = hasIdemKey ? 3 : 0;
   const attempt = options.retryCount || 0;
 

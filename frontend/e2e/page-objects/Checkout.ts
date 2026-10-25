@@ -19,7 +19,7 @@ export class CheckoutPO {
     this.guestPhoneInput = page.locator('#guest-phone');
     this.guestCountInput = page.locator('#guest-count');
     this.customerNotesInput = page.locator('#customer-notes');
-    this.submitButton = page.locator('button:has-text("Request Booking")');
+    this.submitButton = page.locator('#request-booking-btn, button[data-testid="request-booking-btn"], button:has-text("Request Booking")');
     this.totalAmountText = page.locator('div:has-text("Total Amount") > span.text-2xl, span:has-text("₹")').last();
     this.errorBanner = page.locator('.text-clay');
     this.backToHomeButton = page.locator('button:has-text("Back to Home")');

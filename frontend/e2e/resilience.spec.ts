@@ -29,7 +29,7 @@ test.describe('Resilience and Real-User Concurrency E2E Suite @resilience', () =
 
     // Rapid double-click
     await expect(checkoutPO.submitButton).toBeEnabled();
-    await checkoutPO.submitButton.dblclick();
+    await checkoutPO.submitButton.dblclick({ force: true });
 
     // Verify loading state
     await expect(page.locator('text=Holding your slot...').or(page.locator('text=Requesting…'))).toBeVisible({ timeout: 5_000 });

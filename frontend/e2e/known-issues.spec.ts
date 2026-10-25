@@ -218,7 +218,7 @@ test.describe('Known Issues Register Verification @known', () => {
 
     const todayStr = new Date().toISOString().slice(0, 10);
     const dateInput = page.locator(`button:has-text("${todayStr}"), input[value="${todayStr}"]`);
-    await expect(dateInput).toBeVisible({ timeout: 5_000 });
+    await expect(dateInput).toBeVisible({ timeout: 1_000 });
   });
 
   // KNOWN-16: Guest bookings are rate limited and holds are short
