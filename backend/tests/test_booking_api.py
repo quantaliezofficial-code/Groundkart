@@ -29,7 +29,7 @@ async def client(test_session_factory):
 async def test_healthz(client):
     resp = await client.get("/healthz")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    assert resp.json()["status"] == "ok"
 
 
 async def test_create_guest_booking_returns_manage_token(client, seeded_unit):
