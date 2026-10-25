@@ -27,7 +27,11 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 import httpx
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 from sqlalchemy import delete, insert, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,7 +86,14 @@ def generate_venue_image(
     width: int = 1600,
     height: int = 1000,
 ) -> None:
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    dir_name = os.path.dirname(output_path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    if not HAS_PIL:
+        with open(output_path, "wb") as f:
+            f.write(DUMMY_PNG)
+        return
+
     c1 = hex_to_rgb(palette[0] if len(palette) > 0 else "#1E3A8A")
     c2 = hex_to_rgb(palette[1] if len(palette) > 1 else "#3B82F6")
     c3 = hex_to_rgb(palette[2] if len(palette) > 2 else "#F59E0B")

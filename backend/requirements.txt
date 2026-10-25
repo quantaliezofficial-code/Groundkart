@@ -11,6 +11,7 @@ argon2-cffi==25.1.0
 python-multipart==0.0.32
 aioboto3==13.2.0
 tzdata==2026.5
+pillow>=10.2.0
 
 
 # Test dependencies

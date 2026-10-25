@@ -36,6 +36,7 @@ mako==1.4.3
 markupsafe==3.0.4
 multidict==7.1.0
 packaging==26.3
+pillow>=10.2.0
 pluggy==1.6.0
 propcache==0.5.4
 pycparser==3.11
